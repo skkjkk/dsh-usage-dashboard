@@ -203,7 +203,7 @@ console.log('client lib/client.js:', clientOut.length, 'bytes')
 const pkg = {
   name: PACKAGE_ID,
   description: 'DSH usage statistics dashboard: token / cost / duration / session aggregation with trend, heatmap and calendar views (settings.section "数据看板").',
-  version: '0.3.0',
+  version: '0.3.1',
   type: 'module',
   main: 'lib/index.js',
   exports: {
@@ -239,7 +239,7 @@ const pkg = {
   license: 'Apache-2.0'
 }
 fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(pkg, null, 2) + '\n')
-console.log('package.json written (v0.3.0)')
+console.log('package.json written (v' + pkg.version + ')')
 
 // 语法冒烟：host 与 core 用 node --check（ESM 需 .mjs 或 --input-type），检查文件放系统临时目录
 const checks = [
