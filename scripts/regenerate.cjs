@@ -2,6 +2,7 @@
 // - src/host.js        → lib/index.js      （ESM host bundle）
 // - src/client.js      → lib/client.js     （UMD client bundle）
 // - src/core/rollup.js → lib/core/rollup.js（纯聚合引擎，host 内部引用）
+// - pricing CSV        → src/core/pricing.js + lib/core/pricing.js（计费表）
 // 用法：node scripts/regenerate.cjs
 const fs = require('fs')
 const os = require('os')
@@ -13,7 +14,53 @@ fs.mkdirSync(path.join(outDir, 'core'), { recursive: true })
 
 const PACKAGE_ID = '@skkjkk/dsh-usage-dashboard'
 
+// ---------- pricing: CSV → src/core/pricing.js + lib/core/pricing.js ----------
+// 计费标准 = pricing/vibe-usage-model-pricing.csv（缺失时回退用户机的 D:\download 副本）。
+// 列：模型,厂商,输入($/M),输出($/M),缓存读取($/M) → [输入, 输出, 缓存] ¥/M tokens（$×7）。
+function parsePricingCsv(text) {
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim())
+  const prices = {}
+  for (let i = 1; i < lines.length; i++) {
+    const parts = lines[i].split(',').map((s) => s.replace(/^"|"$/g, '').trim())
+    if (parts.length < 5 || !parts[0]) continue
+    const num = (s) => { const n = parseFloat(s); return Number.isFinite(n) && n > 0 ? n : 0 }
+    const r6 = (n) => Math.round(n * 1e6) / 1e6
+    prices[parts[0]] = [r6(num(parts[2]) * 7), r6(num(parts[3]) * 7), r6(num(parts[4]) * 7)]
+  }
+  return prices
+}
+function pricingSource() {
+  const local = path.join(root, 'pricing', 'vibe-usage-model-pricing.csv')
+  const fallback = 'D:/download/vibe-usage-model-pricing.csv'
+  let text = null
+  for (const f of [local, fallback]) {
+    try { text = fs.readFileSync(f, 'utf8'); console.log('pricing csv:', f); break } catch { /* next */ }
+  }
+  if (!text) throw new Error('pricing CSV not found (expected pricing/vibe-usage-model-pricing.csv)')
+  const prices = parsePricingCsv(text)
+  const body = Object.keys(prices).sort()
+    .map((k) => JSON.stringify(k) + ':[' + prices[k].join(',') + ']').join(',\n  ')
+  const src = '// 定价表：由 scripts/regenerate.cjs 从 pricing/vibe-usage-model-pricing.csv 生成（USD × 7 → ¥/M tokens）。\n' +
+    '// 请勿手改；更新定价请改 CSV 后运行 npm run build。\n' +
+    'export const PRICES = {\n  ' + body + '\n}\n'
+  fs.writeFileSync(path.join(root, 'src', 'core', 'pricing.js'), src)
+  fs.writeFileSync(path.join(outDir, 'core', 'pricing.js'), src)
+  console.log('pricing models:', Object.keys(prices).length)
+  return src
+}
+pricingSource()
+
 // ---------- core ----------
+// 幂等迁移：若 rollup.js 仍是内联 PRICES 字面量（旧版），替换为对 ./pricing.js 的 import
+{
+  const f = path.join(root, 'src', 'core', 'rollup.js')
+  const before = fs.readFileSync(f, 'utf8')
+  const after = before.replace(/^export const PRICES = .*$/m, "import { PRICES } from './pricing.js'")
+  if (after !== before) {
+    fs.writeFileSync(f, after)
+    console.log('rollup.js: inline PRICES → import ./pricing.js')
+  }
+}
 const coreSrc = fs.readFileSync(path.join(root, 'src', 'core', 'rollup.js'), 'utf8')
 fs.writeFileSync(path.join(outDir, 'core', 'rollup.js'), coreSrc)
 console.log('core lib/core/rollup.js:', coreSrc.length, 'bytes')
@@ -146,7 +193,7 @@ console.log('client lib/client.js:', clientOut.length, 'bytes')
 const pkg = {
   name: PACKAGE_ID,
   description: 'DSH usage statistics dashboard: token / cost / duration / session aggregation with trend, heatmap and calendar views (settings.section "数据看板").',
-  version: '0.2.0',
+  version: '0.3.0',
   type: 'module',
   main: 'lib/index.js',
   exports: {
@@ -156,7 +203,8 @@ const pkg = {
   },
   scripts: {
     build: 'node scripts/regenerate.cjs',
-    bench: 'node scripts/bench.js'
+    bench: 'node scripts/bench.js',
+    prepublishOnly: 'npm run build'
   },
   dsh: {
     bundle: {
@@ -177,11 +225,11 @@ const pkg = {
     '@deepseek-ai/dsh-client-ui-settings': '^0.1.0-rc.6',
     react: '^18.2.0'
   },
-  files: ['lib'],
+  files: ['lib', 'pricing', 'cordis.patch.yml'],
   license: 'Apache-2.0'
 }
 fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(pkg, null, 2) + '\n')
-console.log('package.json written (v0.2.0)')
+console.log('package.json written (v0.3.0)')
 
 // 语法冒烟：host 与 core 用 node --check（ESM 需 .mjs 或 --input-type），检查文件放系统临时目录
 const checks = [

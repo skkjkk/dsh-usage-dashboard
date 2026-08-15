@@ -330,7 +330,7 @@ function legacyUsage(sessions, req) {
   const prev = legacyComputeWindow(loaded, targets, plo, phi, modelSet, gran)
   const t = cur.totals
   const pt = prev.totals
-  const pct = (c, p) => (!(p > 0) ? null : (c - p) / p * 100)
+  const pct = (c, p) => (!(p > 0) ? (c > 0 ? 100 : null) : (c - p) / p * 100)
   t.pct = {
     cost: pct(t.cost, pt.cost), totalTokens: pct(t.totalTokens, pt.totalTokens),
     inputTokens: pct(t.inputTokens, pt.inputTokens), outputTokens: pct(t.outputTokens, pt.outputTokens),

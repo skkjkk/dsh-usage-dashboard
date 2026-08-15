@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { zstdDecompressSync } from 'node:zlib'
 import { foldSession, queryUsage, rangeBounds } from '../src/core/rollup.js'
 
-const ROOT = process.argv[2] || (process.env.USERPROFILE || 'C:/Users/17644') + '/.dsh/sessions'
+const ROOT = process.argv[2] || ((process.env.USERPROFILE || process.env.HOME || '').replace(/\\/g, '/') + '/.dsh/sessions')
 const HOUR = 3600000
 const DAY = 86400000
 

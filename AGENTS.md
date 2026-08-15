@@ -4,7 +4,8 @@ dsh-usage-dashboard — DSH (DeepSeek Harness) usage statistics dashboard plugin
 
 ## Project layout
 
-- `src/core/rollup.js` — **Pure aggregation engine** (no ctx, no IO): `foldSession(events)` materializes one compact per-session rollup (sparse hourly buckets with per-model token/cost detail + message counts + durations); `queryUsage` / `queryDetail` / `queryCalendar` answer any window/filter in memory. `PRICES` price table and `priceFor` live here.
+- `src/core/rollup.js` — **Pure aggregation engine** (no ctx, no IO): `foldSession(events)` materializes one compact per-session rollup (sparse hourly buckets with per-model token/cost detail + message counts + durations); `queryUsage` / `queryDetail` / `queryCalendar` answer any window/filter in memory. `priceFor` lives here; `PRICES` is imported from `./pricing.js`.
+- `src/core/pricing.js` — **Generated** price table (USD × 7 → CNY ¥/M tokens) from `pricing/vibe-usage-model-pricing.csv` (203 models). Never edit by hand — change the CSV and run `npm run build`; `scripts/regenerate.cjs` regenerates both `src/core/pricing.js` and `lib/core/pricing.js`.
 - `src/host.js` — Glue layer: `getRollups()` lists sessions via `persistence.listSnapshots()` (cheap stat-derived **revision per session**) and re-reads + re-folds ONLY changed/new sessions (8-way concurrency, LRU cap ~500); request-level cache (5 min TTL + stale-while-revalidate, single-flight per key); pre-warm on startup. Registers `/dash-api/usage|detail|calendar`.
 - `src/client.js` — Client-half source: registers `settings.section` (id `dashboard`, order 30, label "数据看板"); plain React + DOM charts (KPIs, trend, heatmap, calendar, records, distributions).
 - `lib/` — Build output (what DSH actually loads): `index.js` (host bundle), `core/rollup.js` (copied verbatim), `client.js` (UMD client bundle).
@@ -20,7 +21,7 @@ dsh-usage-dashboard — DSH (DeepSeek Harness) usage statistics dashboard plugin
 - `queryDetail` rows are grouped by **(time bucket, model, project)** — the same hour used by two models yields two rows, each showing its project name. `rollup.projectTitle` is set by the host glue at fold time.
 - The client bundle runs in the browser without bundler/TSX: plain JS + `React.createElement` only.
 - The host bundle is ESM (`.js` under `"type": "module"`); the build script itself is CommonJS (`.cjs`).
-- Cost figures are estimates: USD price × 7 → CNY, from the `PRICES` table. New models belong in `src/core/rollup.js`.
+- Cost figures are estimates: USD price × 7 → CNY, from the generated `PRICES` table (`pricing/vibe-usage-model-pricing.csv`). New/changed prices belong in the CSV, never in code.
 - All aggregation is local; never send session data anywhere.
 
 ## Performance architecture (v0.2)
