@@ -22,16 +22,22 @@ A plugin for the [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-harn
 
 ## Install
 
+One command (recommended — it installs the package and automatically registers the plugin in the profile's bundle list):
+
 ```bash
-npm install @skkjkk/dsh-usage-dashboard
+dsh plugin --profile web add @skkjkk/dsh-usage-dashboard
 ```
 
-Register the plugin row in your DSH profile's `cordis.yml` (or `cordis.patch.yml`):
+> `dsh plugin` runs pnpm and detects that the package declares `dsh.bundle` (it ships its own self-inserting `cordis.patch.yml`), so it appends the package to `dsh.profile.bundles` in the profile's `package.json` automatically — **no manual cordis.yml / cordis.patch.yml editing needed**.
 
-```yaml
-- insert:
-    - id: usage-dashboard
-      name: '@skkjkk/dsh-usage-dashboard'
+Without the `dsh` CLI, install manually:
+
+```bash
+# 1. install into the DSH profile (default: web)
+pnpm --dir ~/.dsh/profiles/web add @skkjkk/dsh-usage-dashboard
+
+# 2. append the package name to dsh.profile.bundles in the profile's package.json
+"dsh": { "profile": { "bundles": [..., "@skkjkk/dsh-usage-dashboard"] } }
 ```
 
 Restart DSH and open **Settings → 数据看板**.

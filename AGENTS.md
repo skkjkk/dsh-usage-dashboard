@@ -35,4 +35,4 @@ dsh-usage-dashboard — DSH (DeepSeek Harness) usage statistics dashboard plugin
 
 - `node --check lib/client.js`, `node --check` (as .mjs) on `lib/index.js` and `lib/core/rollup.js`.
 - `npm run bench` → "all checks passed ✔" (correctness + performance).
-- The plugin mounts via `cordis.patch.yml` (`- insert: { id: usage-dashboard, name: '@skkjkk/dsh-usage-dashboard' }`).
+- The plugin is a **bundle**: `package.json` declares `dsh.bundle.patch: ./cordis.patch.yml` (self-insert row), so `dsh plugin --profile web add @skkjkk/dsh-usage-dashboard` installs it AND auto-appends it to the profile's `dsh.profile.bundles` (reconcilePlugins). The boot process applies each bundle's own patch — no manual cordis.yml/cordis.patch.yml editing. Verify with `scripts/verify-pack.mjs` after packing.

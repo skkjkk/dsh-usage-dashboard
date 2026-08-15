@@ -22,16 +22,22 @@
 
 ## 安装
 
+一条命令安装（推荐，会自动把插件注册进 profile 的 bundle 列表）：
+
 ```bash
-npm install @skkjkk/dsh-usage-dashboard
+dsh plugin --profile web add @skkjkk/dsh-usage-dashboard
 ```
 
-安装后在 DSH profile 的 `cordis.yml`（或 `cordis.patch.yml`）注册插件行：
+> `dsh plugin` 会执行 pnpm 安装，并检测到包声明了 `dsh.bundle`（自带 `cordis.patch.yml` 自注册行），自动将其追加到 profile `package.json` 的 `dsh.profile.bundles` —— **不需要手动编辑 cordis.yml / cordis.patch.yml**。
 
-```yaml
-- insert:
-    - id: usage-dashboard
-      name: '@skkjkk/dsh-usage-dashboard'
+没有 `dsh` CLI 时手动安装：
+
+```bash
+# 1. 安装到 DSH profile（默认 web）
+pnpm --dir ~/.dsh/profiles/web add @skkjkk/dsh-usage-dashboard
+
+# 2. 在 profile 的 package.json 的 dsh.profile.bundles 数组里追加包名
+"dsh": { "profile": { "bundles": [..., "@skkjkk/dsh-usage-dashboard"] } }
 ```
 
 重启 DSH，打开 **设置 → 数据看板** 即可使用。
