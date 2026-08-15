@@ -1,0 +1,7 @@
+# dsh-usage-dashboard bundle patch: registers the usage dashboard plugin row.
+# The host half (lib/index.js) mounts the /dash-api/* JSON routes; the client
+# half (lib/client.js) injects the "数据看板" settings section. Follows the
+# same self-insert shape as @local/dsh-client-ui-skin-macos.
+- insert:
+    - id: usage-dashboard
+      name: '@linxin666/dsh-usage-dashboard'

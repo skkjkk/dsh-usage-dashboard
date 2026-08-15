@@ -1,0 +1,19 @@
+# dependencies / build
+node_modules/
+*.tgz
+
+# temp / scratch
+.tmp-*
+.tmp3-*
+.tmp-check-*
+spill-compare/
+
+# logs
+*.log
+npm-debug.log*
+
+# editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
