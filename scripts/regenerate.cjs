@@ -87,12 +87,15 @@ let body = hostSrc.slice(bodyStart, hostSrc.lastIndexOf('}'))
 // 只清理尾部空白行（v0.2 host 直接以 export function apply 定义，
 // 函数体内嵌套的闭合括号必须原样保留）
 body = body.replace(/\n\s*\n\s*$/, '\n')
+// 从 src/host.js 提取 core 导入，保持宿主包与源码一致（新增导出时无需改模板）
+const importMatch = hostSrc.match(/^import\s*\{([^}]*)\}\s*from\s*['"]\.\/core\/rollup\.js['"]/m)
+const coreImports = importMatch ? importMatch[1].trim() : 'foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, sessionTitle'
 
 const hostOut = `// dsh-usage-dashboard — host half (adapted from the src/host.js glue layer).
 // Registers three JSON GET routes under /dash-api/* serving usage aggregation
 // over the local session store. Aggregation itself lives in ./core/rollup.js.
 
-import { foldSession, queryUsage, queryDetail, queryCalendar, sessionTitle } from './core/rollup.js'
+import { ${coreImports} } from './core/rollup.js'
 
 function parseQueryArgs(url) {
   const u = new URL(url, 'http://dsh.local')
@@ -203,7 +206,7 @@ console.log('client lib/client.js:', clientOut.length, 'bytes')
 const pkg = {
   name: PACKAGE_ID,
   description: 'DSH usage statistics dashboard: token / cost / duration / session aggregation with trend, heatmap and calendar views (settings.section "数据看板").',
-  version: '0.3.1',
+  version: '0.3.2',
   type: 'module',
   main: 'lib/index.js',
   exports: {

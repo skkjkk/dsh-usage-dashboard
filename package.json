@@ -1,7 +1,7 @@
 {
   "name": "@skkjkk/dsh-usage-dashboard",
   "description": "DSH usage statistics dashboard: token / cost / duration / session aggregation with trend, heatmap and calendar views (settings.section \"数据看板\").",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

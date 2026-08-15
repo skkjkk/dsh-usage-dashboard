@@ -897,7 +897,7 @@ return {
       }, [range, custom.from, custom.to, modelSel, projectSel])
       React.useEffect(() => {
         load()
-        const off = ctx.interval(() => load(), 60000)
+        const off = ctx.interval(() => load(), 30000)
         return () => { off() }
       }, [load])
 
