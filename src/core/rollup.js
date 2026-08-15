@@ -143,10 +143,10 @@ export function foldSession(events) {
   for (let i = 0; i < events.length; i++) {
     const ev = events[i]
     const t = ev.time
-    if (t < first) first = t
-    if (t > last) last = t
     switch (ev.type) {
       case 'user/message': {
+        if (t < first) first = t
+        if (t > last) last = t
         const src = ev.data && ev.data.source
         const b = bucketAtTime(t)
         if (src && src.kind === 'user') b.msg[0] += 1
@@ -160,6 +160,8 @@ export function foldSession(events) {
         break
       }
       case 'assistant/message': {
+        if (t < first) first = t
+        if (t > last) last = t
         const hk = hourOf(t)
         const b = bucketAt(hk)
         b.msg[2] += 1
@@ -212,6 +214,8 @@ export function foldSession(events) {
         break
       }
       case 'tool/call': {
+        if (t < first) first = t
+        if (t > last) last = t
         const hk = hourOf(t)
         const b = bucketAt(hk)
         b.msg[3] += 1
@@ -224,6 +228,8 @@ export function foldSession(events) {
         break
       }
       case 'tool/result': {
+        if (t < first) first = t
+        if (t > last) last = t
         const hk = hourOf(t)
         const b = bucketAt(hk)
         b.msg[4] += 1
@@ -291,7 +297,10 @@ export function queryUsage(rollups, req, opts) {
   })
   const cur = mk()
   const prev = mk()
+  const curInts = []              // per-session [start,end] spans inside the window
+  const prevInts = []             // (union-merged → totals.totalMs)
   const bucketMap = new Map()     // granKey → agg bucket
+  const gkInts = new Map()        // granKey → [[start,end], ...] trend intervals
   const heatToken = new Array(168).fill(0)
   const heatCost = new Array(168).fill(0)
   const heatDur = new Array(168).fill(0)
@@ -333,15 +342,17 @@ export function queryUsage(rollups, req, opts) {
     }
     if (!inCur && !inPrev) continue
 
-    const spanCur = inCur ? Math.min(r.last, hi) - Math.max(r.first, lo) : 0
-    const spanPrev = inPrev ? Math.min(r.last, phi) - Math.max(r.first, plo) : 0
     if (inCur) {
       cur.totals.sessions += 1
-      if (spanCur > 0) cur.totals.totalMs += spanCur
+      const s = Math.max(r.first, lo)
+      const e = Math.min(r.last, hi)
+      if (e > s) curInts.push([s, e])
     }
     if (inPrev) {
       prev.totals.sessions += 1
-      if (spanPrev > 0) prev.totals.totalMs += spanPrev
+      const s = Math.max(r.first, plo)
+      const e = Math.min(r.last, phi)
+      if (e > s) prevInts.push([s, e])
     }
 
     const gkSpan = new Map() // per-rollup gran-key spans → trend totalMs/sessions
@@ -479,13 +490,25 @@ export function queryUsage(rollups, req, opts) {
         }
       }
     }
-    // one span entry per rollup per gran key (matches per-session bucketing)
+    // one interval per rollup per gran key; the trend totalMs merges them below
     for (const [gk, sp] of gkSpan) {
-      const g = bucketMap.get(gk)
-      if (!g) continue
-      g.totalMs += sp.last - sp.first
-      g.sessions += 1
+      let arr = gkInts.get(gk)
+      if (!arr) { arr = []; gkInts.set(gk, arr) }
+      arr.push([sp.first, sp.last])
     }
+  }
+
+  // 总时长 = 窗口内每个会话「首条消息→末条消息」时间跨度的并集：
+  // 重叠（并行）会话只计一次，会话之间的间隔不计入，结果不会超过所选
+  // 时间范围本身（今天/24H ≤ 24 小时，7D ≤ 7 天……）。
+  cur.totals.totalMs = mergeIntervals(curInts)
+  prev.totals.totalMs = mergeIntervals(prevInts)
+  // 趋势桶采用同样的并集口径（每小时/天去重叠）
+  for (const [gk, ints] of gkInts) {
+    const g = bucketMap.get(gk)
+    if (!g) continue
+    g.totalMs = mergeIntervals(ints)
+    g.sessions = ints.length
   }
 
   cur.totals.totalTokens = cur.totals.inputTokens + cur.totals.outputTokens + cur.totals.cacheTokens
@@ -560,6 +583,28 @@ export function queryUsage(rollups, req, opts) {
     heat: { token: heatToken, cost: heatCost, dur: heatDur },
     meta: { models, projects, pricing: { coverage, rows: pricingRows }, dist: { models: distModels, projects: distProjects } }
   }
+}
+
+// Merge overlapping [start,end] intervals and return their total length
+// (sorting mutates the caller-owned scratch array).
+function mergeIntervals(ints) {
+  if (ints.length === 0) return 0
+  ints.sort((a, b) => a[0] - b[0])
+  let total = 0
+  let cs = ints[0][0]
+  let ce = ints[0][1]
+  for (let i = 1; i < ints.length; i++) {
+    const s = ints[i][0]
+    const e = ints[i][1]
+    if (s <= ce) {
+      if (e > ce) ce = e
+    } else {
+      total += ce - cs
+      cs = s
+      ce = e
+    }
+  }
+  return total + (ce - cs)
 }
 
 function mergeModel(map, model, per) {

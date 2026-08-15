@@ -33,8 +33,8 @@ return {
       { key: 'custom', label: '自定义' }
     ]
     const COST_TIP = '费用按人民币单价估算（¥/百万 tokens）：deepseek-v4-flash 输入 ¥0.56 / 缓存命中 ¥0.028 / 输出 ¥1.40（与 DeepSeek 官网一致）；其余模型按官方定价表折算（$×7）。未匹配模型暂不计费。点击卡片切换 ¥/＄。'
-    const DUR_TIP = '会话时长说明：活跃时长 = 所有 turn 的累计时长（AI 实际生成内容时间，不含排队与首 Token 延迟）；总时长 = 每个会话首条到末条消息的时间跨度之和（含思考、看代码等空闲）。'
-    const TOTAL_TIP = '会话时长说明：每个会话从首条消息到末条消息的时间跨度之和，包含中间思考、看代码等空闲时间，但不包含会话之间的间隔。'
+    const DUR_TIP = '会话时长说明：活跃时长 = 所有 turn 的累计时长（AI 实际生成内容时间，不含排队与首 Token 延迟）；总时长 = 各会话首条到末条消息的时间跨度，重叠（并行）会话只计一次后相加（含思考、看代码等空闲）。'
+    const TOTAL_TIP = '会话时长说明：总时长 = 每个会话从首条消息到末条消息的时间跨度，先合并重叠区间（并行会话只计一次）再相加；包含中间思考、看代码等空闲时间，但不包含会话之间的间隔，不会超过所选时间范围。'
 
     const ICON_ECG = h('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, h('polyline', { points: '22 12 18 12 15 21 9 3 6 12 2 12' }))
     const ICON_CAL = h('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, h('rect', { x: 3, y: 4, width: 18, height: 18, rx: 2, ry: 2 }), h('line', { x1: 16, y1: 2, x2: 16, y2: 6 }), h('line', { x1: 8, y1: 2, x2: 8, y2: 6 }), h('line', { x1: 3, y1: 10, x2: 21, y2: 10 }))
@@ -332,7 +332,7 @@ return {
             h('div', null, '从 AI 开始输出到回复完毕算一个 turn，活跃时长 = 所有 turn 的累计时长。不包含排队等待和首 Token 延迟（TTFT），只计算 AI 实际生成内容的时间。两次 prompt 之间的空闲不计入。')),
           h('div', { className: 'pop-sec' },
             h('div', { className: 'sec-title' }, '总时长'),
-            h('div', null, '每个会话从首条消息到末条消息的时间跨度之和。包含中间思考、看代码等空闲时间，但不包含会话之间的间隔。'))))
+            h('div', null, '总时长 = 各会话从首条消息到末条消息的时间跨度，先合并重叠区间（并行会话只计一次）再相加。包含中间思考、看代码等空闲时间，但不包含会话之间的间隔，不会超过所选时间范围。'))))
     }
 
     function PricingPopup(props) {

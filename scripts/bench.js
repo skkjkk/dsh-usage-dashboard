@@ -557,6 +557,50 @@ const REQS = [
   { name: '7d+model', req: { range: '7d', models: ['deepseek-v4-flash'] } }
 ]
 
+console.log('\n[0] totalMs union semantics (parallel sessions counted once)')
+{
+  const H = 3600000
+  const todayMidnight = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime()
+  const mk = (id, ts) => {
+    const events = []
+    let turn = 0
+    for (const t of ts) {
+      events.push({ type: 'user/message', time: t, data: { source: { kind: 'user' } } })
+      events.push({ type: 'assistant/message', time: t, data: { turn, step: 0, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } } })
+      turn += 1
+    }
+    const r = foldSession(events)
+    r.id = id
+    r.cwd = 'D:/u'
+    r.projectTitle = 'u'
+    return r
+  }
+  const unrolls = [
+    mk('A', [todayMidnight, todayMidnight + 0.5 * H, todayMidnight + H, todayMidnight + 1.5 * H, todayMidnight + 2 * H, todayMidnight + 2.5 * H]), // 00:00–02:30
+    mk('B', [todayMidnight + H, todayMidnight + 1.5 * H, todayMidnight + 2 * H, todayMidnight + 2.5 * H]), // 01:00–02:30, inside A
+    mk('C', [todayMidnight + 5 * H, todayMidnight + 5.5 * H]), // 05:00–05:30, gap after A
+    mk('D', [todayMidnight - 2 * H, todayMidnight - H, todayMidnight, todayMidnight + 0.5 * H]) // yesterday 22:00 → today 00:30 (cross-day)
+  ]
+  const q = queryUsage(unrolls, { range: 'custom', from: todayMidnight, to: todayMidnight + 8 * H }, {})
+  // naive sum would be 2.5 + 1.5 + 0.5 + 0.5 = 5h; union = A∪B∪D∩today (2.5h) + C (0.5h) → 3h
+  assertEq('totalMs.union', q.totals.totalMs, 3 * H)
+  assertEq('totalMs.sessions', q.totals.sessions, 4)
+  const byLabel = {}
+  for (const b of q.buckets) byLabel[b.label] = b
+  assertEq('bucket[00].totalMs', byLabel['00'].totalMs, 0.5 * H)
+  assertEq('bucket[01].totalMs', byLabel['01'].totalMs, 0.5 * H)
+  assertEq('bucket[02].totalMs', byLabel['02'].totalMs, 0.5 * H)
+  assertEq('bucket[05].totalMs', byLabel['05'].totalMs, 0.5 * H)
+  // a trailing step/start (interrupted generation) must NOT extend the span
+  const tail = foldSession([
+    { type: 'user/message', time: todayMidnight, data: { source: { kind: 'user' } } },
+    { type: 'assistant/message', time: todayMidnight, data: { turn: 0, step: 0, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } } },
+    { type: 'step/start', time: todayMidnight + 30 * 60000, data: { turn: 1, step: 0 } }
+  ])
+  assertEq('firstLast.stepTailExcluded', tail.last, todayMidnight)
+  console.log('  totalMs union           OK (5h sum → 3h union, cross-day clipped, step tail excluded)')
+}
+
 console.log('\n[1] correctness (field-level, 1e-9 tolerance)')
 for (const { name, req } of REQS) {
   const l = legacyUsage(sessions, req)
