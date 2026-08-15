@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, '..')
 const outDir = path.join(root, 'lib')
 fs.mkdirSync(outDir, { recursive: true })
 
-const PACKAGE_ID = '@linxin666/dsh-usage-dashboard'
+const PACKAGE_ID = '@skkjkk/dsh-usage-dashboard'
 
 // ---------- host ----------
 const hostSrc = fs.readFileSync(path.join(root, 'src', 'host.js'), 'utf8')

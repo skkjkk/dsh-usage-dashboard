@@ -46,13 +46,13 @@ Prerequisite: a local [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek
 npm run build
 
 # 2. Junction-link into the DSH profile's node_modules
-New-Item -ItemType Junction -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\@linxin666\dsh-usage-dashboard" `
+New-Item -ItemType Junction -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\@skkjkk\dsh-usage-dashboard" `
   -Target "D:\path\to\dsh-usage-dashboard"
 
 # 3. Register the plugin row in the profile's cordis.patch.yml (see cordis.patch.yml)
 #    - insert:
 #        - id: usage-dashboard
-#          name: '@linxin666/dsh-usage-dashboard'
+#          name: '@skkjkk/dsh-usage-dashboard'
 
 # 4. Restart DSH, open Settings → 数据看板
 ```
@@ -62,7 +62,7 @@ New-Item -ItemType Junction -Path "$env:USERPROFILE\.dsh\profiles\web\node_modul
 ### npm package (when published)
 
 ```powershell
-npm install -g @linxin666/dsh-usage-dashboard
+npm install -g @skkjkk/dsh-usage-dashboard
 ```
 
 ## Usage

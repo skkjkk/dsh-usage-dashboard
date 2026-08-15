@@ -47,13 +47,13 @@ npm run build
 
 # 2. 链接到 DSH profile 的 node_modules
 #    以默认 web profile 为例（junction 链接，包内容实时生效）
-New-Item -ItemType Junction -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\@linxin666\dsh-usage-dashboard" `
+New-Item -ItemType Junction -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\@skkjkk\dsh-usage-dashboard" `
   -Target "D:\path\to\dsh-usage-dashboard"
 
 # 3. 注册插件行：在 profile 的 cordis.patch.yml 中追加（内容见本包 cordis.patch.yml）
 #    - insert:
 #        - id: usage-dashboard
-#          name: '@linxin666/dsh-usage-dashboard'
+#          name: '@skkjkk/dsh-usage-dashboard'
 
 # 4. 重启 DSH，打开 设置 → 数据看板
 ```
@@ -63,7 +63,7 @@ New-Item -ItemType Junction -Path "$env:USERPROFILE\.dsh\profiles\web\node_modul
 ### 方式二：npm 包（发布后）
 
 ```powershell
-npm install -g @linxin666/dsh-usage-dashboard   # 发布后可用
+npm install -g @skkjkk/dsh-usage-dashboard   # 发布后可用
 ```
 
 ## 使用说明

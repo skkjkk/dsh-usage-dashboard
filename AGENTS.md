@@ -20,4 +20,4 @@ dsh-usage-dashboard — DSH (DeepSeek Harness) usage statistics dashboard plugin
 ## Smoke checks
 
 - `node --check lib/client.js` and `node --check` (as .mjs) on `lib/index.js`.
-- The plugin mounts via `cordis.patch.yml` (`- insert: { id: usage-dashboard, name: '@linxin666/dsh-usage-dashboard' }`).
+- The plugin mounts via `cordis.patch.yml` (`- insert: { id: usage-dashboard, name: '@skkjkk/dsh-usage-dashboard' }`).
