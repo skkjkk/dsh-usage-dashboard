@@ -373,15 +373,16 @@ function legacyDetail(sessions, req) {
   let gran = req.range === 'today' || req.range === '24h' ? 'hour' : 'day'
   if (req.range === 'custom') gran = (hi - lo) <= 48 * 3600000 ? 'hour' : 'day'
   const modelSet = Array.isArray(req.models) && req.models.length ? new Set(req.models) : null
+  // rows grouped by (time bucket, model, project), matching queryDetail
   const bucketMap = new Map()
   for (const s of sessions) {
     const hdr = s.header || {}
-    const sessionKey = hdr.title || (hdr.meta && hdr.meta.title) || hdr.id || '未知会话'
-    let lastUserT = null
+    const cwd = hdr.cwd || ''
+    const base = cwd.split(/[\\/]/).filter(Boolean).pop() || ''
+    const project = base || '未分组'
     for (const ev of s.events) {
       const t = ev.time
       if (t < lo || t > hi) continue
-      if (ev.type === 'user/message') { lastUserT = t; continue }
       if (ev.type !== 'assistant/message') continue
       const usage = ev.data && ev.data.usage
       if (!usage) continue
@@ -395,27 +396,23 @@ function legacyDetail(sessions, req) {
       const cw = num(usage.cacheWriteTokens)
       let cost = 0
       if (pr) cost = (inp * pr.p[0] + otp * pr.p[1] + cr * pr.p[2] + cw * pr.p[0]) / 1e6
-      const bk = bucketKey(t, gran)
-      let b = bucketMap.get(bk)
+      const gk = bucketKey(t, gran)
+      const key = gk + '|' + model + '|' + cwd
+      let b = bucketMap.get(key)
       if (!b) {
-        b = { t: bk, sessions: new Set(), models: new Set(), input: 0, output: 0, cache: 0, cost: 0, dur: 0 }
-        bucketMap.set(bk, b)
+        b = { t: gk, project, model, input: 0, output: 0, cache: 0, cost: 0 }
+        bucketMap.set(key, b)
       }
-      b.sessions.add(sessionKey)
-      b.models.add(model)
       b.input += inp
       b.output += otp
       b.cache += cr + cw
       b.cost += cost
-      b.dur += lastUserT == null ? 0 : t - lastUserT
     }
   }
-  const rows = Array.from(bucketMap.values()).map((b) => ({
-    t: b.t, sessions: b.sessions.size, models: Array.from(b.models),
-    input: b.input, output: b.output, cache: b.cache, cost: b.cost, dur: b.dur
-  }))
-  rows.sort((a, b) => b.t - a.t)
-  return { gran, total: rows.length, rows }
+  const rows = Array.from(bucketMap.values())
+  rows.sort((a, b) => b.t - a.t || a.project.localeCompare(b.project, 'zh') || a.model.localeCompare(b.model))
+  // same pagination as queryDetail (offset 0, limit capped at 200)
+  return { gran, total: rows.length, rows: rows.slice(0, 200) }
 }
 
 function legacyCalendar(sessions, req) {
@@ -505,9 +502,9 @@ function compareDetail(label, l, n) {
     const lr = l.rows[i]
     const nr = n.rows[i]
     assertEq(label + '.rows[' + i + '].t', lr.t, nr.t)
-    assertEq(label + '.rows[' + i + '].sessions', lr.sessions, nr.sessions)
-    assertEq(label + '.rows[' + i + '].models', lr.models.join(','), nr.models.join(','))
-    for (const k of ['input', 'output', 'cache', 'cost', 'dur']) assertEq(label + '.rows[' + i + '].' + k, lr[k], nr[k], 1e-6)
+    assertEq(label + '.rows[' + i + '].project', lr.project, nr.project)
+    assertEq(label + '.rows[' + i + '].model', lr.model, nr.model)
+    for (const k of ['input', 'output', 'cache', 'cost']) assertEq(label + '.rows[' + i + '].' + k, lr[k], nr[k], 1e-6)
   }
 }
 
@@ -546,6 +543,8 @@ const rollups = sessions.map((s) => {
   r.id = s.id
   r.cwd = s.header.cwd
   r.title = s.header.title
+  const base = (r.cwd || '').split(/[\\/]/).filter(Boolean).pop() || ''
+  r.projectTitle = base || '未分组'
   return r
 })
 
@@ -567,15 +566,15 @@ for (const { name, req } of REQS) {
 }
 {
   const l = legacyDetail(sessions, { range: '30d' })
-  const n = queryDetail(rollups, { range: '30d' })
+  const n = queryDetail(rollups, { range: '30d', limit: 200 })
   compareDetail('detail:30d', l, n)
   console.log('  detail:30d              OK')
   const l2 = legacyDetail(sessions, { range: '7d', models: ['gpt-5', 'deepseek-chat'] })
-  const n2 = queryDetail(rollups, { range: '7d', models: ['gpt-5', 'deepseek-chat'] })
+  const n2 = queryDetail(rollups, { range: '7d', models: ['gpt-5', 'deepseek-chat'], limit: 200 })
   compareDetail('detail:7d+model', l2, n2)
   console.log('  detail:7d+model         OK')
   const l3 = legacyDetail(sessions, { range: 'today' })
-  const n3 = queryDetail(rollups, { range: 'today' })
+  const n3 = queryDetail(rollups, { range: 'today', limit: 200 })
   compareDetail('detail:today', l3, n3)
   console.log('  detail:today            OK')
 }

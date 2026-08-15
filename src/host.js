@@ -88,6 +88,8 @@ export function apply(ctx, config) {
             rollup.id = rec.header.id
             rollup.cwd = rec.header.cwd || ''
             rollup.title = sessionTitle(rec, pathTitle)
+            const base = (rollup.cwd || '').split(/[\\/]/).filter(Boolean).pop() || ''
+            rollup.projectTitle = pathTitle.get(rollup.cwd) || base || '未分组'
             rollup.rev = rev
             rollupCache.set(rec.header.id, { rev, rollup, at: Date.now() })
           } catch (e) { /* skip failed session */ }

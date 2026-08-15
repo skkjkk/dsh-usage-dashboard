@@ -170,7 +170,11 @@ export function foldSession(events) {
         const stepKey = ev.data.turn + ':' + ev.data.step
         const open = openSteps.get(stepKey)
         if (open) {
-          bucketAt(open.hk).activeMs += Math.max(0, t - open.t)
+          const diff = Math.max(0, t - open.t)
+          bucketAt(open.hk).activeMs += diff
+          // backfill the exact duration onto the step/start event detail so
+          // window EDGE buckets can filter activeMs precisely
+          if (open.evtIdx >= 0 && open.bucketEvts) open.bucketEvts[open.evtIdx][10] += diff
           openSteps.delete(stepKey)
         }
         const usage = ev.data.usage
@@ -214,9 +218,9 @@ export function foldSession(events) {
         b.hasMsg = true
         if (t < b.first || !b.first) b.first = t
         if (t > b.last) b.last = t
-        b.evts.push([t, 3, null, 0, 0, 0, 0, 0, 0])
+        b.evts.push([t, 3, null, 0, 0, 0, 0, 0, 0, 0, 0])
         times.push([t, hk])
-        if (ev.data && ev.data.callId) pendingCalls.set(ev.data.callId, { t, hk })
+        if (ev.data && ev.data.callId) pendingCalls.set(ev.data.callId, { t, hk, evtIdx: b.evts.length - 1, bucketEvts: b.evts })
         break
       }
       case 'tool/result': {
@@ -232,7 +236,9 @@ export function foldSession(events) {
         if (src && src.callId) {
           const open = pendingCalls.get(src.callId)
           if (open) {
-            bucketAt(open.hk).activeMs += Math.max(0, t - open.t)
+            const diff = Math.max(0, t - open.t)
+            bucketAt(open.hk).activeMs += diff
+            if (open.evtIdx >= 0 && open.bucketEvts) open.bucketEvts[open.evtIdx][10] += diff
             pendingCalls.delete(src.callId)
           }
         }
@@ -240,7 +246,9 @@ export function foldSession(events) {
       }
       case 'step/start': {
         const stepKey = ev.data.turn + ':' + ev.data.step
-        openSteps.set(stepKey, { t, hk: hourOf(t) })
+        const b = bucketAtTime(t)
+        b.evts.push([t, 5, null, 0, 0, 0, 0, 0, 0, 0, 0])
+        openSteps.set(stepKey, { t, hk: hourOf(t), evtIdx: b.evts.length - 1, bucketEvts: b.evts })
         break
       }
       default:
@@ -412,7 +420,10 @@ export function queryUsage(rollups, req, opts) {
       }
 
       if (inCurB) {
-        cur.totals.activeMs += b.activeMs
+        // activeMs: edge buckets contribute their EXACT per-event value via
+        // edgeAccumulate (step/call durations backfilled in evts); aggregate
+        // buckets use the folded value
+        if (!curEdge) cur.totals.activeMs += b.activeMs
         if (!curEdge) {
           cur.totals.userMessages += b.msg[0]
           cur.totals.injectedMessages += b.msg[1]
@@ -458,7 +469,7 @@ export function queryUsage(rollups, req, opts) {
         }
       }
       if (inPrevB) {
-        prev.totals.activeMs += b.activeMs
+        if (!prevEdge) prev.totals.activeMs += b.activeMs
         if (!prevEdge) {
           prev.totals.userMessages += b.msg[0]
           prev.totals.injectedMessages += b.msg[1]
@@ -570,7 +581,9 @@ function mergeModel(map, model, per) {
 // Exact accumulation of one window EDGE bucket (window bounds rarely align
 // with the hour). Iterates the bucket's per-event detail and adds only events
 // within [tLo, tHi] to the sink. Non-edge buckets use the aggregates instead.
-// evts entry: [t, type, model|null, in, out, cache, costIn, costOut, costCache, durUA]
+// evts entry: [t, type, model|null, in, out, cache, costIn, costOut, costCache,
+//              durUA, actMs] — type: 0 user, 1 injected, 2 assistant, 3 toolCall,
+//              4 toolResult, 5 step/start (actMs backfilled at close)
 function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
   let any = false
   let prevT = null
@@ -580,6 +593,14 @@ function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
     const t = e[0]
     if (t < tLo || t > tHi) continue
     any = true
+    const type = e[1]
+    if (type === 5) {
+      // step/start: contributes only its exact (backfilled) activeMs;
+      // it is not a message — no counts, spans, or gap participation
+      const am = e[10] || 0
+      if (am > 0) sink.totals.activeMs += am
+      continue
+    }
     lastT = t
     if (sink.gkSpan) {
       const gk = bucketKey(t, sink.gran)
@@ -590,7 +611,6 @@ function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
         if (t > sp.last) sp.last = t
       }
     }
-    const type = e[1]
     if (type <= 1) {
       if (type === 0) sink.totals.userMessages += 1
       else sink.totals.injectedMessages += 1
@@ -630,6 +650,8 @@ function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
       }
     } else if (type === 3) {
       sink.totals.toolCalls += 1
+      const am = e[10] || 0
+      if (am > 0) sink.totals.activeMs += am
     } else {
       sink.totals.toolResults += 1
     }
@@ -697,43 +719,34 @@ export function queryDetail(rollups, req) {
   const modelSet = Array.isArray(req.models) && req.models.length ? new Set(req.models) : null
   const projectSet = Array.isArray(req.projects) && req.projects.length ? new Set(req.projects) : null
 
-  const bucketMap = new Map()
+  const bucketMap = new Map() // key: gk \u0000 model \u0000 cwd
   for (let i = 0; i < rollups.length; i++) {
     const r = rollups[i]
     if (projectSet !== null && !projectSet.has(r.cwd || '')) continue
     if (r.first === null || r.last === null || r.last < lo || r.first > hi) continue
-    const seenGk = new Set() // one session count per rollup per gran key
+    const project = r.projectTitle || '未分组'
+    const cwdKey = r.cwd || ''
     for (const [hk, b] of r.buckets) {
       if (hk + HOUR <= lo || hk > hi) continue
       if (isEdgeBucket(hk, lo, hi)) {
-        // exact: per-event detail; buckets materialize only on a filtered hit
-        let curGk = null
-        let g = null
+        // exact: per-event detail
         for (const e of b.evts) {
           const t = e[0]
           if (t < lo || t > hi) continue
           if (e[1] !== 2) continue
-          const model = e[2]
+          const model = e[2] || ''
           if (modelSet !== null && !modelSet.has(model)) continue
-          const thisGk = bucketKey(t, gran)
-          if (g === null || thisGk !== curGk) {
-            curGk = thisGk
-            g = bucketMap.get(curGk)
-            if (!g) {
-              g = { t: curGk, sessions: 0, models: new Set(), input: 0, output: 0, cache: 0, cost: 0, dur: 0 }
-              bucketMap.set(curGk, g)
-            }
+          const gk = bucketKey(t, gran)
+          const key = gk + '\u0000' + model + '\u0000' + cwdKey
+          let row = bucketMap.get(key)
+          if (!row) {
+            row = { t: gk, project, model, input: 0, output: 0, cache: 0, cost: 0 }
+            bucketMap.set(key, row)
           }
-          if (!seenGk.has(curGk)) {
-            seenGk.add(curGk)
-            g.sessions += 1
-          }
-          g.models.add(model)
-          g.input += e[3]
-          g.output += e[4]
-          g.cache += e[5]
-          g.cost += e[6] + e[7] + e[8]
-          g.dur += e[9]
+          row.input += e[3]
+          row.output += e[4]
+          row.cache += e[5]
+          row.cost += e[6] + e[7] + e[8]
         }
         continue
       }
@@ -748,37 +761,23 @@ export function queryDetail(rollups, req) {
       }
       if (!hit) continue
       const gk = bucketKey(hk, gran)
-      let g = bucketMap.get(gk)
-      if (!g) {
-        g = { t: gk, sessions: 0, models: new Set(), input: 0, output: 0, cache: 0, cost: 0, dur: 0 }
-        bucketMap.set(gk, g)
-      }
-      if (!seenGk.has(gk)) {
-        seenGk.add(gk)
-        g.sessions += 1
-      }
       for (const [model, per] of b.per) {
         if (modelSet !== null && !modelSet.has(model)) continue
-        g.models.add(model)
-        g.input += per[0]
-        g.output += per[1]
-        g.cache += per[2]
-        g.cost += per[3] + per[4] + per[5]
-        g.dur += per[7]
+        const key = gk + '\u0000' + (model || '') + '\u0000' + cwdKey
+        let row = bucketMap.get(key)
+        if (!row) {
+          row = { t: gk, project, model: model || '', input: 0, output: 0, cache: 0, cost: 0 }
+          bucketMap.set(key, row)
+        }
+        row.input += per[0]
+        row.output += per[1]
+        row.cache += per[2]
+        row.cost += per[3] + per[4] + per[5]
       }
     }
   }
-  const rows = Array.from(bucketMap.values()).map((b) => ({
-    t: b.t,
-    sessions: b.sessions,
-    models: Array.from(b.models),
-    input: b.input,
-    output: b.output,
-    cache: b.cache,
-    cost: b.cost,
-    dur: b.dur
-  }))
-  rows.sort((a, b) => b.t - a.t)
+  const rows = Array.from(bucketMap.values())
+  rows.sort((a, b) => b.t - a.t || a.project.localeCompare(b.project, 'zh') || a.model.localeCompare(b.model))
   const offset = Math.max(0, Number(req.offset) || 0)
   const limit = Math.min(200, Math.max(1, Number(req.limit) || 100))
   return { gran, total: rows.length, rows: rows.slice(offset, offset + limit) }
