@@ -1,7 +1,7 @@
 {
   "name": "@skkjkk/dsh-usage-dashboard",
   "description": "DSH usage statistics dashboard: token / cost / duration / session aggregation with trend, heatmap and calendar views (settings.section \"数据看板\").",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -10,7 +10,8 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "node scripts/regenerate.cjs"
+    "build": "node scripts/regenerate.cjs",
+    "bench": "node scripts/bench.js"
   },
   "dsh": {
     "bundle": {

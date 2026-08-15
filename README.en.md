@@ -17,7 +17,7 @@ A plugin for the [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-harn
 - **Time ranges** — today / 24H / 7D / 30D / 90D / custom date range
 - **Filters** — multi-select by model / project, one-click clear
 - **Cost estimation** — built-in price table for 200+ models (RMB estimates, USD × 7); unmatched models are not billed; CNY/USD and zh/intl unit toggles
-- **Performance** — 5-minute server cache with stale-while-revalidate
+- **Performance** — materialized per-session rollups + revision-delta loading; millisecond queries (see "Performance (v0.2)")
 
 ## Architecture
 
@@ -27,13 +27,35 @@ Browser (Client)                          DSH host process (Host)
 │ Settings: dashboard │  GET /dash-api/ │  /dash-api/usage   overview   │
 │  React + plain DOM  │ ───────────────► │  /dash-api/detail  records   │
 │  settings.section   │    JSON bridge   │  /dash-api/calendar calendar │
-└─────────────────────┘                 │  sessionQuery / workspace    │
-                                        │  registry / sessionPersistence│
+└─────────────────────┘                 │         │                    │
+                                        │         ▼                    │
+                                        │  src/core/rollup.js          │
+                                        │  pure aggregation engine     │
+                                        │  foldSession → session       │
+                                        │  rollups; queryUsage/Detail/ │
+                                        │  Calendar (no IO)            │
+                                        │         │                    │
+                                        │         ▼                    │
+                                        │  getRollups() (delta load)   │
+                                        │  listSnapshots() revision    │
+                                        │  → re-read only changed      │
                                         └──────────────────────────────┘
 ```
 
-- **Host half** (`lib/index.js`): registers three JSON GET routes on `webServer`, aggregating from the local session store (`sessionQuery` / `workspaceRegistry` / `sessionPersistence`), with a built-in price table and a 5-minute cache.
-- **Client half** (`lib/client.js`): registers a `settings.section` (id `dashboard`, order 30, label "数据看板") rendered with plain React + DOM (no UI library).
+- **Host half** (`src/host.js`): registers the three JSON GET routes; uses `persistence.listSnapshots()` (cheap stat-derived **revision per session**) to re-read and re-fold only changed/new sessions; request cache (5 min TTL + stale-while-revalidate, single-flight); pre-warm on startup.
+- **Aggregation engine** (`src/core/rollup.js`): pure, testable functions. `foldSession` materializes each session into compact hourly buckets (per-model tokens/cost/duration); `queryUsage` / `queryDetail` / `queryCalendar` answer any window, granularity and filter from memory — **no disk access after the first fold**. Window edges (e.g. 7d starts at `now-7d`, off the hour) are handled exactly via per-bucket event detail.
+- **Client half** (`src/client.js`): registers `settings.section` (id `dashboard`, order 30, label "数据看板") rendered with plain React + DOM.
+
+## Performance (v0.2)
+
+| Operation | v0.1 full scan | v0.2 materialized rollups |
+|---|---|---|
+| Query (7D, in-memory) | ~62 ms (full 40k+ events × 2 windows) | **~1.3 ms** (≈47× faster) |
+| Disk reads | re-read all 300 session JSONLs per cache expiry | **only changed sessions** (revision diff) |
+| Session change (10 sessions) | rescan everything | fold 10 changed only (~2.4 ms) |
+| Cold start (one-time) | — | first full fold ~154 ms, incremental after |
+
+`npm run bench` runs a 300-session / 41k-event synthetic benchmark with **field-level equivalence checks against the v0.1 algorithm** (two intentional deviations: the "total duration" KPI bug (always 0 in v0.1) is fixed; "active duration" inside window edge hours is a bounded approximation).
 
 ## Install
 
@@ -76,7 +98,7 @@ npm install -g @skkjkk/dsh-usage-dashboard
 
 - All aggregation happens **locally** from the DSH session store; no data is sent anywhere.
 - Costs are **estimates**: built-in price table (USD × 7 → CNY) × per-session token usage. They may differ from real bills.
-- The price table lives in the `PRICES` constant of `src/host.js`; PRs adding new models are welcome.
+- The price table lives in the `PRICES` constant of `src/core/rollup.js`; PRs adding new models are welcome.
 
 ## Development
 
@@ -87,13 +109,16 @@ npm run build   # regenerate lib/ from src/ (scripts/regenerate.cjs)
 ```
 dsh-usage-dashboard/
 ├── src/                  # source (edit here)
-│   ├── host.js           #   host half: aggregation + price table + cache
+│   ├── core/rollup.js    #   pure aggregation engine: rollups + queries (price table here)
+│   ├── host.js           #   host glue: delta loading, caching, routes
 │   └── client.js         #   client half: React UI + chart rendering
 ├── lib/                  # build output (loaded by the plugin)
 │   ├── index.js          #   host half bundle
+│   ├── core/rollup.js    #   engine (copied verbatim)
 │   └── client.js         #   client half bundle (UMD)
 ├── scripts/
-│   └── regenerate.cjs    # build script: src → lib adaptation
+│   ├── regenerate.cjs    # build script: src → lib adaptation
+│   └── bench.js          # correctness + performance harness (npm run bench)
 ├── cordis.patch.yml      # DSH bundle plugin registration patch
 └── package.json
 ```

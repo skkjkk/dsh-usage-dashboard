@@ -17,7 +17,7 @@
 - **时间范围**：今天 / 24H / 7D / 30D / 90D / 自定义起止日期
 - **筛选**：按模型、项目多选过滤，一键清除
 - **费用估算**：内置 200+ 主流模型定价表（人民币估算，美元价 ×7 折算），未收录模型不计费；支持 ¥ / $ 切换、中文 / 国际单位切换
-- **性能**：服务端 5 分钟缓存 + stale-while-revalidate，切换时间范围秒回
+- **性能**：会话摘要物化 + revision 增量加载，查询毫秒级（见「性能」章节）
 
 ## 架构
 
@@ -27,13 +27,34 @@
 │ 设置面板「数据看板」 │  GET /dash-api/ │  /dash-api/usage   总览+趋势  │
 │  React + 原生 DOM   │ ───────────────► │  /dash-api/detail  明细记录   │
 │  settings.section   │    JSON 桥       │  /dash-api/calendar 日历聚合  │
-└─────────────────────┘                 │  sessionQuery / workspace    │
-                                        │  registry / sessionPersistence│
+└─────────────────────┘                 │         │                    │
+                                        │         ▼                    │
+                                        │  src/core/rollup.js          │
+                                        │  纯函数聚合引擎（无 IO）       │
+                                        │  foldSession → 会话摘要物化   │
+                                        │  queryUsage/Detail/Calendar   │
+                                        │         │                    │
+                                        │         ▼                    │
+                                        │  getRollups()（增量加载）      │
+                                        │  listSnapshots() revision 对比 │
+                                        │  → 只重读变更会话（8 并发）    │
                                         └──────────────────────────────┘
 ```
 
-- **Host 半**（`lib/index.js`）：通过 `webServer` 注册三个 JSON GET 路由，基于本地会话存储（`sessionQuery` / `workspaceRegistry` / `sessionPersistence`）做聚合，内置模型定价表与 5 分钟缓存。
-- **Client 半**（`lib/client.js`）：向设置面板注册 `settings.section`（id: `dashboard`，order 30，标签「数据看板」），纯 React（无额外 UI 库）+ 原生 DOM 渲染图表。
+- **Host 半**（`src/host.js`）：注册三个 JSON GET 路由；通过 `persistence.listSnapshots()` 拿到每个会话的**变更令牌（revision）**，只重读并重折叠发生变化的会话；请求级 5 分钟缓存 + SWR + 单飞去重；启动预热默认视图。
+- **聚合引擎**（`src/core/rollup.js`）：纯函数、可测试。`foldSession` 把每个会话折叠成紧凑的小时桶摘要（按模型细分 token/费用/时长），一次折叠、按 revision 增量失效；`queryUsage` / `queryDetail` / `queryCalendar` 从内存摘要回答任意时间窗口、粒度与筛选——**首次折叠后查询不再触碰磁盘**。窗口边界（如 7D 从 `now-7d` 开始，非整点）通过桶内事件明细精确处理。
+- **Client 半**（`src/client.js`）：向设置面板注册 `settings.section`（id: `dashboard`，order 30，标签「数据看板」），纯 React + 原生 DOM 图表。
+
+## 性能（v0.2）
+
+| 操作 | v0.1 全量扫描 | v0.2 物化摘要 |
+|---|---|---|
+| 数据查询（7D，内存） | ~62 ms（每次全量遍历 4 万+ 事件 ×2 窗口） | **~1.3 ms**（≈47× 加速） |
+| 磁盘读取 | 每次缓存过期重读全部 300 个会话 JSONL | **仅读取变更会话**（revision 对比） |
+| 会话变更（10 个） | 重扫全部会话 | 只折叠变更的 10 个（~2.4 ms） |
+| 冷启动（一次性） | — | 首次全量折叠 ~154 ms（之后增量） |
+
+`npm run bench` 内置 300 会话 / 4.1 万事件的合成数据基准：**与旧算法逐字段一致性校验通过**（除两项有意的修正：修复了旧版「总时长」恒为 0 的 bug；窗口边界小时内的「活跃时长」为有界近似）。
 
 ## 安装
 
@@ -87,14 +108,17 @@ npm run build   # 从 src/ 重新生成 lib/（scripts/regenerate.cjs）
 
 ```
 dsh-usage-dashboard/
-├── src/                  # 源码（原型源，修改入口）
-│   ├── host.js           #   Host 半：聚合逻辑 + 定价表 + 缓存
+├── src/                  # 源码（修改入口）
+│   ├── core/rollup.js    #   纯函数聚合引擎：会话摘要折叠 + 查询（定价表在此）
+│   ├── host.js           #   Host 半胶水层：增量加载、缓存、路由
 │   └── client.js         #   Client 半：React UI + 图表渲染
 ├── lib/                  # 构建产物（插件实际加载的文件）
 │   ├── index.js          #   Host 半 bundle
+│   ├── core/rollup.js    #   聚合引擎（原样拷贝）
 │   └── client.js         #   Client 半 bundle（UMD）
 ├── scripts/
-│   └── regenerate.cjs    # 构建脚本：src → lib 适配转换
+│   ├── regenerate.cjs    # 构建脚本：src → lib 适配转换
+│   └── bench.js          # 正确性 + 性能基准（npm run bench）
 ├── cordis.patch.yml      # DSH bundle 插件注册补丁
 └── package.json
 ```
