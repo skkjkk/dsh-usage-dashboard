@@ -5,7 +5,7 @@
 // session data, then asserts field-level equality of every dashboard payload.
 //
 // Usage: npm run bench   (node scripts/bench.js)
-import { foldSession, queryUsage, queryDetail, queryCalendar, priceFor, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, cellOf } from '../src/core/rollup.js'
+import { foldSession, foldAppend, queryUsage, queryDetail, queryCalendar, priceFor, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, cellOf } from '../src/core/rollup.js'
 
 const DAY = 86400000
 
@@ -599,6 +599,47 @@ console.log('\n[0] totalMs union semantics (parallel sessions counted once)')
   ])
   assertEq('firstLast.stepTailExcluded', tail.last, todayMidnight)
   console.log('  totalMs union           OK (5h sum → 3h union, cross-day clipped, step tail excluded)')
+}
+
+console.log('\n[3] incremental fold equivalence (foldAppend == foldSession)')
+{
+  let checked = 0
+  for (const s of sessions.slice(0, 12)) {
+    const evs = s.events
+    const full = foldSession(evs)
+    for (const split of [1, 3, 7]) {
+      const k = Math.max(1, Math.floor(evs.length * split / 10))
+      const inc = foldSession(evs.slice(0, k))
+      for (let i = k; i < evs.length; i++) foldAppend(inc, evs[i])
+      const eq = (a, b) => { if (a !== b) throw new Error('inc-fold mismatch: ' + a + ' != ' + b) }
+      eq(full.first, inc.first)
+      eq(full.last, inc.last)
+      eq(full.buckets.size, inc.buckets.size)
+      for (const [hk, b] of full.buckets) {
+        const ib = inc.buckets.get(hk)
+        if (!ib) throw new Error('inc-fold missing bucket ' + hk)
+        eq(JSON.stringify(b.msg), JSON.stringify(ib.msg))
+        eq(b.durGap, ib.durGap)
+        eq(b.activeMs, ib.activeMs)
+        eq(b.first, ib.first)
+        eq(b.last, ib.last)
+        eq(b.evts.length, ib.evts.length)
+        for (let i = 0; i < b.evts.length; i++) {
+          eq(b.evts[i].length, ib.evts[i].length)
+          for (let j = 0; j < b.evts[i].length; j++) eq(b.evts[i][j], ib.evts[i][j])
+        }
+        eq(b.per.size, ib.per.size)
+        for (const [model, per] of b.per) {
+          const ip = ib.per.get(model)
+          if (!ip) throw new Error('inc-fold missing model ' + model)
+          for (let j = 0; j < per.length; j++) eq(per[j], ip[j])
+        }
+      }
+      eq(full.modelMeta.size, inc.modelMeta.size)
+      checked++
+    }
+  }
+  console.log('  incremental fold         OK (' + checked + ' split cases, byte-identical rollups)')
 }
 
 console.log('\n[1] correctness (field-level, 1e-9 tolerance)')

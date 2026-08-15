@@ -4,9 +4,9 @@ dsh-usage-dashboard — DSH (DeepSeek Harness) usage statistics dashboard plugin
 
 ## Project layout
 
-- `src/core/rollup.js` — **Pure aggregation engine** (no ctx, no IO): `foldSession(events)` materializes one compact per-session rollup (sparse hourly buckets with per-model token/cost detail + message counts + durations); `queryUsage` / `queryDetail` / `queryCalendar` answer any window/filter in memory. `priceFor` lives here; `PRICES` is imported from `./pricing.js`.
-- `src/core/pricing.js` — **Generated** price table (USD × 7 → CNY ¥/M tokens) from `pricing/vibe-usage-model-pricing.csv` (203 models). Never edit by hand — change the CSV and run `npm run build`; `scripts/regenerate.cjs` regenerates both `src/core/pricing.js` and `lib/core/pricing.js`.
-- `src/host.js` — Glue layer: `getRollups()` lists sessions via `persistence.listSnapshots()` (cheap stat-derived **revision per session**) and re-reads + re-folds ONLY changed/new sessions (8-way concurrency, LRU cap ~500); request-level cache (5 min TTL + stale-while-revalidate, single-flight per key); pre-warm on startup. Registers `/dash-api/usage|detail|calendar`.
+- `src/core/rollup.js` — **Pure aggregation engine** (no ctx, no IO): `foldSession(events)` materializes one compact per-session rollup (sparse hourly buckets with per-model token/cost detail + message counts + durations); `foldAppend(rollup, event)` applies ONE new event incrementally (byte-identical to a full refold — bench `[3]` asserts this); `queryUsage` / `queryDetail` / `queryCalendar` answer any window/filter in memory. `priceFor` lives here; `PRICES`/`VENDORS` are imported from `./pricing.js`.
+- `src/core/pricing.js` — **Generated** price + vendor table (USD × 7 → CNY ¥/M tokens) from `pricing/vibe-usage-model-pricing.csv` (203 models). Never edit by hand — change the CSV and run `npm run build`; `scripts/regenerate.cjs` regenerates both `src/core/pricing.js` and `lib/core/pricing.js`.
+- `src/host.js` — Glue layer: **event-driven rollups** — init() loads each session ONCE (live sessions from the in-memory Session object, others via `persistence.readFrom`); `ctx.on('session/event')` streams every new event into the matching rollup via `foldAppend` (no disk reads while DSH runs); a 60s reconcile timer loads new sessions and drops removed ones; request-level cache (5 min TTL + stale-while-revalidate, single-flight per key); pre-warm right after startup. Registers `/dash-api/usage|detail|calendar`.
 - `src/client.js` — Client-half source: registers `settings.section` (id `dashboard`, order 30, label "数据看板"); plain React + DOM charts (KPIs, trend, heatmap, calendar, records, distributions).
 - `lib/` — Build output (what DSH actually loads): `index.js` (host bundle), `core/rollup.js` (copied verbatim), `client.js` (UMD client bundle).
 - `scripts/regenerate.cjs` — Build script: adapts `src/` into `lib/` (host body extraction, `ctx.interval` → `setInterval`, `styles.insert` → injected `<style>` tag, UMD wrapper, `host.call` → GET `/dash-api/*`).
@@ -24,10 +24,10 @@ dsh-usage-dashboard — DSH (DeepSeek Harness) usage statistics dashboard plugin
 - Cost figures are estimates: USD price × 7 → CNY, from the generated `PRICES` table (`pricing/vibe-usage-model-pricing.csv`). New/changed prices belong in the CSV, never in code.
 - All aggregation is local; never send session data anywhere.
 
-## Performance architecture (v0.2)
+## Performance architecture (v0.3)
 
-1. **Materialized per-session rollups** — each session is folded exactly once per revision into hourly buckets (per-model `[in,out,cache,costIn,costOut,costCache,calls,durUA]`, message counts, gap durations, active time). All subsequent queries are pure memory aggregation.
-2. **Revision-delta loading** — `listSnapshots()` returns a `dev:ino:size:mtimeNs:ctimeNs` token per session; only changed/new sessions are re-read from disk (JSONL). Queries never touch disk after the first fold.
+1. **Materialized per-session rollups** — each session is folded into hourly buckets (per-model `[in,out,cache,costIn,costOut,costCache,calls,durUA]`, message counts, gap durations, active time). All queries are pure memory aggregation.
+2. **Event-driven freshness** — `ctx.on('session/event')` streams every new event into the matching rollup via `foldAppend` (µs/event). No `listSnapshots` revision scans and no full-log re-parses on refresh — DSH's JSONL backend expands packed-chunk rows, so a full `readFrom` of a busy session costs seconds; the stream avoids it entirely. Cold load happens once per DSH start (live sessions read from the in-memory Session object; persisted sessions via `readFrom`), pre-warmed ~500ms after boot, reconciled every 60s.
 3. **Window edge exactness** — windows rarely align with the hour (e.g. 7d starts at `now-7d`); edge buckets keep lightweight per-event detail (`evts`) and are accumulated exactly, including the cross-bucket gap bridge into the next bucket.
 4. **Heatmaps are derived, not stored** — 7×24 heat arrays are up-rolled from hourly buckets per query so window filtering stays correct with zero extra storage.
 

@@ -37,15 +37,25 @@ function pricingSource() {
     try { text = fs.readFileSync(f, 'utf8'); console.log('pricing csv:', f); break } catch { /* next */ }
   }
   if (!text) throw new Error('pricing CSV not found (expected pricing/vibe-usage-model-pricing.csv)')
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim())
   const prices = parsePricingCsv(text)
+  const vendors = {}
+  for (let i = 1; i < lines.length; i++) {
+    const parts = lines[i].split(',').map((s) => s.replace(/^"|"$/g, '').trim())
+    if (parts.length >= 2 && parts[0] && parts[1]) vendors[parts[0]] = parts[1]
+  }
   const body = Object.keys(prices).sort()
     .map((k) => JSON.stringify(k) + ':[' + prices[k].join(',') + ']').join(',\n  ')
-  const src = '// 定价表：由 scripts/regenerate.cjs 从 pricing/vibe-usage-model-pricing.csv 生成（USD × 7 → ¥/M tokens）。\n' +
+  const vbody = Object.keys(vendors).sort()
+    .map((k) => JSON.stringify(k) + ':' + JSON.stringify(vendors[k])).join(',\n  ')
+  const src = '// 定价与厂商表：由 scripts/regenerate.cjs 从 pricing/vibe-usage-model-pricing.csv 生成（USD × 7 → ¥/M tokens）。\n' +
     '// 请勿手改；更新定价请改 CSV 后运行 npm run build。\n' +
-    'export const PRICES = {\n  ' + body + '\n}\n'
+    'export const PRICES = {\n  ' + body + '\n}\n\n' +
+    '// 模型 → 厂商（系列分组用）\n' +
+    'export const VENDORS = {\n  ' + vbody + '\n}\n'
   fs.writeFileSync(path.join(root, 'src', 'core', 'pricing.js'), src)
   fs.writeFileSync(path.join(outDir, 'core', 'pricing.js'), src)
-  console.log('pricing models:', Object.keys(prices).length)
+  console.log('pricing models:', Object.keys(prices).length, ' vendors:', Object.keys(vendors).length)
   return src
 }
 pricingSource()
@@ -125,7 +135,7 @@ export function apply(ctx, config) {
 ${body}
 }
 
-export const inject = ["webServer", "sessionQuery", "sessionPersistence", "workspaceRegistry", "timer"]
+export const inject = ["webServer", "sessionQuery", "sessionPersistence", "workspaceRegistry", "timer", "sessions"]
 `
 
 fs.writeFileSync(path.join(outDir, 'index.js'), hostOut)
