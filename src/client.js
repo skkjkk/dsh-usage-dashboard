@@ -25,12 +25,12 @@ return {
       { key: 'dur', label: '时长' }
     ]
     const RANGES = [
-      { key: 'today', label: '今天' },
-      { key: '24h', label: '24H' },
-      { key: '7d', label: '7D' },
-      { key: '30d', label: '30D' },
-      { key: '90d', label: '90D' },
-      { key: 'custom', label: '自定义' }
+      { key: 'today', label: '今天', title: '今日 00:00 至今' },
+      { key: '24h', label: '24H', title: '最近 24 小时（滚动窗口，含昨天同时段）' },
+      { key: '7d', label: '7D', title: '最近 7 天（滚动窗口）' },
+      { key: '30d', label: '30D', title: '最近 30 天（滚动窗口）' },
+      { key: '90d', label: '90D', title: '最近 90 天（滚动窗口）' },
+      { key: 'custom', label: '自定义', title: '自定义起止日期' }
     ]
     const COST_TIP = '费用按 vibe-usage-model-pricing.csv 定价表估算（$ × 7 → ¥/百万 tokens），覆盖 203 个模型；未匹配模型暂不计费。点击卡片切换 ¥/＄。'
     const DUR_TIP = '会话时长说明：活跃时长 = 所有 turn 的累计时长（AI 实际生成内容时间，不含排队与首 Token 延迟）；总时长 = 各会话首条到末条消息的时间跨度，重叠（并行）会话只计一次后相加（含思考、看代码等空闲）。'
@@ -316,6 +316,7 @@ return {
           RANGES.map((x) => h('button', {
             key: x.key,
             type: 'button',
+            title: x.title,
             className: 'dd-pill' + (r === x.key ? ' on' : ''),
             onClick: () => props.setRange(x.key)
           }, x.label))),
@@ -868,23 +869,55 @@ return {
       return h('div', { className: 'dd-records' }, head, body)
     }
 
+    // 视图状态持久化：任何重挂载（关闭/重开设置、插件重载、页面刷新）都恢复上次选择，
+    // 不会自己跳回「今天」。localStorage 不可用时静默降级为默认值。
+    const PREFS_KEY = 'dsh.usageDashboard.v1'
+    function loadPrefs() {
+      try {
+        const raw = localStorage.getItem(PREFS_KEY)
+        if (!raw) return {}
+        const p = JSON.parse(raw)
+        const out = {}
+        if (p.range && RANGES.some((x) => x.key === p.range)) out.range = p.range
+        if (p.custom && Number.isFinite(p.custom.from) && Number.isFinite(p.custom.to)) {
+          out.custom = {
+            fromStr: p.custom.fromStr || fmtDate(new Date(p.custom.from)),
+            from: p.custom.from,
+            toStr: p.custom.toStr || fmtDate(new Date(p.custom.to)),
+            to: p.custom.to
+          }
+        }
+        if (Array.isArray(p.modelSel) && p.modelSel.length) out.modelSel = p.modelSel
+        if (typeof p.projectSel === 'string' && p.projectSel) out.projectSel = p.projectSel
+        if (p.costMode === 'usd' || p.costMode === 'cny') out.costMode = p.costMode
+        if (p.tokenMode === 'intl' || p.tokenMode === 'zh') out.tokenMode = p.tokenMode
+        return out
+      } catch (e) { return {} }
+    }
+    function savePrefs(p) {
+      try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)) } catch (e) { /* ignore */ }
+    }
+
     function Dashboard() {
       const [state, setState] = React.useState({ loading: true, error: false, data: null })
-      const [range, setRange] = React.useState('today')
-      const [custom, setCustom] = React.useState(defaultCustom())
-      const [modelSel, setModelSel] = React.useState(null)
-      const [projectSel, setProjectSel] = React.useState(null)
+      const prefsRef = React.useRef(null)
+      if (prefsRef.current === null) prefsRef.current = loadPrefs()
+      const prefs = prefsRef.current
+      const [range, setRange] = React.useState(prefs.range || 'today')
+      const [custom, setCustom] = React.useState(prefs.custom || defaultCustom())
+      const [modelSel, setModelSel] = React.useState(prefs.modelSel || null)
+      const [projectSel, setProjectSel] = React.useState(prefs.projectSel || null)
       const [busy, setBusy] = React.useState(false)
-      const [costMode, setCostMode] = React.useState('cny')
-      const [tokenMode, setTokenMode] = React.useState('intl')
+      const [costMode, setCostMode] = React.useState(prefs.costMode || 'cny')
+      const [tokenMode, setTokenMode] = React.useState(prefs.tokenMode || 'intl')
       const [anim, setAnim] = React.useState(false)
       const animTimer = React.useRef(0)
       const dataKeyRef = React.useRef(null)
-      const load = React.useCallback(() => {
-        setBusy(true)
+      const load = React.useCallback((silent) => {
+        if (!silent) setBusy(true)
         host.call('usage', { range: range, from: custom.from, to: custom.to, models: modelSel && modelSel.length ? modelSel : null, projects: projectSel ? [projectSel] : null }).then((r) => {
           setState({ loading: false, error: !r || !!r.error, data: !r || r.error ? null : r })
-          setBusy(false)
+          if (!silent) setBusy(false)
           // 筛选/范围变化时内容区做一次淡入过渡（同键的周期刷新不重复触发）
           const key = range + '|' + custom.from + '|' + custom.to + '|' + (modelSel || []).join(',') + '|' + (projectSel || '')
           if (dataKeyRef.current !== key) {
@@ -893,11 +926,14 @@ return {
             clearTimeout(animTimer.current)
             animTimer.current = setTimeout(() => setAnim(false), 450)
           }
-        }).catch(() => { setState({ loading: false, error: true, data: null }); setBusy(false) })
+        }).catch(() => { setState({ loading: false, error: true, data: null }); if (!silent) setBusy(false) })
       }, [range, custom.from, custom.to, modelSel, projectSel])
       React.useEffect(() => {
-        load()
-        const off = ctx.interval(() => load(), 30000)
+        savePrefs({ range, custom, modelSel, projectSel, costMode, tokenMode })
+      }, [range, custom, modelSel, projectSel, costMode, tokenMode])
+      React.useEffect(() => {
+        load(true)
+        const off = ctx.interval(() => load(true), 30000)
         return () => { off() }
       }, [load])
 
@@ -906,7 +942,7 @@ return {
       }
       if (state.error || !state.data || !state.data.totals) {
         return h('div', { className: 'dd-dash' },
-          h('div', { className: 'dd-empty' }, '数据加载失败', h('button', { type: 'button', onClick: load, style: { color: '#18181b', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 } }, '重试')))
+          h('div', { className: 'dd-empty' }, '数据加载失败', h('button', { type: 'button', onClick: () => load(false), style: { color: '#18181b', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 } }, '重试')))
       }
       const t = state.data.totals
       const pct = t.pct || {}
@@ -938,14 +974,14 @@ return {
       return h('div', { className: 'dd-dash' },
         h('div', { className: 'dd-sec-head' },
           h('h2', { className: 'dd-sec-heading' }, '数据看板'),
-          h('p', { className: 'dd-sec-intro' }, '查看 DSH 会话的 Token 用量、费用与时长统计，可按时间范围、模型系列与项目筛选。')),
+          h('p', { className: 'dd-sec-intro' }, '查看 DSH 会话的 Token 用量、费用与时长统计，可按时间范围、模型系列与项目筛选。24H/7D/30D/90D 为滚动窗口（从当前时刻往前推），口径与「今天」（今日 0 点起）不同。')),
         h(FilterBar, {
           range: range, setRange: setRange,
           custom: custom, setCustom: setCustom,
           modelSel: modelSel, setModelSel: setModelSel,
           projectSel: projectSel, setProjectSel: setProjectSel,
           meta: meta, busy: busy,
-          onApply: load
+          onApply: () => load(false)
         }),
         h('div', { className: 'dd-anim' + (anim ? ' on' : '') },
           h('div', { className: 'dd-rows' }, kpiCards.map(renderCard)),

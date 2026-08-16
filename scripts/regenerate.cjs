@@ -147,9 +147,9 @@ console.log('host lib/index.js:', hostOut.length, 'bytes')
 // ---------- client ----------
 const clientSrc = fs.readFileSync(path.join(root, 'src', 'client.js'), 'utf8')
 let c = clientSrc
-  // ctx.interval → 标准 setInterval（bundle client 无 interval）
-  .replace('ctx.interval(() => load(), 60000)', 'setInterval(() => load(), 60000)')
-  .replace('const off = ctx.interval(() => load(), 60000)', 'const off = setInterval(() => load(), 60000)')
+  // ctx.interval → 标准 setInterval（bundle client 无 interval；正则匹配任意延迟与
+  // 任意 load 调用形态，此前写死 60000 导致 30000 轮询时代换静默失效）
+  .replace(/ctx\.interval\(\(\) => load\([^)]*\), (\d+)\)/g, (m, delay) => 'setInterval(() => load(true), ' + delay + ')')
   .replace('return () => { off() }', 'return () => { clearInterval(off) }')
   // styles.insert(CSS) 是原型遗留：dsh 没有 styles 服务，改为向 document.head 注入 <style> 标签
   .replace(
@@ -206,7 +206,7 @@ console.log('client lib/client.js:', clientOut.length, 'bytes')
 const pkg = {
   name: PACKAGE_ID,
   description: 'DSH usage statistics dashboard: token / cost / duration / session aggregation with trend, heatmap and calendar views (settings.section "数据看板").',
-  version: '0.3.2',
+  version: '0.3.3',
   type: 'module',
   main: 'lib/index.js',
   exports: {
