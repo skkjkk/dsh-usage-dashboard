@@ -5,7 +5,7 @@
 // session data, then asserts field-level equality of every dashboard payload.
 //
 // Usage: npm run bench   (node scripts/bench.js)
-import { foldSession, foldAppend, queryUsage, queryDetail, queryCalendar, priceFor, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, cellOf } from '../src/core/rollup.js'
+import { foldSession, foldAppend, queryUsage, queryDetail, queryCalendar, priceFor, priceForAt, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, cellOf } from '../src/core/rollup.js'
 
 const DAY = 86400000
 
@@ -123,7 +123,8 @@ function legacyProcessSession(events, lo, hi, modelSet, gran) {
         if (usage) {
           const msg = ev.data.message
           const model = msg && msg.source ? String(msg.source.model || '') : ''
-          const pr = priceFor(model)
+          // 与 v0.3 引擎共享同一取价函数（含 DeepSeek 峰谷按事件时间定价）
+          const pr = priceForAt(model, t)
           const inp = num(usage.inputTokens)
           const otp = num(usage.outputTokens)
           const cr = num(usage.cacheReadTokens)
@@ -703,5 +704,57 @@ for (const s of sessions) {
 const t1 = process.hrtime.bigint()
 console.log('  new incremental refold (' + K + ' changed)'.padEnd(44) + ((Number(t1 - t0) / 1e6)).toFixed(2).padStart(10) + ' ms')
 console.log('  legacy would rescan all ' + SESSIONS + ' sessions on every refresh')
+
+console.log('\n[4] DeepSeek 峰谷定价（2026-08-17 00:00 北京时间起）')
+{
+  // 构造北京时间时刻：2026-08-17 10:00（高峰 9-12）、13:00（空闲）、15:00（高峰 14-18）、
+  // 19:00（空闲），以及生效前 2026-08-16 23:00
+  const bj = (d, h, m = 0) => Date.UTC(2026, 7, d, h - 8, m) // 北京时间 → UTC
+  const flash = 'deepseek-v4-flash'
+  const pro = 'deepseek-v4-pro'
+  const oldFlash = [3.08, 9.24, 0.098]
+  const oldPro = [9.24, 27.72, 0.308]
+  const cases = [
+    // [model, t, expected p, expected matched]
+    [flash, bj(17, 10), [3.0, 9.0, 0.10], flash],
+    [flash, bj(17, 13), [1.5, 4.5, 0.05], flash],
+    [flash, bj(17, 15), [3.0, 9.0, 0.10], flash],
+    [flash, bj(17, 19), [1.5, 4.5, 0.05], flash],
+    [flash, bj(17, 0), [1.5, 4.5, 0.05], flash],
+    [pro, bj(17, 10), [9.0, 27.0, 0.30], pro],
+    [pro, bj(17, 13), [4.5, 13.5, 0.15], pro],
+    // 生效前仍按旧价
+    [flash, bj(16, 23), oldFlash, flash],
+    [pro, bj(16, 23), oldPro, pro],
+    // 边界：12:00/18:00 高峰结束；8:59 空闲
+    [flash, bj(17, 11, 59), [3.0, 9.0, 0.10], flash],
+    [flash, bj(17, 12), [1.5, 4.5, 0.05], flash],
+    [flash, bj(17, 13, 59), [1.5, 4.5, 0.05], flash],
+    [flash, bj(17, 14), [3.0, 9.0, 0.10], flash],
+    [flash, bj(17, 17, 59), [3.0, 9.0, 0.10], flash],
+    [flash, bj(17, 18), [1.5, 4.5, 0.05], flash],
+    [flash, bj(17, 8, 59), [1.5, 4.5, 0.05], flash],
+    // 非 DeepSeek 模型不受影响
+    ['gpt-5', bj(17, 10), priceFor('gpt-5').p, 'gpt-5']
+  ]
+  for (const [model, t, expect, matched] of cases) {
+    const r = priceForAt(model, t)
+    if (!r || r.matched !== matched) throw new Error('peak matched: ' + model + ' @ ' + t + ' -> ' + JSON.stringify(r))
+    for (let i = 0; i < 3; i++) assertEq('peak ' + model + ' @' + t + ' p[' + i + ']', r.p[i], expect[i], 1e-9)
+  }
+  // 峰谷标记与区间价随行返回
+  const pk = priceForAt(flash, bj(17, 10))
+  if (!pk.ds || pk.peak[0] !== 3.0 || pk.off[0] !== 1.5) throw new Error('peak flag/range missing: ' + JSON.stringify(pk))
+  // 折叠计费与手工验算一致：高峰 10:00 1M 输入 + 1M 输出 + 1M 缓存读取
+  const evts = [
+    { type: 'user/message', time: bj(17, 10), data: { source: { kind: 'user' } } },
+    { type: 'assistant/message', time: bj(17, 10), data: { turn: 0, step: 0, usage: { inputTokens: 1e6, outputTokens: 1e6, cacheReadTokens: 1e6, cacheWriteTokens: 0 }, message: { source: { model: flash } } } }
+  ]
+  const roll = foldSession(evts)
+  const u = queryUsage([roll], { range: 'custom', from: bj(17, 0), to: bj(17, 23) }, {})
+  const expectCost = (3.0 + 9.0 + 0.10) // 元
+  assertEq('peak fold cost', u.totals.cost, expectCost, 1e-9)
+  console.log('  峰谷取价/边界/生效日期/折叠计费 OK (' + cases.length + ' cases)')
+}
 
 console.log('\nall checks passed ✔')

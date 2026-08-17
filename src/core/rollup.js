@@ -27,6 +27,48 @@ export function priceFor(model) {
   return null
 }
 
+// ---------- DeepSeek 峰谷定价（2026-08-17 00:00 北京时间起生效） ----------
+// 官方口径（UTC+8）：高峰时段 = 每日 9:00-12:00 与 14:00-18:00，其余为空闲时段；
+// 空闲时段价格为高峰时段的一半（元/百万 tokens）。生效前的事件按 CSV 静态价（USD×7）计。
+const DS_PEAK_SINCE = Date.UTC(2026, 7, 16, 16) // 2026-08-16T16:00Z = 08-17 00:00 +08:00
+// model → [输入(缓存未命中), 输出, 缓存(命中)] × [空闲, 高峰]
+const DS_PEAK = {
+  'deepseek-v4-flash': { in: [1.5, 3.0], out: [4.5, 9.0], cache: [0.05, 0.10] },
+  'deepseek-v4-pro': { in: [4.5, 9.0], out: [13.5, 27.0], cache: [0.15, 0.30] }
+}
+
+// 北京时间（UTC+8）小时数 0-23
+export function bjHour(t) {
+  return new Date(t + 8 * 3600000).getUTCHours()
+}
+
+// t 是否处于高峰时段（9:00-12:00、14:00-18:00，北京时间）
+export function isDSPeak(t) {
+  const h = bjHour(t)
+  return (h >= 9 && h < 12) || (h >= 14 && h < 18)
+}
+
+// 按事件时间取价：DeepSeek 峰谷模型在 2026-08-17 00:00（北京时间）后按峰/谷价计费；
+// 其余模型与生效前的事件一律使用静态价（CSV）。返回 { matched, p, peak?, off?, ds? }。
+export function priceForAt(model, t) {
+  const id = String(model || '')
+  if (!id) return null
+  const stripped = id.replace(/-free$/, '')
+  const key = DS_PEAK[stripped] ? stripped : (DS_PEAK[id] ? id : null)
+  if (key && typeof t === 'number' && t >= DS_PEAK_SINCE) {
+    const pk = isDSPeak(t) ? 1 : 0
+    const ds = DS_PEAK[key]
+    return {
+      matched: id,
+      p: [ds.in[pk], ds.out[pk], ds.cache[pk]],
+      peak: [ds.in[1], ds.out[1], ds.cache[1]],
+      off: [ds.in[0], ds.out[0], ds.cache[0]],
+      ds: true
+    }
+  }
+  return priceFor(id)
+}
+
 // ---------- time helpers ----------
 const HOUR = 3600000
 const DAY = 86400000
@@ -209,7 +251,7 @@ export function foldAppend(r, ev) {
       if (usage) {
         const msg = ev.data.message
         const model = msg && msg.source ? String(msg.source.model || '') : ''
-        const pr = priceFor(model)
+        const pr = priceForAt(model, t)
         const inp = num(usage.inputTokens)
         const otp = num(usage.outputTokens)
         const cr = num(usage.cacheReadTokens)
@@ -235,7 +277,8 @@ export function foldAppend(r, ev) {
         per[6] += 1
         per[8] = pr ? 1 : per[8]
         if (r._lastUserT !== null) per[7] += Math.max(0, t - r._lastUserT)
-        if (pr && !r.modelMeta.has(model)) r.modelMeta.set(model, { matched: pr.matched, p: pr.p })
+        // 元数据总是更新为「最近一条事件」的取价结果（DeepSeek 峰谷价随事件时间变化）
+        if (pr) r.modelMeta.set(model, { matched: pr.matched, p: pr.p, peak: pr.peak || null, off: pr.off || null, ds: !!pr.ds })
       }
       trackMsg(r, t)
       break
@@ -576,7 +619,7 @@ export function queryUsage(rollups, req, opts) {
     if (m.matched !== null) matchedTokensTotal += m.input + m.output + m.cache
   }
   const coverage = totalUsageTokensTotal > 0 ? Math.round(matchedTokensTotal / totalUsageTokensTotal * 100) : 0
-  const pricingRows = Array.from(modelAgg.values()).map((m) => ({ model: m.id, matched: m.matched, p: m.p }))
+  const pricingRows = Array.from(modelAgg.values()).map((m) => ({ model: m.id, matched: m.matched, p: m.p, peak: m.peak || null, off: m.off || null, ds: !!m.ds }))
   const models = Array.from(modelAgg.values()).sort((a, b) => b.cost - a.cost)
   const distModels = (modelSet ? models.filter((m) => modelSet.has(m.id)) : models)
     .map((m) => ({ id: m.id, tokens: m.input + m.output + m.cache, cost: m.cost }))
@@ -769,6 +812,9 @@ export function patchModelMeta(modelAgg, rollups) {
       if (g) {
         if (mm.matched !== null) g.matched = mm.matched
         if (mm.p !== null) g.p = mm.p
+        if (mm.peak) g.peak = mm.peak
+        if (mm.off) g.off = mm.off
+        if (mm.ds) g.ds = true
       }
     }
   }

@@ -206,7 +206,7 @@ console.log('client lib/client.js:', clientOut.length, 'bytes')
 const pkg = {
   name: PACKAGE_ID,
   description: 'DSH usage statistics dashboard: token / cost / duration / session aggregation with trend, heatmap and calendar views (settings.section "数据看板").',
-  version: '0.3.3',
+  version: '0.3.4',
   type: 'module',
   main: 'lib/index.js',
   exports: {

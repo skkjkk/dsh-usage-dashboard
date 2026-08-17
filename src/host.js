@@ -22,7 +22,7 @@
 import { foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, sessionTitle } from './core/rollup.js'
 
 export function apply(ctx, config) {
-  const TTL = 5 * 60 * 1000
+  const TTL = 30 * 1000 // 与客户端 30s 轮询对齐：查询本身 ~1-2ms，缓存只为并发去重，不冻结旧数据
   const MAX_SESSIONS = 500
   const RECONCILE_MS = 60000
   const FAST_FILE_BYTES = 1024 * 1024 // 冷启动快批次阈值：活跃会话 + ≤1MB 文件先加载
@@ -144,7 +144,12 @@ export function apply(ctx, config) {
     annotateAll(fast)
     ready = true
     // 大会话后台继续加载（不阻塞请求）；完成后数据自动就绪
-    loadAll(slow).then(() => annotateAll(slow)).catch(() => {})
+    loadAll(slow).then(() => {
+      annotateAll(slow)
+      // 后台补载可能改变统计结果：清空请求缓存，避免冷启动不完整数据
+      // 被 5 分钟 TTL 冻结（首个请求命中不完整快照后要等缓存过期才更新）
+      cache.clear()
+    }).catch(() => {})
   }
 
   function listRollups() {
