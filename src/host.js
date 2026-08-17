@@ -23,19 +23,21 @@ import { foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCal
 
 export function apply(ctx, config) {
   const TTL = 30 * 1000 // 与客户端 30s 轮询对齐：查询本身 ~1-2ms，缓存只为并发去重，不冻结旧数据
-  const MAX_SESSIONS = 500
   const RECONCILE_MS = 60000
   const FAST_FILE_BYTES = 1024 * 1024 // 冷启动快批次阈值：活跃会话 + ≤1MB 文件先加载
 
-  // request-level response cache: key → { at, data }
+  // request-level response cache: key → { at, data, failCount }
   const cache = new Map()
-  // session rollup state: session id → { rollup, cwd, title, at, pending[] }
+  const CACHE_MAX_FAIL = 3
+  const CACHE_STALE_MULTIPLIER = 2 // 清理阈值：TTL * 2
+  // session rollup state: session id → { rollup, cwd, title, at, pending[], needsReload }
   const states = new Map()
   let ready = false
   let initPromise = null
   const inflight = new Map() // cache key → Promise
 
   // ---------- helpers ----------
+
   function pathTitles() {
     const pathTitle = new Map()
     try {
@@ -48,8 +50,10 @@ export function apply(ctx, config) {
   function ensureState(id, header) {
     let st = states.get(id)
     if (!st) {
-      st = { rollup: emptyRollup(), cwd: (header && header.cwd) || '', title: null, at: Date.now(), pending: null }
+      st = { rollup: emptyRollup(), cwd: (header && header.cwd) || '', title: null, at: Date.now(), pending: [], needsReload: false }
       states.set(id, st)
+    } else {
+      if (st.needsReload === undefined) st.needsReload = false
     }
     return st
   }
@@ -69,142 +73,122 @@ export function apply(ctx, config) {
   async function loadSession(rec) {
     const id = rec.header.id
     const st = ensureState(id, rec.header)
+
+    // If already loading, return immediately (new session branch or concurrent load)
+    if (st.loading) return
+
+    st.loading = true
     let events = null
+    let readError = false
+
     try {
       const sessions = ctx.get('sessions')
       const live = sessions && sessions.get(id)
       if (live && live.events && live.events.length) events = live.events
     } catch (e) { /* fall through to persistence */ }
+
     if (!events) {
       try {
         const persist = ctx.get('sessionPersistence')
         const read = await persist.readFrom(id, 0)
         events = read && read.events ? read.events : null
-      } catch (e) { events = null }
-    }
-    if (!events || events.length === 0) return
-    const rollup = foldSession(events)
-    st.rollup = rollup
-    st.at = Date.now()
-    // events that streamed in while the catch-up read was in flight
-    if (st.pending && st.pending.length) {
-      const lastSeq = events[events.length - 1] && typeof events[events.length - 1].seq === 'number' ? events[events.length - 1].seq : -1
-      for (const ev of st.pending) {
-        if (typeof ev.seq === 'number' && ev.seq <= lastSeq) continue
-        foldAppend(rollup, ev)
+      } catch (e) {
+        readError = true
+        events = null
       }
-      st.pending = null
     }
-  }
 
-  async function init() {
-    const q = ctx.get('sessionQuery')
-    if (q === undefined) { ready = true; return }
-    const pathTitle = pathTitles()
-    let recs = []
-    try { recs = await q.listSessions() } catch (e) { recs = [] }
-    // 快批次 = 活跃会话（内存事件，零解析）+ 小文件会话；慢批次 = 大文件会话
-    // （readFrom 对打包块日志的全量展开很贵：大会话可达 ~30s）。先加载快批次，
-    // 首次请求秒级出数；慢批次在后台补载，随后续轮询自动补全。
-    let sizeById = new Map()
     try {
-      const persist = ctx.get('sessionPersistence')
-      const snaps = await persist.listSnapshots()
-      // revision token: dev:ino:size:mtimeNs:ctimeNs → size 在第三段
-      sizeById = new Map(snaps.map((s) => {
-        const parts = String((s && s.revision) || '').split(':')
-        return [s && s.header && s.header.id, Number(parts[2]) || 0]
-      }))
-    } catch (e) { /* no sizes available */ }
-    const sessions = ctx.get('sessions')
-    const isLive = (id) => { try { return !!(sessions && sessions.get(id)) } catch (e) { return false } }
-    const fast = []
-    const slow = []
-    for (const rec of recs) {
-      const id = rec.header.id
-      ;(isLive(id) || (sizeById.get(id) || 0) <= FAST_FILE_BYTES ? fast : slow).push(rec)
-    }
-    const loadAll = async (list) => {
-      let cursor = 0
-      async function worker() {
-        while (cursor < list.length) {
-          const rec = list[cursor++]
-          try { await loadSession(rec) } catch (e) { /* skip failed session */ }
+      if (readError) {
+        // readFrom threw: fold current pending into current rollup, clear pending,
+        // set needsReload=true, finally loading=false
+        if (st.pending && st.pending.length) {
+          for (const ev of st.pending) {
+            foldAppend(st.rollup, ev)
+          }
+          st.pending = []
         }
+        st.needsReload = true
+        return
       }
-      await Promise.all(Array.from({ length: 8 }, worker))
-    }
-    const annotateAll = (list) => {
-      for (const rec of list) {
-        const st = states.get(rec.header.id)
-        if (st) { try { annotate(st, rec, pathTitle) } catch (e) { /* ignore */ } }
+
+      // Preserve existing rollup when readFrom returns empty; do not re-initialize
+      const rollup = st.rollup || emptyRollup()
+      st.rollup = rollup
+
+      // Annotate rollup with cwd/title/projectTitle (uses pathTitles())
+      // Must be called after st.rollup assignment to ensure cwd/title/projectTitle are not lost
+      annotate(st, rec, pathTitles())
+
+      if (!events || events.length === 0) {
+        // readFrom returned empty: preserve existing rollup, fold pending events
+        // (do not treat as failure / clear retry marker)
+        if (st.pending && st.pending.length) {
+          for (const ev of st.pending) {
+            foldAppend(st.rollup, ev)
+          }
+        }
+        st.pending = []
+        st.needsReload = false  // clear needsReload since read was successful (even if empty)
+        st.at = Date.now()
+        return
       }
+
+      // Fold full history
+      const folded = foldSession(events)
+      st.rollup = folded
+      annotate(st, rec, pathTitles())  // re-annotate after rollup assignment to preserve metadata
+      st.at = Date.now()
+
+      // Merge pending events that streamed in during the catch-up read
+      // Dedup by history max seq: only append events with seq > maxSeq
+      const maxSeq = events.reduce((max, ev) => {
+        if (typeof ev.seq === 'number') return Math.max(max, ev.seq)
+        return max
+      }, -Infinity)
+      if (st.pending && st.pending.length) {
+        for (const ev of st.pending) {
+          if (typeof ev.seq === 'number' && ev.seq <= maxSeq) continue
+          foldAppend(st.rollup, ev)
+        }
+        st.pending = []
+      }
+
+      st.loading = false
+      st.needsReload = false
+    } finally {
+      // Ensure st.loading is never permanently true even if something unexpected happens
+      if (st.loading !== false) st.loading = false
     }
-    await loadAll(fast)
-    annotateAll(fast)
-    ready = true
-    // 大会话后台继续加载（不阻塞请求）；完成后数据自动就绪
-    loadAll(slow).then(() => {
-      annotateAll(slow)
-      // 后台补载可能改变统计结果：清空请求缓存，避免冷启动不完整数据
-      // 被 5 分钟 TTL 冻结（首个请求命中不完整快照后要等缓存过期才更新）
-      cache.clear()
-    }).catch(() => {})
   }
 
-  function listRollups() {
-    return Array.from(states.values())
-      .map((s) => s.rollup)
-      .filter((r) => r.last !== null)
-      .sort((a, b) => (b.last || 0) - (a.last || 0))
-      .slice(0, MAX_SESSIONS)
-  }
+  // ---------- event stream ----------
 
-  function getRollups() {
-    if (!ready) {
-      if (!initPromise) initPromise = init().catch(() => {}).finally(() => { initPromise = null; ready = true })
-      return initPromise.then(listRollups)
-    }
-    return Promise.resolve(listRollups())
-  }
-
-  // ---------- event-driven incremental updates ----------
-  // Every new session event streams straight into the matching rollup:
-  // no disk reads, no full-log re-parses, always fresh.
   ctx.on('session/event', (session, event) => {
     const id = session && (session.id || (session.header && session.header.id))
     if (!id || !event || typeof event.time !== 'number') return
-    const st = states.get(id)
-    if (st && st.pending === null) {
+    let st = states.get(id)
+    if (!st) {
+      // brand-new session: create state and start history load
+      st = ensureState(id, (session && session.header) || {})
+      st.pending.push(event)
+      loadSession({ header: session.header || {id} })
+      return
+    }
+    if (st.loading) {
+      // history still loading — buffer event with seq dedup
+      const already = st.pending.find((e) => e && typeof e.seq === 'number' && e.seq === event.seq)
+      if (!already) st.pending.push(event)
+    } else {
+      // history loaded: append directly (no pending)
       foldAppend(st.rollup, event)
       st.at = Date.now()
-    } else if (st) {
-      // history still loading — buffer and merge after the catch-up read
-      st.pending.push(event)
-    } else {
-      // brand-new session: buffer, then catch up its history once
-      const ns = ensureState(id, (session && session.header) || {})
-      ns.pending = [event]
-      try {
-        ctx.get('sessionPersistence').readFrom(id, 0).then((read) => {
-          if (!read || !read.events || !read.events.length) return
-          const rollup = foldSession(read.events)
-          const lastSeq = read.events[read.events.length - 1] && typeof read.events[read.events.length - 1].seq === 'number' ? read.events[read.events.length - 1].seq : -1
-          const pending = ns.pending || []
-          ns.pending = null
-          for (const ev of pending) {
-            if (typeof ev.seq === 'number' && ev.seq <= lastSeq) continue
-            foldAppend(rollup, ev)
-          }
-          ns.rollup = rollup
-          ns.at = Date.now()
-          ns.cwd = (read.meta && read.meta.cwd) || ns.cwd
-        }).catch(() => { ns.pending = null })
-      } catch (e) { ns.pending = null }
     }
   })
 
   // reconcile: load newly created sessions, drop removed ones
+  // all states participate in stats; reconcile reloads sessions with needsReload
+  // or empty rollup, without truncation cap
   const timer = ctx.get('timer')
   if (timer) {
     ctx.effect(() => timer.setInterval(async () => {
@@ -216,17 +200,20 @@ export function apply(ctx, config) {
       for (const id of Array.from(states.keys())) {
         if (!seen.has(id)) states.delete(id)
       }
+      // reload sessions that have needsReload or empty rollup
+      // fixed 4 workers, no infinite creation
+      const WORKER_COUNT = 4
       let cursor = 0
       async function worker() {
         while (cursor < recs.length) {
           const rec = recs[cursor++]
           const st = states.get(rec.header.id)
-          if (!st || st.rollup.last === null) {
-            try { await loadSession(rec) } catch (e) { /* skip */ }
+          if (!st || st.needsReload || st.rollup.last === null) {
+            try { await loadSession(rec) } catch (e) { /* skip failed session */ }
           }
         }
       }
-      await Promise.all(Array.from({ length: 4 }, worker))
+      await Promise.all(Array.from({ length: WORKER_COUNT }, () => worker()))
     }, RECONCILE_MS), 'usage-dashboard: reconcile')
   }
 
@@ -236,24 +223,59 @@ export function apply(ctx, config) {
   }
 
   // ---------- single-flight request helpers ----------
+
   async function cached(key, compute) {
     const now = Date.now()
-    const hit = cache.get(key)
-    if (hit && now - hit.at < TTL) return hit.data
+    // Clean up entries older than TTL * 2 (but not inflight entries)
+    for (const [k, v] of cache.entries()) {
+      if (!inflight.has(k) && now - v.at >= TTL * CACHE_STALE_MULTIPLIER) {
+        cache.delete(k)
+      }
+    }
+    let hit = cache.get(key)
+    // if entry exceeded max failures, drop it and recompute
+    if (hit && (hit.failCount || 0) >= CACHE_MAX_FAIL) {
+      cache.delete(key)
+      hit = null
+    }
+    // if hit exists and not expired, return it (stale-while-revalidate)
+    if (hit && now - hit.at < TTL) {
+      return hit.data
+    }
     if (hit) {
-      // stale-while-revalidate: serve stale, refresh in background (single-flight)
+      // stale-while-revalidate: serve stale data, refresh in background (single-flight)
       if (!inflight.has(key)) {
-        inflight.set(key, compute().then((data) => {
-          cache.set(key, { at: Date.now(), data })
+        const promise = compute().then((data) => {
+          // success: store with fresh timestamp, reset failCount
+          cache.set(key, { at: Date.now(), data, failCount: 0 })
           return data
-        }).catch(() => null).finally(() => inflight.delete(key)))
+        }).catch((e) => {
+          // increment failure count, keep stale data
+          const entry = cache.get(key)
+          if (entry) {
+            cache.set(key, { at: entry.at, data: entry.data, failCount: (entry.failCount || 0) + 1 })
+          }
+          return null
+        })
+        // always clean up inflight after promise settles (either way)
+        promise.then(() => inflight.delete(key), () => inflight.delete(key))
+        inflight.set(key, promise)
       }
       return hit.data
     }
+    // no hit at all: compute fresh result
+    // first compute failure should NOT cache data:null; instead allow the
+    // promise to propagate the error; the caller handles graceful degradation
     if (inflight.has(key)) return inflight.get(key)
     const p = compute().then((data) => {
-      cache.set(key, { at: now, data })
+      // success: store with fresh timestamp, reset failCount
+      cache.set(key, { at: Date.now(), data, failCount: 0 })
       return data
+    }).catch((e) => {
+      // compute failure: do NOT cache data:null; instead let the caller receive
+      // a graceful degradation by re-throwing after cleaning up inflight
+      inflight.delete(key)
+      throw e
     })
     inflight.set(key, p)
     try {
@@ -263,26 +285,38 @@ export function apply(ctx, config) {
     }
   }
 
-  // ---------- endpoints ----------
-  harness.handle('usage', (args) => cached(JSON.stringify({
-    range: args.range || 'today', from: args.from || null, to: args.to || null,
-    models: args.models || null, projects: args.projects || null
-  }), async () => {
-    const rollups = await getRollups()
-    return queryUsage(rollups, args || {}, { pathTitle: pathTitles() })
-  }))
+  // ---------- harness API endpoints ----------
 
-  harness.handle('detail', (args) => cached(JSON.stringify({
-    range: args.range || 'today', from: args.from || null, to: args.to || null,
-    models: args.models || null, projects: args.projects || null,
-    offset: Math.max(0, Number(args.offset) || 0), limit: Math.min(200, Math.max(1, Number(args.limit) || 100))
-  }), async () => {
-    const rollups = await getRollups()
-    return queryDetail(rollups, args || {})
-  }))
+  harness.handle('usage', (args) => {
+    // normalize range to 'today' so cache key and actual query are consistent
+    const input = args || {}
+    const normalized = { ...input, range: input.range || 'today' }
+    return cached(JSON.stringify(normalized), async () => {
+      const rollups = await getRollups()
+      return queryUsage(rollups, normalized, { pathTitle: pathTitles() })
+    })
+  })
+
+  harness.handle('detail', (args) => {
+    const input = args || {}
+    // Construct normalized args: range defaults to today, safely handle undefined
+    const normalized = {
+      range: input.range || 'today',
+      from: input.from != null ? input.from : null,
+      to: input.to != null ? input.to : null,
+      models: input.models != null ? input.models : null,
+      projects: input.projects != null ? input.projects : null,
+      offset: Math.max(0, Number(input.offset) || 0),
+      limit: Math.min(200, Math.max(1, Number(input.limit) || 100))
+    }
+    return cached(JSON.stringify(normalized), async () => {
+      const rollups = await getRollups()
+      return queryDetail(rollups, normalized)
+    })
+  })
 
   harness.handle('calendar', (args) => cached(JSON.stringify({
-    models: args.models || null, projects: args.projects || null
+    models: args != null ? args.models : null, projects: args != null ? args.projects : null
   }), async () => {
     const rollups = await getRollups()
     return queryCalendar(rollups, args || {})

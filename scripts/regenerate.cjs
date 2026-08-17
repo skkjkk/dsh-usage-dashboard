@@ -12,10 +12,13 @@ const root = path.resolve(__dirname, '..')
 const outDir = path.join(root, 'lib')
 fs.mkdirSync(path.join(outDir, 'core'), { recursive: true })
 
-const PACKAGE_ID = '@skkjkk/dsh-usage-dashboard'
+// 从现有 package.json 读取 name，兼容旧脚本直接运行（fallback 到硬编码值）
+let existingPkg = {}
+try { existingPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) } catch {}
+const PACKAGE_ID = existingPkg.name || '@skkjkk/dsh-usage-dashboard'
 
 // ---------- pricing: CSV → src/core/pricing.js + lib/core/pricing.js ----------
-// 计费标准 = pricing/vibe-usage-model-pricing.csv（缺失时回退用户机的 D:\download 副本）。
+// 计费标准 = pricing/vibe-usage-model-pricing.csv（缺失时抛出错误，非回退本地文件）。
 // 列：模型,厂商,输入($/M),输出($/M),缓存读取($/M) → [输入, 输出, 缓存] ¥/M tokens（$×7）。
 function parsePricingCsv(text) {
   const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim())
@@ -31,11 +34,8 @@ function parsePricingCsv(text) {
 }
 function pricingSource() {
   const local = path.join(root, 'pricing', 'vibe-usage-model-pricing.csv')
-  const fallback = 'D:/download/vibe-usage-model-pricing.csv'
   let text = null
-  for (const f of [local, fallback]) {
-    try { text = fs.readFileSync(f, 'utf8'); console.log('pricing csv:', f); break } catch { /* next */ }
-  }
+  try { text = fs.readFileSync(local, 'utf8'); console.log('pricing csv:', local) } catch { /* next */ }
   if (!text) throw new Error('pricing CSV not found (expected pricing/vibe-usage-model-pricing.csv)')
   const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim())
   const prices = parsePricingCsv(text)
@@ -81,9 +81,73 @@ const marker = 'export function apply(ctx, config) {'
 const start = hostSrc.indexOf(marker)
 if (start < 0) throw new Error('host marker not found: ' + marker)
 const bodyStart = start + marker.length
-// body = everything up to the apply function's own closing brace
-// (lastIndexOf('}') — the file's final top-level closing brace)
-let body = hostSrc.slice(bodyStart, hostSrc.lastIndexOf('}'))
+
+// 最小化 brace matcher：跳过单/双引号、模板字符串、行/块注释
+// 从 export function apply(ctx, config) { 的开括号开始，找匹配的闭括号
+function findMatchingClosingBrace(src, start) {
+  let pos = start
+  let depth = 1 // 已经消耗了调用标记里的 opening `{`
+  let inSingle = false
+  let inDouble = false
+  let inTemplate = false
+  let inLineComment = false
+  let inBlockComment = false
+
+  while (pos < src.length) {
+    const ch = src[pos]
+    if (inBlockComment) {
+      if (ch === '*' && pos + 1 < src.length && src[pos + 1] === '/') {
+        inBlockComment = false
+        pos += 2
+        continue
+      }
+      pos++
+      continue
+    }
+    if (inLineComment) {
+      if (ch === '\n') inLineComment = false
+      pos++
+      continue
+    }
+    if (inTemplate) {
+      if (ch === '`') inTemplate = false
+      pos++
+      continue
+    }
+    if (inSingle) {
+      if (ch === '\\' && pos + 1 < src.length) { pos += 2; continue }
+      if (ch === '\'') inSingle = false
+      pos++
+      continue
+    }
+    if (inDouble) {
+      if (ch === '\\' && pos + 1 < src.length) { pos += 2; continue }
+      if (ch === '"') inDouble = false
+      pos++
+      continue
+    }
+    // 状态转换：进入注释/字符串
+    if (ch === '/' && pos + 1 < src.length) {
+      if (src[pos + 1] === '*') { inBlockComment = true; pos += 2; continue }
+      if (src[pos + 1] === '/') { inLineComment = true; pos += 2; continue }
+    }
+    if (ch === '`') { inTemplate = true; pos++; continue }
+    if (ch === '\'') { inSingle = true; pos++; continue }
+    if (ch === '"') { inDouble = true; pos++; continue }
+    // 普通大括号计数
+    if (ch === '{') depth++
+    if (ch === '}') {
+      depth--
+      if (depth === 0) return pos
+    }
+    pos++
+  }
+  return -1
+}
+
+const closePos = findMatchingClosingBrace(hostSrc, bodyStart)
+if (closePos < 0) throw new Error('matching closing brace not found for host apply function')
+let body = hostSrc.slice(bodyStart, closePos)
 // 只清理尾部空白行（v0.2 host 直接以 export function apply 定义，
 // 函数体内嵌套的闭合括号必须原样保留）
 body = body.replace(/\n\s*\n\s*$/, '\n')
@@ -202,49 +266,71 @@ ${c}
 fs.writeFileSync(path.join(outDir, 'client.js'), clientOut)
 console.log('client lib/client.js:', clientOut.length, 'bytes')
 
+const existingPkgPath = path.join(root, 'package.json')
+
 // ---------- package.json ----------
+// 只更新构建所需的字段，保留现有 version、description、repository、private、publishConfig 及任何额外 metadata
+// 合并模式：保留 existingPkg 全部字段，只覆盖/补齐构建必需的键
 const pkg = {
-  name: PACKAGE_ID,
-  description: 'DSH usage statistics dashboard: token / cost / duration / session aggregation with trend, heatmap and calendar views (settings.section "数据看板").',
-  version: '0.3.4',
-  type: 'module',
+  ...existingPkg,
+  // 确保关键构建字段始终正确
   main: 'lib/index.js',
   exports: {
     '.': './lib/index.js',
     './client': './lib/client.js',
-    './package.json': './package.json'
+    './package.json': './package.json',
+    // 三个额外入口：usage、detail、calendar（在现有基础上补齐）
+    './usage': './lib/index.js',
+    './detail': './lib/index.js',
+    './calendar': './lib/index.js'
   },
   scripts: {
+    ...existingPkg.scripts,
     build: 'node scripts/regenerate.cjs',
     bench: 'node scripts/bench.js',
     prepublishOnly: 'npm run build'
   },
   dsh: {
     bundle: {
+      ...existingPkg.dsh?.bundle,
       patch: './cordis.patch.yml'
     },
     client: {
-      inject: [
-        '@deepseek-ai/dsh-client-runtime',
-        '@deepseek-ai/dsh-client-connection',
-        '@deepseek-ai/dsh-client-ui-settings'
-      ],
-      platform: 'web'
+      ...existingPkg.dsh?.client,
+      // 仅在缺失时补全 inject/platform（避免重复）
+      inject: (() => {
+        const existing = existingPkg.dsh?.client?.inject || []
+        const toAdd = ['@deepseek-ai/dsh-client-runtime', '@deepseek-ai/dsh-client-connection', '@deepseek-ai/dsh-client-ui-settings']
+        return [...new Set([...existing, ...toAdd])]
+      })(),
+      platform: existingPkg.dsh?.client?.platform || 'web'
     }
   },
   peerDependencies: {
-    '@deepseek-ai/dsh-client-connection': '^0.1.0-rc.6',
-    '@deepseek-ai/dsh-client-runtime': '^0.1.0-rc.6',
-    '@deepseek-ai/dsh-client-ui-settings': '^0.1.0-rc.6',
-    react: '^18.2.0'
+    ...existingPkg.peerDependencies,
+    '@deepseek-ai/dsh-client-connection': existingPkg.peerDependencies?.['@deepseek-ai/dsh-client-connection'] || '^0.1.0-rc.6',
+    '@deepseek-ai/dsh-client-runtime': existingPkg.peerDependencies?.['@deepseek-ai/dsh-client-runtime'] || '^0.1.0-rc.6',
+    '@deepseek-ai/dsh-client-ui-settings': existingPkg.peerDependencies?.['@deepseek-ai/dsh-client-ui-settings'] || '^0.1.0-rc.6',
+    react: existingPkg.peerDependencies?.react || '^18.2.0'
   },
-  files: ['lib', 'pricing', 'cordis.patch.yml'],
-  license: 'Apache-2.0'
+  files: [
+    ...new Set([
+      ...(existingPkg.files || []),
+      'lib',
+      'pricing',
+      'cordis.patch.yml'
+    ])
+  ]
 }
-fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(pkg, null, 2) + '\n')
-console.log('package.json written (v' + pkg.version + ')')
+// 保留现有版本描述等元数据，不重置版本
+if (pkg.version !== undefined) pkg.version = existingPkg.version || pkg.version
+if (pkg.description !== undefined) pkg.description = existingPkg.description || pkg.description
+if (pkg.name === undefined) pkg.name = existingPkg.name || PACKAGE_ID
+fs.writeFileSync(existingPkgPath, JSON.stringify(pkg, null, 2) + '\n')
+console.log('package.json written (v' + (pkg.version || 'unknown') + ')')
 
-// 语法冒烟：host 与 core 用 node --check（ESM 需 .mjs 或 --input-type），检查文件放系统临时目录
+// 语法冒烟：host 与 core 实际执行 `node --check`，完成后删除临时文件
+const { execFileSync } = require('child_process')
 const checks = [
   [path.join(outDir, 'index.js'), '.mjs'],
   [path.join(outDir, 'core', 'rollup.js'), '.mjs'],
@@ -253,5 +339,13 @@ const checks = [
 for (const [src, ext] of checks) {
   const tmp = path.join(os.tmpdir(), '.tmp-check-' + process.pid + '-' + path.basename(src).replace(/[^\w.-]/g, '_') + ext)
   fs.writeFileSync(tmp, fs.readFileSync(src))
-  console.log('check file written:', tmp)
+  try {
+    execFileSync(process.execPath, ['--check', tmp], { stdio: 'inherit' })
+    console.log('syntax ok:', tmp)
+  } catch (e) {
+    console.log('syntax check failed:', tmp, String((e && e.message) || e))
+    throw e
+  } finally {
+    try { fs.unlinkSync(tmp) } catch {}
+  }
 }

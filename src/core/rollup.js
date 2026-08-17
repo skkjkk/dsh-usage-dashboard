@@ -97,6 +97,7 @@ export function hourOf(t) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours()).getTime()
 }
 export function rangeBounds(req) {
+  if (!req || !req.range) return [0, Date.now()]
   const now = Date.now()
   const d = new Date()
   const sod = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
@@ -111,9 +112,9 @@ export function rangeBounds(req) {
   }
 }
 export function prevWindow(range, lo, hi) {
-  if (range === 'today') return [lo - DAY, lo]
-  const span = hi - lo
-  return [lo - span, lo]
+  if (range === 'today') return [lo - DAY, lo - 1]
+  const span = hi - lo + 1
+  return [lo - span, lo - 1]
 }
 export function pickGranularity(req, lo, hi) {
   if (req.range === 'today' || req.range === '24h') return 'hour'
@@ -244,7 +245,10 @@ export function foldAppend(r, ev) {
         bucketAt(r, open.hk).activeMs += diff
         // backfill the exact duration onto the step/start event detail so
         // window EDGE buckets can filter activeMs precisely
-        if (open.evtIdx >= 0 && open.bucketEvts) open.bucketEvts[open.evtIdx][10] += diff
+        if (open.evtIdx >= 0 && open.bucketEvts) {
+          open.bucketEvts[open.evtIdx][10] += diff
+          open.bucketEvts[open.evtIdx][11] = t
+        }
         r._openSteps.delete(stepKey)
       }
       const usage = ev.data.usage
@@ -289,7 +293,7 @@ export function foldAppend(r, ev) {
       b.hasMsg = true
       if (t < b.first || !b.first) b.first = t
       if (t > b.last) b.last = t
-      b.evts.push([t, 3, null, 0, 0, 0, 0, 0, 0, 0, 0])
+      b.evts.push([t, 3, null, 0, 0, 0, 0, 0, 0, 0, 0, 0])
       trackMsg(r, t)
       if (ev.data && ev.data.callId) r._pendingCalls.set(ev.data.callId, { t, hk: hourOf(t), evtIdx: b.evts.length - 1, bucketEvts: b.evts })
       break
@@ -308,8 +312,11 @@ export function foldAppend(r, ev) {
         if (open) {
           const diff = Math.max(0, t - open.t)
           bucketAt(r, open.hk).activeMs += diff
-          if (open.evtIdx >= 0 && open.bucketEvts) open.bucketEvts[open.evtIdx][10] += diff
-          r._pendingCalls.delete(src.callId)
+          if (open.evtIdx >= 0 && open.bucketEvts) {
+          open.bucketEvts[open.evtIdx][10] += diff
+          open.bucketEvts[open.evtIdx][11] = t
+        }
+        r._pendingCalls.delete(src.callId)
         }
       }
       break
@@ -317,7 +324,7 @@ export function foldAppend(r, ev) {
     case 'step/start': {
       const stepKey = ev.data.turn + ':' + ev.data.step
       const b = bucketAt(r, t)
-      b.evts.push([t, 5, null, 0, 0, 0, 0, 0, 0, 0, 0])
+      b.evts.push([t, 5, null, 0, 0, 0, 0, 0, 0, 0, 0, 0])
       r._openSteps.set(stepKey, { t, hk: hourOf(t), evtIdx: b.evts.length - 1, bucketEvts: b.evts })
       break
     }
@@ -337,6 +344,19 @@ export function foldSession(events) {
 // Single pass over the rollups; the current window and the previous
 // (comparison) window are accumulated in the same traversal.
 export function queryUsage(rollups, req, opts) {
+  if (!req || !req.range) {
+    return {
+      totals: {
+        cost: 0, inputTokens: 0, outputTokens: 0, cacheTokens: 0, totalTokens: 0,
+        activeMs: 0, totalMs: 0, sessions: 0,
+        userMessages: 0, injectedMessages: 0, assistantMessages: 0, toolCalls: 0, toolResults: 0, totalMessages: 0
+      },
+      buckets: [],
+      granularity: 'hour',
+      heat: { token: new Array(168).fill(0), cost: new Array(168).fill(0), dur: new Array(168).fill(0), active: new Array(168).fill(0) },
+      meta: { models: [], projects: [], vendors: {}, pricing: { coverage: 0, rows: [] }, dist: { models: [], projects: [] } }
+    }
+  }
   const [lo, hi] = rangeBounds(req)
   const gran = pickGranularity(req, lo, hi)
   const [plo, phi] = prevWindow(req.range, lo, hi)
@@ -361,6 +381,7 @@ export function queryUsage(rollups, req, opts) {
   const heatToken = new Array(168).fill(0)
   const heatCost = new Array(168).fill(0)
   const heatDur = new Array(168).fill(0)
+  const activeHeat = new Array(168).fill(0)
   const modelAgg = new Map()      // model → { id, calls, input, output, cache, cost, matched, p }
   const projectAgg = new Map()    // cwd → { input, output, cache, cost }
   const projectList = new Map()   // cwd → { id, title, sessions } (all rollups)
@@ -376,20 +397,21 @@ export function queryUsage(rollups, req, opts) {
 
   for (let i = 0; i < rollups.length; i++) {
     const r = rollups[i]
-    const cwd = r.cwd || ''
-    // project dropdown entry (every rollup, independent of window)
-    const id = cwd || '__none__'
-    let pl = projectList.get(id)
+    // project dropdown entry (every rollup, independent of window); use cwd ||
+    // '__none__' as the canonical key so the filter below is consistent across
+    // queryUsage/queryDetail/queryCalendar.
+    const cwdKey = r.cwd || '__none__'
+    let pl = projectList.get(cwdKey)
     if (!pl) {
-      const base = cwd.split(/[\\/]/).filter(Boolean).pop() || ''
-      pl = { id, title: pathTitle.get(cwd) || base || '未分组', sessions: 0 }
-      projectList.set(id, pl)
+      const base = (r.cwd || '').split(/[\\/]/).filter(Boolean).pop() || ''
+      pl = { id: cwdKey, title: pathTitle.get(r.cwd) || base || '未分组', sessions: 0 }
+      projectList.set(cwdKey, pl)
     }
     pl.sessions += 1
 
     // project filter: skip aggregation for non-selected projects (dropdown
     // still lists every project, matching the previous behavior)
-    if (projectSet !== null && !projectSet.has(cwd)) continue
+    if (projectSet !== null && !projectSet.has(cwdKey)) continue
 
     let inCur = false
     let inPrev = false
@@ -412,6 +434,22 @@ export function queryUsage(rollups, req, opts) {
       if (e > s) prevInts.push([s, e])
     }
 
+    // Compute active Ms by scanning all r.buckets' evts type 5/3 (replaces
+    // inline bucket-loop active computation). isCurrent=true writes to
+    // totals/activeHeat/bucketMap; isCurrent=false writes to totals only.
+    if (inCur) {
+      const sinkCur = {
+        totals: cur.totals,
+        activeHeat: activeHeat,
+        bucketMap: bucketMap
+      }
+      computeRollupActiveMs(r, lo, hi, gran, sinkCur, true)
+    }
+    if (inPrev) {
+      const sinkPrev = { totals: prev.totals }
+      computeRollupActiveMs(r, plo, phi, gran, sinkPrev, false)
+    }
+
     const gkSpan = new Map() // per-rollup gran-key spans → trend totalMs/sessions
     let edgeLastCur = null // { hk, t }: last in-window msg of the lower-edge bucket
     for (const [hk, b] of r.buckets) {
@@ -430,7 +468,7 @@ export function queryUsage(rollups, req, opts) {
               const gk = bucketKey(last.t, gran)
               let g = bucketMap.get(gk)
               if (!g) {
-                g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0 }
+                g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0, activeMs: 0 }
                 bucketMap.set(gk, g)
               }
               g.durMs += gap
@@ -450,7 +488,7 @@ export function queryUsage(rollups, req, opts) {
       if (curEdge) {
         const lastT = edgeAccumulate(lo, hi, modelSet, b.evts, cellOf(lo), {
           totals: cur.totals, heatToken, heatCost, heatDur,
-          bucketMap, gran, modelAgg, projectAgg, cwd, gkSpan
+          bucketMap, gran, modelAgg, projectAgg, cwdKey, gkSpan
         })
         if (lastT !== null) edgeLastCur = { hk, t: lastT }
       } else if (inCurB && b.per.size > 0) {
@@ -485,13 +523,14 @@ export function queryUsage(rollups, req, opts) {
             if (modelSet.has(model)) acc(prev, per)
           }
         }
+        prev.totals.userMessages += b.msg[0]
+        prev.totals.injectedMessages += b.msg[1]
+        prev.totals.assistantMessages += b.msg[2]
+        prev.totals.toolCalls += b.msg[3]
+        prev.totals.toolResults += b.msg[4]
       }
 
       if (inCurB) {
-        // activeMs: edge buckets contribute their EXACT per-event value via
-        // edgeAccumulate (step/call durations backfilled in evts); aggregate
-        // buckets use the folded value
-        if (!curEdge) cur.totals.activeMs += b.activeMs
         if (!curEdge) {
           cur.totals.userMessages += b.msg[0]
           cur.totals.injectedMessages += b.msg[1]
@@ -502,7 +541,7 @@ export function queryUsage(rollups, req, opts) {
           const gk = bucketKey(hk, gran)
           let g = bucketMap.get(gk)
           if (!g) {
-            g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0 }
+            g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0, activeMs: 0 }
             bucketMap.set(gk, g)
           }
           g.durMs += b.durGap
@@ -515,8 +554,8 @@ export function queryUsage(rollups, req, opts) {
             }
           }
           if (b.per.size > 0) {
-            let pg = projectAgg.get(cwd)
-            if (!pg) { pg = { input: 0, output: 0, cache: 0, cost: 0 }; projectAgg.set(cwd, pg) }
+            let pg = projectAgg.get(cwdKey)
+            if (!pg) { pg = { input: 0, output: 0, cache: 0, cost: 0 }; projectAgg.set(cwdKey, pg) }
             if (modelSet === null) {
               for (const per of b.per.values()) {
                 g.input += per[0]; g.output += per[1]; g.cache += per[2]
@@ -534,16 +573,6 @@ export function queryUsage(rollups, req, opts) {
               }
             }
           }
-        }
-      }
-      if (inPrevB) {
-        if (!prevEdge) prev.totals.activeMs += b.activeMs
-        if (!prevEdge) {
-          prev.totals.userMessages += b.msg[0]
-          prev.totals.injectedMessages += b.msg[1]
-          prev.totals.assistantMessages += b.msg[2]
-          prev.totals.toolCalls += b.msg[3]
-          prev.totals.toolResults += b.msg[4]
         }
       }
     }
@@ -607,7 +636,8 @@ export function queryUsage(rollups, req, opts) {
       costCache: b ? b.costCache : 0,
       durMs: b ? b.durMs : 0,
       totalMs: b ? b.totalMs : 0,
-      sessions: b ? b.sessions : 0
+      sessions: b ? b.sessions : 0,
+      activeMs: b ? b.activeMs : 0
     }
   })
 
@@ -641,7 +671,7 @@ export function queryUsage(rollups, req, opts) {
     totals: cur.totals,
     buckets,
     granularity: gran,
-    heat: { token: heatToken, cost: heatCost, dur: heatDur },
+    heat: { token: heatToken, cost: heatCost, dur: heatDur, active: activeHeat },
     meta: { models, projects, vendors, pricing: { coverage, rows: pricingRows }, dist: { models: distModels, projects: distProjects } }
   }
 }
@@ -701,10 +731,8 @@ function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
     any = true
     const type = e[1]
     if (type === 5) {
-      // step/start: contributes only its exact (backfilled) activeMs;
-      // it is not a message — no counts, spans, or gap participation
-      const am = e[10] || 0
-      if (am > 0) sink.totals.activeMs += am
+      // step/start: contributes only its exact time span via intersection helper;
+      // no activeMs backfill here to avoid double-counting (handled in queryUsage loop)
       continue
     }
     lastT = t
@@ -740,7 +768,7 @@ function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
             const gk = bucketKey(t, sink.gran)
             let g = sink.bucketMap.get(gk)
             if (!g) {
-              g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0 }
+              g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0, activeMs: 0 }
               sink.bucketMap.set(gk, g)
             }
             g.input += inp; g.output += otp; g.cache += cache
@@ -756,8 +784,7 @@ function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
       }
     } else if (type === 3) {
       sink.totals.toolCalls += 1
-      const am = e[10] || 0
-      if (am > 0) sink.totals.activeMs += am
+      // activeMs handled in queryUsage loop via computeBucketActiveMs; no double-count here
     } else {
       sink.totals.toolResults += 1
     }
@@ -770,7 +797,7 @@ function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
           const gk = bucketKey(prevT, sink.gran)
           let g = sink.bucketMap.get(gk)
           if (!g) {
-            g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0 }
+            g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0, activeMs: 0 }
             sink.bucketMap.set(gk, g)
           }
           g.durMs += gap
@@ -784,11 +811,56 @@ function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
   return lastT
 }
 
+// Pure helper: compute activeMs by scanning all r.buckets' evts type 5/3.
+// Intersects each event's [start, end] with [lo, hi], accumulates to totals/heat/bucketMap.
+// isCurrent=true: write to totals.activeMs, activeHeat[cellOf(Math.max(start,lo))],
+//               bucketMap[gk].activeMs = (g.activeMs || 0) + dur
+// isCurrent=false: write to totals.activeMs only (previous window, no heat/buckets)
+function computeRollupActiveMs(r, lo, hi, gran, sink, isCurrent) {
+  let totalActive = 0
+  for (const [hk, b] of r.buckets) {
+    for (let i = 0; i < b.evts.length; i++) {
+      const e = b.evts[i]
+      const type = e[1]
+      if (type !== 5 && type !== 3) continue // only step/start and tool/call
+      if (!(typeof e[11] === 'number' && Number.isFinite(e[11]))) continue // skip unclosed interval; require finite end
+      const start = e[0]
+      const end = e[11]
+      if (end <= start) continue
+      const isectStart = Math.max(start, lo)
+      const isectEnd = Math.min(end, hi)
+      if (isectStart >= isectEnd) continue
+      const dur = isectEnd - isectStart
+      totalActive += dur
+      if (isCurrent) {
+        // Write to totals.activeMs
+        sink.totals.activeMs += dur
+        // Write to activeHeat[cellOf(Math.max(start,lo))] — current window only
+        const cell = cellOf(Math.max(start, lo))
+        sink.activeHeat[cell] += dur
+        // Write to bucketMap[gk].activeMs using (g.activeMs || 0) + dur
+        const gk = bucketKey(isectStart, gran)
+        let g = sink.bucketMap.get(gk)
+        if (!g) {
+          g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0, activeMs: 0 }
+          sink.bucketMap.set(gk, g)
+        }
+        g.activeMs = (g.activeMs || 0) + dur
+      } else {
+        // Previous window: only add to totals.activeMs, skip heat/bucketMap
+        sink.totals.activeMs += dur
+      }
+    }
+  }
+  return totalActive
+}
+
 // First event time within [tLo, tHi] in a bucket's detail, or null.
 function firstInWindow(b, tLo, tHi) {
   const evts = b.evts
   for (let i = 0; i < evts.length; i++) {
     const t = evts[i][0]
+    if (evts[i][1] === 5) continue // ignore step/start
     if (t >= tLo && t <= tHi) return t
   }
   return null
@@ -822,6 +894,7 @@ export function patchModelMeta(modelAgg, rollups) {
 
 // ---------- query: detail records ----------
 export function queryDetail(rollups, req) {
+  if (!req || !req.range) return { gran: 'hour', total: 0, rows: [] }
   const [lo, hi] = rangeBounds(req)
   let gran = req.range === 'today' || req.range === '24h' ? 'hour' : 'day'
   if (req.range === 'custom') gran = (hi - lo) <= 48 * HOUR ? 'hour' : 'day'
@@ -831,7 +904,7 @@ export function queryDetail(rollups, req) {
   const bucketMap = new Map() // key: gk \u0000 model \u0000 cwd
   for (let i = 0; i < rollups.length; i++) {
     const r = rollups[i]
-    if (projectSet !== null && !projectSet.has(r.cwd || '')) continue
+    if (projectSet !== null && !projectSet.has(r.cwd || '__none__')) continue
     if (r.first === null || r.last === null || r.last < lo || r.first > hi) continue
     const project = r.projectTitle || '未分组'
     const cwdKey = r.cwd || ''
@@ -843,6 +916,9 @@ export function queryDetail(rollups, req) {
           const t = e[0]
           if (t < lo || t > hi) continue
           if (e[1] !== 2) continue
+          // Skip assistant events with null model from detail rows;
+          // totals assistantMessages still count separately (managed by queryUsage)
+          if (e[2] === null) continue
           const model = e[2] || ''
           if (modelSet !== null && !modelSet.has(model)) continue
           const gk = bucketKey(t, gran)
@@ -894,18 +970,18 @@ export function queryDetail(rollups, req) {
 
 // ---------- query: calendar (53-week daily activity) ----------
 export function queryCalendar(rollups, req) {
-  const now = Date.now()
-  const d = new Date()
+  const now = (req || {}).now ?? Date.now()
+  const d = new Date(now)
   const thisSunday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()).getTime()
   const start = thisSunday - 52 * 7 * DAY
-  const end = thisSunday + 6 * DAY
+  const end = now  // use now instead of fixed Saturday 00:00 (old bug)
   const modelSet = Array.isArray(req.models) && req.models.length ? new Set(req.models) : null
   const projectSet = Array.isArray(req.projects) && req.projects.length ? new Set(req.projects) : null
   const dayMap = new Map()
-  const endHour = hourOf(end)
+  const endHour = hourOf(now)  // use now instead of hourOf(end) which was always midnight
   for (let i = 0; i < rollups.length; i++) {
     const r = rollups[i]
-    if (projectSet !== null && !projectSet.has(r.cwd || '')) continue
+    if (projectSet !== null && !projectSet.has(r.cwd || '__none__')) continue
     if (r.first === null || r.last === null || r.last < start || r.first > end) continue
     for (const [hk, b] of r.buckets) {
       if (hk < start || hk > end) continue
@@ -917,7 +993,7 @@ export function queryCalendar(rollups, req) {
         for (const e of b.evts) {
           if (e[1] !== 2) continue
           const t = e[0]
-          if (t > end) continue
+          if (t > now) continue  // use now instead of end (which is now)
           const model = e[2]
           if (modelSet !== null && !modelSet.has(model)) continue
           total += e[3] + e[4] + e[5]
