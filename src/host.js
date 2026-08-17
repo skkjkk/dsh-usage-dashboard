@@ -28,6 +28,7 @@ export function apply(ctx, config) {
 
   // request-level response cache: key → { at, data, failCount }
   const cache = new Map()
+  let dataVersion = 0
   const CACHE_MAX_FAIL = 3
   const CACHE_STALE_MULTIPLIER = 2 // 清理阈值：TTL * 2
   // session rollup state: session id → { rollup, cwd, title, at, pending[], needsReload }
@@ -38,19 +39,39 @@ export function apply(ctx, config) {
 
   // ---------- helpers ----------
 
-  function pathTitles() {
+  function normalizePath(value) {
+    let s = String(value || '').trim().replace(/\\/g, '/')
+    while (s.length > 1 && s.endsWith('/')) s = s.slice(0, -1)
+    // Windows paths are case-insensitive; keeping one spelling prevents
+    // workspace/session aliases from becoming separate project rows.
+    if (/^[a-z]:\//i.test(s)) s = s.toLowerCase()
+    return s
+  }
+
+  function workspaceInfo() {
     const pathTitle = new Map()
+    const sessionProject = new Map()
     try {
       const wr = ctx.get('workspaceRegistry')
-      if (wr) for (const w of wr.list()) pathTitle.set(w.path, w.title)
+      if (wr) for (const w of wr.list()) {
+        const cwd = normalizePath(w.path)
+        if (cwd) pathTitle.set(cwd, w.title)
+        for (const id of (w.sessionIds || [])) {
+          sessionProject.set(String(id), { cwd, title: w.title })
+        }
+      }
     } catch (e) { /* ignore */ }
-    return pathTitle
+    return { pathTitle, sessionProject }
+  }
+
+  function pathTitles() {
+    return workspaceInfo().pathTitle
   }
 
   function ensureState(id, header) {
     let st = states.get(id)
     if (!st) {
-      st = { rollup: emptyRollup(), cwd: (header && header.cwd) || '', title: null, at: Date.now(), pending: [], needsReload: false }
+      st = { rollup: emptyRollup(), cwd: (header && header.cwd) || '', title: null, at: Date.now(), pending: [], needsReload: false, loadingPromise: null }
       states.set(id, st)
     } else {
       if (st.needsReload === undefined) st.needsReload = false
@@ -58,14 +79,17 @@ export function apply(ctx, config) {
     return st
   }
 
-  function annotate(st, rec, pathTitle) {
-    st.cwd = rec.header.cwd || ''
-    st.title = sessionTitle(rec, pathTitle)
-    const base = (st.cwd || '').split(/[\\/]/).filter(Boolean).pop() || ''
-    st.rollup.id = rec.header.id
+  function annotate(st, rec, info) {
+    const header = rec.header || {}
+    const membership = info.sessionProject.get(String(header.id))
+    const rawCwd = header.cwd || (membership && membership.cwd) || ''
+    st.cwd = normalizePath(rawCwd)
+    st.title = sessionTitle(rec, info.pathTitle)
+    const base = st.cwd.split('/').filter(Boolean).pop() || ''
+    st.rollup.id = header.id
     st.rollup.cwd = st.cwd
     st.rollup.title = st.title
-    st.rollup.projectTitle = pathTitle.get(st.cwd) || base || '未分组'
+    st.rollup.projectTitle = info.pathTitle.get(st.cwd) || (membership && membership.title) || base || '未分组'
   }
 
   // Load one session's FULL history once: live sessions come from the
@@ -73,11 +97,20 @@ export function apply(ctx, config) {
   async function loadSession(rec) {
     const id = rec.header.id
     const st = ensureState(id, rec.header)
-
-    // If already loading, return immediately (new session branch or concurrent load)
-    if (st.loading) return
-
+    if (st.loading) return st.loadingPromise || undefined
     st.loading = true
+    const promise = loadSessionBody(rec, st)
+    st.loadingPromise = promise
+    try {
+      return await promise
+    } finally {
+      st.loading = false
+      st.loadingPromise = null
+    }
+  }
+
+  async function loadSessionBody(rec, st) {
+    const id = rec.header.id
     let events = null
     let readError = false
 
@@ -88,18 +121,29 @@ export function apply(ctx, config) {
     } catch (e) { /* fall through to persistence */ }
 
     if (!events) {
+      let attempted = false
       try {
         const persist = ctx.get('sessionPersistence')
-        const read = await persist.readFrom(id, 0)
-        events = read && read.events ? read.events : null
-      } catch (e) {
-        readError = true
-        events = null
+        if (persist && typeof persist.readFrom === 'function') {
+          attempted = true
+          const read = await persist.readFrom(id, 0)
+          events = read && read.events ? read.events : null
+        }
+      } catch (e) { /* try the query service below */ }
+      if (!events) {
+        try {
+          const q = ctx.get('sessionQuery')
+          if (q && typeof q.readSession === 'function') {
+            attempted = true
+            const snap = await q.readSession(id)
+            events = snap && snap.events ? snap.events : null
+          }
+        } catch (e) { /* preserve the existing rollup and retry later */ }
       }
+      readError = attempted && !events
     }
 
-    try {
-      if (readError) {
+    if (readError) {
         // readFrom threw: fold current pending into current rollup, clear pending,
         // set needsReload=true, finally loading=false
         if (st.pending && st.pending.length) {
@@ -109,6 +153,7 @@ export function apply(ctx, config) {
           st.pending = []
         }
         st.needsReload = true
+        invalidate()
         return
       }
 
@@ -118,7 +163,7 @@ export function apply(ctx, config) {
 
       // Annotate rollup with cwd/title/projectTitle (uses pathTitles())
       // Must be called after st.rollup assignment to ensure cwd/title/projectTitle are not lost
-      annotate(st, rec, pathTitles())
+      annotate(st, rec, workspaceInfo())
 
       if (!events || events.length === 0) {
         // readFrom returned empty: preserve existing rollup, fold pending events
@@ -131,13 +176,14 @@ export function apply(ctx, config) {
         st.pending = []
         st.needsReload = false  // clear needsReload since read was successful (even if empty)
         st.at = Date.now()
+        invalidate()
         return
       }
 
       // Fold full history
       const folded = foldSession(events)
       st.rollup = folded
-      annotate(st, rec, pathTitles())  // re-annotate after rollup assignment to preserve metadata
+      annotate(st, rec, workspaceInfo())  // re-annotate after rollup assignment to preserve metadata
       st.at = Date.now()
 
       // Merge pending events that streamed in during the catch-up read
@@ -154,12 +200,62 @@ export function apply(ctx, config) {
         st.pending = []
       }
 
-      st.loading = false
       st.needsReload = false
-    } finally {
-      // Ensure st.loading is never permanently true even if something unexpected happens
-      if (st.loading !== false) st.loading = false
-    }
+      invalidate()
+  }
+
+  function currentRollups() {
+    return Array.from(states.values())
+      .map((st) => st.rollup)
+      .filter((r) => r && r.last !== null)
+      .sort((a, b) => (b.last || 0) - (a.last || 0))
+  }
+
+  function invalidate() {
+    dataVersion += 1
+    cache.clear()
+  }
+
+  // Materialize every known session once, then serve all queries from the
+  // event-driven in-memory states. A request can still trigger loading for a
+  // session created before the plugin's event listener was attached.
+  async function getRollups() {
+    if (initPromise) return initPromise
+    initPromise = (async () => {
+      const q = ctx.get('sessionQuery')
+      if (!q) {
+        ready = true
+        return currentRollups()
+      }
+      let records = []
+      try { records = await q.listSessions() } catch (e) {
+        return currentRollups()
+      }
+      const seen = new Set()
+      const toLoad = []
+      for (const rec of records) {
+        const header = rec && rec.header
+        const id = header && header.id
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        const st = states.get(id)
+        if (!st || st.needsReload || st.rollup.last === null) toLoad.push({ header })
+      }
+      let cursor = 0
+      async function worker() {
+        while (cursor < toLoad.length) {
+          const rec = toLoad[cursor++]
+          try { await loadSession(rec) } catch (e) { /* isolate one bad session */ }
+        }
+      }
+      await Promise.all(Array.from({ length: 4 }, () => worker()))
+      for (const id of Array.from(states.keys())) {
+        if (!seen.has(id)) states.delete(id)
+      }
+      ready = true
+      return currentRollups()
+    })().finally(() => { initPromise = null })
+    return initPromise
   }
 
   // ---------- event stream ----------
@@ -167,6 +263,7 @@ export function apply(ctx, config) {
   ctx.on('session/event', (session, event) => {
     const id = session && (session.id || (session.header && session.header.id))
     if (!id || !event || typeof event.time !== 'number') return
+    invalidate()
     let st = states.get(id)
     if (!st) {
       // brand-new session: create state and start history load
@@ -233,6 +330,10 @@ export function apply(ctx, config) {
       }
     }
     let hit = cache.get(key)
+    if (hit && hit.version !== dataVersion) {
+      cache.delete(key)
+      hit = null
+    }
     // if entry exceeded max failures, drop it and recompute
     if (hit && (hit.failCount || 0) >= CACHE_MAX_FAIL) {
       cache.delete(key)
@@ -247,13 +348,13 @@ export function apply(ctx, config) {
       if (!inflight.has(key)) {
         const promise = compute().then((data) => {
           // success: store with fresh timestamp, reset failCount
-          cache.set(key, { at: Date.now(), data, failCount: 0 })
+          cache.set(key, { at: Date.now(), data, failCount: 0, version: dataVersion })
           return data
         }).catch((e) => {
           // increment failure count, keep stale data
           const entry = cache.get(key)
           if (entry) {
-            cache.set(key, { at: entry.at, data: entry.data, failCount: (entry.failCount || 0) + 1 })
+            cache.set(key, { at: entry.at, data: entry.data, failCount: (entry.failCount || 0) + 1, version: entry.version })
           }
           return null
         })
@@ -269,7 +370,7 @@ export function apply(ctx, config) {
     if (inflight.has(key)) return inflight.get(key)
     const p = compute().then((data) => {
       // success: store with fresh timestamp, reset failCount
-      cache.set(key, { at: Date.now(), data, failCount: 0 })
+      cache.set(key, { at: Date.now(), data, failCount: 0, version: dataVersion })
       return data
     }).catch((e) => {
       // compute failure: do NOT cache data:null; instead let the caller receive
@@ -315,10 +416,16 @@ export function apply(ctx, config) {
     })
   })
 
-  harness.handle('calendar', (args) => cached(JSON.stringify({
-    models: args != null ? args.models : null, projects: args != null ? args.projects : null
-  }), async () => {
-    const rollups = await getRollups()
-    return queryCalendar(rollups, args || {})
-  }))
+  harness.handle('calendar', (args) => {
+    const input = args || {}
+    const normalized = {
+      models: input.models != null ? input.models : null,
+      projects: input.projects != null ? input.projects : null,
+      now: typeof input.now === 'number' ? input.now : null
+    }
+    return cached(JSON.stringify(normalized), async () => {
+      const rollups = await getRollups()
+      return queryCalendar(rollups, normalized)
+    })
+  })
 }

@@ -55,6 +55,11 @@ function genSession(rnd, idx, now) {
       const otp = Math.floor(rnd() * 3000)
       const cr = Math.floor(rnd() * 8000)
       const cw = Math.floor(rnd() * 200)
+      const outputStart = t + 800 + Math.floor(rnd() * 1200) // TTFT (excluded)
+      const outputEnd = outputStart + 100 + Math.floor(rnd() * 900) // generation only
+      events.push({ type: 'assistant/chunk', time: outputStart, data: { turn, step, chunk: { type: 'text-delta', index: 0, text: 'x' } } })
+      events.push({ type: 'assistant/chunk', time: outputEnd, data: { turn, step, chunk: { type: 'finish', reason: 'stop' } } })
+      t = outputEnd
       events.push({
         type: 'assistant/message', time: t,
         data: {
@@ -75,6 +80,11 @@ function genSession(rnd, idx, now) {
       // assistant-only continuation (no user message in between)
       const inp = Math.floor(rnd() * 2000)
       const otp = Math.floor(rnd() * 2500)
+      const outputStart = t + 500 + Math.floor(rnd() * 1000)
+      const outputEnd = outputStart + 100 + Math.floor(rnd() * 700)
+      events.push({ type: 'assistant/chunk', time: outputStart, data: { turn, step, chunk: { type: 'text-delta', index: 0, text: 'x' } } })
+      events.push({ type: 'assistant/chunk', time: outputEnd, data: { turn, step, chunk: { type: 'finish', reason: 'stop' } } })
+      t = outputEnd
       events.push({
         type: 'assistant/message', time: t,
         data: {
@@ -103,8 +113,7 @@ function legacyProcessSession(events, lo, hi, modelSet, gran) {
     heatToken: new Array(168).fill(0), heatCost: new Array(168).fill(0), heatDur: new Array(168).fill(0),
     times: [], models: new Map()
   }
-  const openSteps = new Map()
-  const pendingCalls = new Map()
+  const openGenerations = new Map()
   for (const ev of events) {
     const t = ev.time
     if (t < lo || t > hi) continue
@@ -121,9 +130,9 @@ function legacyProcessSession(events, lo, hi, modelSet, gran) {
         out.assistantMessages += 1
         out.times.push(t)
         const stepKey = ev.data.turn + ':' + ev.data.step
-        if (openSteps.has(stepKey)) {
-          out.activeMs += Math.max(0, t - openSteps.get(stepKey))
-          openSteps.delete(stepKey)
+        if (openGenerations.has(stepKey)) {
+          out.activeMs += Math.max(0, t - openGenerations.get(stepKey))
+          openGenerations.delete(stepKey)
         }
         const usage = ev.data.usage
         if (usage) {
@@ -179,24 +188,35 @@ function legacyProcessSession(events, lo, hi, modelSet, gran) {
       case 'tool/call': {
         out.toolCalls += 1
         out.times.push(t)
-        if (ev.data && ev.data.callId) pendingCalls.set(ev.data.callId, t)
         break
       }
       case 'tool/result': {
         out.toolResults += 1
         out.times.push(t)
-        const src = ev.data && ev.data.message && ev.data.message.source
-        if (src && src.callId && pendingCalls.has(src.callId)) {
-          out.activeMs += Math.max(0, t - pendingCalls.get(src.callId))
-          pendingCalls.delete(src.callId)
+        break
+      }
+      case 'assistant/chunk': {
+        const data = ev.data || {}
+        const chunk = data.chunk || {}
+        const stepKey = data.turn + ':' + data.step
+        if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta' || chunk.type === 'tool-call-delta') {
+          if (!openGenerations.has(stepKey)) openGenerations.set(stepKey, t)
+        } else if (chunk.type === 'finish' && openGenerations.has(stepKey)) {
+          out.activeMs += Math.max(0, t - openGenerations.get(stepKey))
+          openGenerations.delete(stepKey)
         }
         break
       }
-      case 'step/start': {
+      case 'step/end': {
         const stepKey = ev.data.turn + ':' + ev.data.step
-        openSteps.set(stepKey, t)
+        if (openGenerations.has(stepKey)) {
+          out.activeMs += Math.max(0, t - openGenerations.get(stepKey))
+          openGenerations.delete(stepKey)
+        }
         break
       }
+      case 'step/start':
+        break
       default:
         break
     }
@@ -337,7 +357,7 @@ function legacyUsage(sessions, req) {
   const prev = legacyComputeWindow(loaded, targets, plo, phi, modelSet, gran)
   const t = cur.totals
   const pt = prev.totals
-  const pct = (c, p) => (!(p > 0) ? (c > 0 ? 100 : null) : (c - p) / p * 100)
+  const pct = (c, p) => (!(p > 0) ? null : (c - p) / p * 100)
   t.pct = {
     cost: pct(t.cost, pt.cost), totalTokens: pct(t.totalTokens, pt.totalTokens),
     inputTokens: pct(t.inputTokens, pt.inputTokens), outputTokens: pct(t.outputTokens, pt.outputTokens),
@@ -500,6 +520,10 @@ function compareUsage(label, l, n) {
   assertEq(label + '.meta.pricing.coverage', l.meta.pricing.coverage, n.meta.pricing.coverage)
   assertEq(label + '.meta.dist.models.length', l.meta.dist.models.length, n.meta.dist.models.length)
   assertEq(label + '.meta.dist.projects.length', l.meta.dist.projects.length, n.meta.dist.projects.length)
+  const projectTokens = n.meta.dist.projects.reduce((sum, p) => sum + p.tokens, 0)
+  const projectCost = n.meta.dist.projects.reduce((sum, p) => sum + p.cost, 0)
+  assertEq(label + '.meta.dist.projects.tokens', projectTokens, nt.totalTokens, 1e-6)
+  assertEq(label + '.meta.dist.projects.cost', projectCost, nt.cost, 1e-6)
 }
 
 function compareDetail(label, l, n) {
@@ -587,6 +611,48 @@ const REQS = [
   { name: 'custom', req: { range: 'custom', from: now - 45 * 86400000, to: now } },
   { name: '7d+model', req: { range: '7d', models: ['deepseek-v4-flash'] } }
 ]
+
+console.log('\n[0a] activeMs generation semantics (TTFT/tool wait excluded)')
+{
+  const t0 = Date.now() - 600000
+  const events = [
+    { type: 'user/message', time: t0, data: { source: { kind: 'user' } } },
+    { type: 'step/start', time: t0 + 100, data: { turn: 0, step: 0 } },
+    { type: 'assistant/chunk', time: t0 + 2000, data: { turn: 0, step: 0, chunk: { type: 'text-delta', index: 0, text: 'hello' } } },
+    { type: 'assistant/chunk', time: t0 + 2500, data: { turn: 0, step: 0, chunk: { type: 'text-delta', index: 0, text: ' world' } } },
+    { type: 'assistant/chunk', time: t0 + 3000, data: { turn: 0, step: 0, chunk: { type: 'finish', reason: 'stop' } } },
+    { type: 'assistant/message', time: t0 + 3001, data: { turn: 0, step: 0, usage: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } } },
+    { type: 'tool/call', time: t0 + 4000, data: { callId: 'tool-0' } },
+    { type: 'tool/result', time: t0 + 14000, data: { message: { source: { callId: 'tool-0' } } } }
+  ]
+  const r = foldSession(events)
+  r.id = 'active-semantics'
+  r.cwd = 'D:/u'
+  r.projectTitle = 'u'
+  const q = queryUsage([r], { range: 'custom', from: t0, to: t0 + 20000 }, {})
+  assertEq('activeMs.generationOnly', q.totals.activeMs, 1000)
+  assertEq('totalMs.messageSpan', q.totals.totalMs, 14000)
+  console.log('  activeMs generation   OK (TTFT and 10s tool wait excluded)')
+}
+
+console.log('\n[0b] range and percentage boundaries')
+{
+  const bounds = rangeBounds({ range: 'custom', now: 1000, from: 0, to: 100 })
+  assertEq('range.custom.zeroFrom', bounds[0], 0)
+  assertEq('range.custom.explicitTo', bounds[1], 100)
+  const reversed = rangeBounds({ range: 'custom', now: 1000, from: 900, to: 100 })
+  assertEq('range.custom.reverse.from', reversed[0], 100)
+  assertEq('range.custom.reverse.to', reversed[1], 900)
+  const r = foldSession([
+    { type: 'user/message', time: fixedNow, data: { source: { kind: 'user' } } },
+    { type: 'assistant/chunk', time: fixedNow + 1000, data: { turn: 0, step: 0, chunk: { type: 'text-delta', index: 0, text: 'x' } } },
+    { type: 'assistant/chunk', time: fixedNow + 2000, data: { turn: 0, step: 0, chunk: { type: 'finish', reason: 'stop' } } },
+    { type: 'assistant/message', time: fixedNow + 2000, data: { turn: 0, step: 0, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } } }
+  ])
+  const q = queryUsage([r], { range: 'custom', from: fixedNow, to: fixedNow + 3000 }, {})
+  assertEq('pct.zeroBaseline', q.totals.pct.totalTokens, null)
+  console.log('  boundaries             OK (explicit zero, reverse custom, zero-baseline pct)')
+}
 
 console.log('\n[0] totalMs union semantics (parallel sessions counted once)')
 {
