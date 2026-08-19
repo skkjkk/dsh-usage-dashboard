@@ -17,3 +17,10 @@ npm-debug.log*
 Thumbs.db
 .idea/
 .vscode/
+
+# local credential tooling / build artifacts (never commit)
+.credread/
+credread.cs
+credlib.cs
+.git-askpass.ps1
+.npm-cache/
