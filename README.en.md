@@ -18,13 +18,13 @@ The dashboard spans multiple layers from overview to detail. The four screenshot
 
 The top row is a set of **KPI cards**: estimated cost, total / input / output / cached Tokens, active duration, total duration, session count, total message count and user message count; each card shows a percentage change versus the previous period (a zero baseline is hidden rather than showing a fabricated `+100%`).
 
-Below is the **hourly trend chart**: output / input / cache Tokens per hour (switchable to cost or duration), stacked in three segments; click a legend or bar to highlight a single series. The time range can be switched among `today / 24H / 7D / 30D / 90D / custom` and filtered by model or project. The screenshot shows the `24H` view: estimated cost ¥5.10, total Token 28.1M, active duration 50m, total duration 23h 42m, 11 sessions.
+Below is the **hourly trend chart**: output / input / cache Tokens per hour (switchable to cost or duration), stacked in three segments; click a legend or bar to highlight a single series. The time range can be switched among `today / 24H / 7D / 30D / 90D / custom` and filtered by model or project.
 
 ### 2. Daily trend and hourly activity heatmap
 
 ![Daily trend and hourly activity heatmap](picture/Snipaste_2026-08-19_21-28-49.png)
 
-On the left is the **daily trend** (day-granularity bar chart covering the last 7 days); on the right is the **hourly activity heatmap**: a `7 rows (weekday) × 24 columns (hour)` grid where color intensity encodes magnitude, switchable among `Token / cost / active duration` metrics; hovering any cell shows the exact value, with a `少 → 多` (low → high) legend.
+On the left is the **daily trend** (day-granularity bar chart); on the right is the **hourly activity heatmap**: a `7 rows (weekday) × 24 columns (hour)` grid where color intensity encodes magnitude, switchable among `Token / cost / active duration` metrics; hovering any cell shows the exact value, with a `少 → 多` (low → high) legend.
 
 ### 3. Model and project distributions
 
@@ -32,10 +32,8 @@ On the left is the **daily trend** (day-granularity bar chart covering the last 
 
 Two **donut charts** break usage down by Token (or cost) share:
 
-- **Model distribution**: each model's Token share and absolute value; total Tokens are conserved.
+- **Model distribution**: each model's Token / cost share and absolute value; total Tokens are conserved.
 - **Project distribution**: usage grouped by project, using the canonical `cwd` with DSH workspace membership as fallback.
-
-The screenshot shows a total of 822.0M Tokens, dominated by `deepseek-v4-flash` (51.2%) and `gpt-5.6-luna` (34.6%) for models, and by `DeepSeek-harness` and `dsh-usage-dashboard` for projects.
 
 ### 4. Activity heatmap and detailed records
 
@@ -43,7 +41,7 @@ The screenshot shows a total of 822.0M Tokens, dominated by `deepseek-v4-flash` 
 
 At the top is the **activity heatmap**: the latest 40 weeks in a `7 rows × 40 columns` calendar grid, with fixed square rounded cells and viewport-clamped edge tooltips that are never clipped by the card.
 
-Below is the **detailed records table**: rows grouped by `time bucket × model × project`, 20 rows per page (when one hour uses multiple models, each appears as a separate row). Columns are `time / project / model / tool / input / output / cache / cost`. The screenshot shows the first page of 25 records.
+Below is the **detailed records table**: rows grouped by `time bucket × model × project`, paginated (20 rows per page; when one hour uses multiple models, each appears as a separate row). Columns are `time / project / model / tool / input / output / cache / cost`.
 
 ## Data semantics
 
