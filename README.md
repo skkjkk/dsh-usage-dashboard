@@ -1,30 +1,57 @@
 # dsh-usage-dashboard
 
-> 面向 DSH (DeepSeek Harness) Web GUI 的本地用量数据看板。
+> 面向 DSH（DeepSeek Harness）Web GUI 的本地用量数据看板：Token、费用、时长与会话明细，全部在本机聚合，不上传任何会话内容。
+
+🌐 语言 / Language: **[English](README.en.md)** · 中文
 
 [![npm](https://img.shields.io/npm/v/%40skkjkk%2Fdsh-usage-dashboard)](https://www.npmjs.com/package/@skkjkk/dsh-usage-dashboard) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-`dsh-usage-dashboard` 是一个 DSH bundle 插件。它直接读取 DSH 本地会话数据，在 **设置 → 数据看板** 中提供 Token、费用、时长和会话明细统计。所有聚合都在本机完成，不会上传会话内容。
+`dsh-usage-dashboard` 是一个 DSH **bundle 插件**。它直接读取 DSH 本地会话数据，在 **设置 → 数据看板** 中提供 Token、费用、时长和会话明细统计。所有聚合都在本机完成，**不会向外部服务发送任何会话内容**。
 
-## 功能
+## 功能特性（附截图）
 
-- **KPI 总览**：预估费用、总 Token、输入 / 输出 / 缓存 Token、活跃时长、总时长、会话数、消息数。
-- **时间范围与筛选**：今天、24H、7D、30D、90D、自定义日期；支持按模型和项目过滤。
-- **趋势图**：按小时、天或周查看 Token、费用、时长；Token 可分别切换输入、输出和缓存分段，点击柱子可高亮查看。
-- **分时活跃热力图**：7×24 小时网格，支持 Token / 费用 / 活跃时长三种指标，悬停显示精确数值。
-- **活跃热力图**：最近 40 周的 `7 行 × 40 列` 日历网格，单元格固定为正方形并带圆角；边缘日期的 tooltip 会自动限制在视口内，不会被卡片裁剪。
-- **Token 色阶**：日 Token 档位为 `0 / ≥1M / ≥10M / ≥30M / ≥60M / ≥100M / ≥200M / ≥250M`，图例色块悬停可查看对应阈值。
-- **模型与项目分布**：环形图展示 Token 或费用占比，项目聚合与总 Token / 费用守恒。
-- **详细记录**：按「时间桶 × 模型 × 项目」分组，每页 20 条；同一小时使用多个模型时分别列出。
-- **舒适字体**：数字和英文字母优先使用系统自带的 `Century Gothic`，中文按系统字体回退，适合长时间查看数据。
+看板覆盖从总览到明细的多层视角，下面四张截图对应核心界面。
+
+### 1. KPI 总览与每小时趋势
+
+![KPI 总览与每小时趋势](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-28-02.png)
+
+顶部是一组 **KPI 卡片**：预估费用、总 Token、输入 / 输出 / 缓存 Token、活跃时长、总时长、会话数、总消息数、用户消息数；每张卡片都带有相对上一周期的环比百分比（基线为零时自动隐藏，避免伪造的 `+100%`）。
+
+下方是 **每小时趋势图**：按小时展示输出 / 输入 / 缓存 Token（也可切换为费用或时长），三条分段堆叠，点击图例或柱子可高亮单一系列。时间范围可在 `今天 / 24H / 7D / 30D / 90D / 自定义` 间切换，并支持按模型、按项目过滤。截图所示为 `24H` 视图：预估费用 ¥5.10、总 Token 28.1M、活跃时长 50m、总时长 23h 42m、会话数 11。
+
+### 2. 每日趋势与分时活跃热力图
+
+![每日趋势与分时活跃热力图](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-28-49.png)
+
+左侧为 **每日趋势**（天粒度柱状图，覆盖近 7 天），右侧为 **分时活跃热力图**：一张 `7 行（周几）× 24 列（小时）` 的网格，颜色深浅表示强度，可在 `Token / 费用 / 活跃时长` 三种指标间切换；悬停任意单元格显示精确数值，图例为 `少 → 多`。
+
+### 3. 模型分布与项目分布
+
+![模型分布与项目分布](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-29-29.png)
+
+两张 **环形图** 分别从 Token（或费用）占比视角拆解用量：
+
+- **模型分布**：列出每个模型的 Token 占比与绝对值，总 Token 守恒。
+- **项目分布**：按 canonical `cwd` 与 DSH workspace membership 聚合的项目用量。
+
+截图中总 Token 822.0M，模型以 `deepseek-v4-flash`（51.2%）、`gpt-5.6-luna`（34.6%）为主，项目以 `DeepSeek-harness`、`dsh-usage-dashboard` 为主。
+
+### 4. 活跃热力图与详细记录
+
+![活跃热力图与详细记录](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-29-53.png)
+
+顶部是 **活跃热力图**：最近 40 周的 `7 行 × 40 列` 日历网格，单元格固定为正方形并带圆角，边缘日期的 tooltip 会自动限制在视口内，不会被卡片裁剪。
+
+下方是 **详细记录表**：按「时间桶 × 模型 × 项目」分组，每页 20 条（同一小时使用多个模型时分别列出），列含 `时间 / 项目 / 模型 / 工具 / 输入 / 输出 / 缓存 / 费用`。截图展示 25 条记录的首页。
 
 ## 数据口径
 
 - **Token** = 输入 Token + 输出 Token + 缓存 Token。
-- **活跃时长**只累计 AI 实际生成内容的时间：从首个 `assistant/chunk` 到该 turn 完成；不包含排队、首 Token 延迟、思考间隔或工具等待。并行会话分别累计，因此活跃时长可能超过 24 小时。
-- **总时长**是每个会话首条消息到末条消息的时间跨度；重叠的并行会话区间先合并，再按所选窗口裁剪后求和，不会重复计算重叠时间。
-- **费用**是估算值，价格来自 [`pricing/vibe-usage-model-pricing.csv`](pricing/vibe-usage-model-pricing.csv)，按美元价格 ×7 折算人民币；未匹配的模型暂不计费。DeepSeek V4 在定价生效后按北京时间高峰 / 空闲时段计费。
-- **项目**优先使用会话 header 中的 canonical `cwd`，再结合 DSH workspace membership 回填；路径分隔符、大小写和尾部斜杠会统一后再分组。
+- **活跃时长** 只累计 AI 实际生成内容的时间：从首个 `assistant/chunk` 到该 turn 完成；不包含排队、首 Token 延迟、思考间隔或工具等待。并行会话分别累计，因此活跃时长可能超过 24 小时。
+- **总时长** 是每个会话首条消息到末条消息的时间跨度；重叠的并行会话区间先合并，再按所选窗口裁剪后求和，不会重复计算重叠时间。
+- **费用** 是估算值，价格来自本仓库的定价表（`pricing/vibe-usage-model-pricing.csv`），按美元价格 ×7 折算人民币；未匹配的模型暂不计费。DeepSeek V4 在定价生效后按北京时间高峰 / 空闲时段计费。
+- **项目** 优先使用会话 header 中的 canonical `cwd`，再结合 DSH workspace membership 回填；路径分隔符、大小写和尾部斜杠会统一后再分组。
 - 环比基线为零时没有有限百分比，界面会隐藏该百分比，不显示伪造的 `+100%`。
 
 ## 安装
@@ -98,12 +125,12 @@ node scripts/verify-pack.mjs <package-dir>
 ## 隐私
 
 - 所有聚合均在本地执行，不向外部服务发送会话数据。
-- npm 包只包含 `lib/`、定价 CSV 和 bundle patch，不包含本机日志或会话文件。
+- npm 包只包含 `lib/` 与 bundle patch，不包含本机日志或会话文件。
 - 费用是估算值，不代表实际账单。
 
 ## 版本
 
-当前发布版本：`0.3.5`
+当前发布版本：`0.3.7`
 
 ## License
 

@@ -25,3 +25,9 @@ credlib.cs
 .git-askpass.ps1
 .npm-cache/
 .playwright-cli/
+
+# screenshots / local binary assets (served as GitHub release assets, not in git tree)
+picture/
+
+# pricing source CSV (generated lib/core/pricing.js is what ships; do not commit source)
+pricing/

@@ -1,29 +1,56 @@
 # dsh-usage-dashboard
 
-> A local usage dashboard for the DSH (DeepSeek Harness) Web GUI.
+> A local usage dashboard for the DSH (DeepSeek Harness) Web GUI — Token, cost, duration and session details, all aggregated on your machine. No session content is ever uploaded.
+
+🌐 Language: **[中文](README.md)** · English
 
 [![npm](https://img.shields.io/npm/v/%40skkjkk%2Fdsh-usage-dashboard)](https://www.npmjs.com/package/@skkjkk/dsh-usage-dashboard) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-`dsh-usage-dashboard` is a DSH bundle plugin. It reads local DSH session data and adds a **Settings → 数据看板** view for Token, cost, duration, session and detail statistics. All aggregation stays on the local machine; session content is never uploaded.
+`dsh-usage-dashboard` is a DSH **bundle plugin**. It reads local DSH session data and adds a **Settings → 数据看板** view for Token, cost, duration, session and detail statistics. All aggregation stays on the local machine; **session content is never sent to any external service**.
 
-## Features
+## Features (with screenshots)
 
-- **KPI overview**: estimated cost, total / input / output / cached Tokens, active duration, total duration, session count and message count.
-- **Ranges and filters**: today, 24H, 7D, 30D, 90D and custom dates; filter by model or project.
-- **Trend chart**: hourly, daily or weekly Token, cost and duration views; Token mode can toggle input, output and cache segments, with click-to-highlight columns.
-- **Hourly activity heatmap**: a 7×24 grid for Token, cost and active duration with exact hover values.
-- **Activity calendar**: the latest 40 weeks in a `7 rows × 40 columns` grid, with fixed square rounded cells and viewport-clamped edge tooltips.
-- **Token color scale**: daily bands are `0 / ≥1M / ≥10M / ≥30M / ≥60M / ≥100M / ≥200M / ≥250M`; hover a legend swatch to see its threshold.
-- **Model and project distributions**: donut charts for Token or cost share; project totals conserve total Token and cost.
-- **Detail records**: rows grouped by `time bucket × model × project`, 20 rows per page.
-- **Typography**: `Century Gothic` is preferred for Latin letters and numbers, with system CJK fallbacks for comfortable long-session reading.
+The dashboard spans multiple layers from overview to detail. The four screenshots below show the core screens.
+
+### 1. KPI overview and hourly trend
+
+![KPI overview and hourly trend](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-28-02.png)
+
+The top row is a set of **KPI cards**: estimated cost, total / input / output / cached Tokens, active duration, total duration, session count, total message count and user message count; each card shows a percentage change versus the previous period (a zero baseline is hidden rather than showing a fabricated `+100%`).
+
+Below is the **hourly trend chart**: output / input / cache Tokens per hour (switchable to cost or duration), stacked in three segments; click a legend or bar to highlight a single series. The time range can be switched among `today / 24H / 7D / 30D / 90D / custom` and filtered by model or project. The screenshot shows the `24H` view: estimated cost ¥5.10, total Token 28.1M, active duration 50m, total duration 23h 42m, 11 sessions.
+
+### 2. Daily trend and hourly activity heatmap
+
+![Daily trend and hourly activity heatmap](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-28-49.png)
+
+On the left is the **daily trend** (day-granularity bar chart covering the last 7 days); on the right is the **hourly activity heatmap**: a `7 rows (weekday) × 24 columns (hour)` grid where color intensity encodes magnitude, switchable among `Token / cost / active duration` metrics; hovering any cell shows the exact value, with a `少 → 多` (low → high) legend.
+
+### 3. Model and project distributions
+
+![Model and project distributions](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-29-29.png)
+
+Two **donut charts** break usage down by Token (or cost) share:
+
+- **Model distribution**: each model's Token share and absolute value; total Tokens are conserved.
+- **Project distribution**: usage grouped by project, using the canonical `cwd` with DSH workspace membership as fallback.
+
+The screenshot shows a total of 822.0M Tokens, dominated by `deepseek-v4-flash` (51.2%) and `gpt-5.6-luna` (34.6%) for models, and by `DeepSeek-harness` and `dsh-usage-dashboard` for projects.
+
+### 4. Activity heatmap and detailed records
+
+![Activity heatmap and detailed records](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-29-53.png)
+
+At the top is the **activity heatmap**: the latest 40 weeks in a `7 rows × 40 columns` calendar grid, with fixed square rounded cells and viewport-clamped edge tooltips that are never clipped by the card.
+
+Below is the **detailed records table**: rows grouped by `time bucket × model × project`, 20 rows per page (when one hour uses multiple models, each appears as a separate row). Columns are `time / project / model / tool / input / output / cache / cost`. The screenshot shows the first page of 25 records.
 
 ## Data semantics
 
 - **Tokens** = input + output + cache Tokens.
 - **Active duration** counts only actual AI generation time, from the first `assistant/chunk` event until the turn completes. Queueing, TTFT, idle thinking gaps and tool waits are excluded. Parallel sessions are summed independently, so active duration can exceed 24 hours.
 - **Total duration** is the span from the first message to the last message per session. Overlapping session spans are merged before summing and clipped to the selected window, so parallel work is not double-counted.
-- **Cost** is an estimate from [`pricing/vibe-usage-model-pricing.csv`](pricing/vibe-usage-model-pricing.csv), using USD × 7 for CNY. Unmatched models are not billed. DeepSeek V4 uses Beijing-time peak / off-peak pricing after its configured effective date.
+- **Cost** is an estimate from this repo's pricing table (`pricing/vibe-usage-model-pricing.csv`), using USD × 7 for CNY. Unmatched models are not billed. DeepSeek V4 uses Beijing-time peak / off-peak pricing after its configured effective date.
 - **Projects** use the canonical `cwd` from the session header when available, with DSH workspace membership as a fallback. Separators, case and trailing slashes are normalized before grouping.
 - A zero comparison baseline has no finite percentage; the UI hides that percentage instead of showing a fabricated `+100%`.
 
@@ -91,11 +118,13 @@ At startup the plugin materializes one in-memory rollup per session. Subsequent 
 
 ## Privacy
 
-All aggregation is local. The npm package contains only `lib/`, the pricing CSV and the bundle patch; it does not include local logs or session files. Cost values are estimates, not billing statements.
+- All aggregation is local; no session data is sent to external services.
+- The npm package contains only `lib/` and the bundle patch; it does not include local logs or session files.
+- Cost values are estimates, not billing statements.
 
 ## Version
 
-Current release: `0.3.5`
+Current release: `0.3.7`
 
 ## License
 
