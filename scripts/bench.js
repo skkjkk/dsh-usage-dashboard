@@ -5,7 +5,7 @@
 // session data, then asserts field-level equality of every dashboard payload.
 //
 // Usage: npm run bench   (node scripts/bench.js)
-import { foldSession, foldAppend, queryUsage, queryDetail, queryCalendar, priceFor, priceForAt, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, cellOf } from '../src/core/rollup.js'
+import { foldSession, foldAppend, queryUsage, queryDetail, queryCalendar, priceFor, priceForAt, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, presetBucketCount, cellOf } from '../src/core/rollup.js'
 
 const DAY = 86400000
 
@@ -254,7 +254,7 @@ function legacyProcessSession(events, lo, hi, modelSet, gran) {
   return out
 }
 
-function legacyComputeWindow(loaded, targets, lo, hi, modelSet, gran) {
+function legacyComputeWindow(loaded, targets, lo, hi, modelSet, gran, range) {
   const totals = {
     cost: 0, inputTokens: 0, outputTokens: 0, cacheTokens: 0, totalTokens: 0,
     activeMs: 0, totalMs: 0, sessions: 0,
@@ -329,7 +329,7 @@ function legacyComputeWindow(loaded, targets, lo, hi, modelSet, gran) {
   }
   totals.totalTokens = totals.inputTokens + totals.outputTokens + totals.cacheTokens
   totals.totalMessages = totals.userMessages + totals.injectedMessages + totals.assistantMessages + totals.toolCalls + totals.toolResults
-  const keys = bucketSeries(lo, hi, gran)
+  const keys = bucketSeries(lo, hi, gran, presetBucketCount(range, gran))
   const buckets = keys.map((bk) => {
     const b = bucketMap.get(bk)
     return {
@@ -353,8 +353,8 @@ function legacyUsage(sessions, req) {
   const loaded = sessions.map((s) => s.events)
   const targets = sessions.map((s) => ({ header: s.header }))
   const [plo, phi] = prevWindow(req.range, lo, hi)
-  const cur = legacyComputeWindow(loaded, targets, lo, hi, modelSet, gran)
-  const prev = legacyComputeWindow(loaded, targets, plo, phi, modelSet, gran)
+  const cur = legacyComputeWindow(loaded, targets, lo, hi, modelSet, gran, req.range)
+  const prev = legacyComputeWindow(loaded, targets, plo, phi, modelSet, gran, req.range)
   const t = cur.totals
   const pt = prev.totals
   const pct = (c, p) => (!(p > 0) ? null : (c - p) / p * 100)
@@ -652,6 +652,19 @@ console.log('\n[0b] range and percentage boundaries')
   const q = queryUsage([r], { range: 'custom', from: fixedNow, to: fixedNow + 3000 }, {})
   assertEq('pct.zeroBaseline', q.totals.pct.totalTokens, null)
   console.log('  boundaries             OK (explicit zero, reverse custom, zero-baseline pct)')
+}
+
+console.log('\n[0c] preset trend bucket counts')
+{
+  const probeNow = new Date(2026, 7, 19, 13, 30, 0, 0).getTime()
+  const expected = { today: 14, '24h': 24, '7d': 7, '30d': 30, '90d': 13 }
+  for (const range of Object.keys(expected)) {
+    const [lo, hi] = rangeBounds({ range, now: probeNow })
+    const gran = pickGranularity({ range }, lo, hi)
+    const keys = bucketSeries(lo, hi, gran, presetBucketCount(range, gran))
+    assertEq('preset.' + range + '.bucketCount', keys.length, expected[range])
+  }
+  console.log('  preset counts           OK (today 14h, 24H 24h, 7D 7d, 30D 30d, 90D 13w)')
 }
 
 console.log('\n[0] totalMs union semantics (parallel sessions counted once)')
