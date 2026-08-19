@@ -24,3 +24,4 @@ credread.cs
 credlib.cs
 .git-askpass.ps1
 .npm-cache/
+.playwright-cli/
