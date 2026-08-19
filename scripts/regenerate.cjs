@@ -315,9 +315,8 @@ const pkg = {
   },
   files: [
     ...new Set([
-      ...(existingPkg.files || []),
+      ...(existingPkg.files || []).filter(f => f !== 'pricing'),
       'lib',
-      'pricing',
       'cordis.patch.yml'
     ])
   ]
