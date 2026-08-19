@@ -14,7 +14,7 @@
 
 ### 1. KPI 总览与每小时趋势
 
-![KPI 总览与每小时趋势](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-28-02.png)
+![KPI 总览与每小时趋势](picture/Snipaste_2026-08-19_21-28-02.png)
 
 顶部是一组 **KPI 卡片**：预估费用、总 Token、输入 / 输出 / 缓存 Token、活跃时长、总时长、会话数、总消息数、用户消息数；每张卡片都带有相对上一周期的环比百分比（基线为零时自动隐藏，避免伪造的 `+100%`）。
 
@@ -22,13 +22,13 @@
 
 ### 2. 每日趋势与分时活跃热力图
 
-![每日趋势与分时活跃热力图](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-28-49.png)
+![每日趋势与分时活跃热力图](picture/Snipaste_2026-08-19_21-28-49.png)
 
 左侧为 **每日趋势**（天粒度柱状图，覆盖近 7 天），右侧为 **分时活跃热力图**：一张 `7 行（周几）× 24 列（小时）` 的网格，颜色深浅表示强度，可在 `Token / 费用 / 活跃时长` 三种指标间切换；悬停任意单元格显示精确数值，图例为 `少 → 多`。
 
 ### 3. 模型分布与项目分布
 
-![模型分布与项目分布](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-29-29.png)
+![模型分布与项目分布](picture/Snipaste_2026-08-19_21-29-29.png)
 
 两张 **环形图** 分别从 Token（或费用）占比视角拆解用量：
 
@@ -39,7 +39,7 @@
 
 ### 4. 活跃热力图与详细记录
 
-![活跃热力图与详细记录](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-29-53.png)
+![活跃热力图与详细记录](picture/Snipaste_2026-08-19_21-29-53.png)
 
 顶部是 **活跃热力图**：最近 40 周的 `7 行 × 40 列` 日历网格，单元格固定为正方形并带圆角，边缘日期的 tooltip 会自动限制在视口内，不会被卡片裁剪。
 

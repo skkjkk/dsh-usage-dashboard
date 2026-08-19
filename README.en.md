@@ -14,7 +14,7 @@ The dashboard spans multiple layers from overview to detail. The four screenshot
 
 ### 1. KPI overview and hourly trend
 
-![KPI overview and hourly trend](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-28-02.png)
+![KPI overview and hourly trend](picture/Snipaste_2026-08-19_21-28-02.png)
 
 The top row is a set of **KPI cards**: estimated cost, total / input / output / cached Tokens, active duration, total duration, session count, total message count and user message count; each card shows a percentage change versus the previous period (a zero baseline is hidden rather than showing a fabricated `+100%`).
 
@@ -22,13 +22,13 @@ Below is the **hourly trend chart**: output / input / cache Tokens per hour (swi
 
 ### 2. Daily trend and hourly activity heatmap
 
-![Daily trend and hourly activity heatmap](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-28-49.png)
+![Daily trend and hourly activity heatmap](picture/Snipaste_2026-08-19_21-28-49.png)
 
 On the left is the **daily trend** (day-granularity bar chart covering the last 7 days); on the right is the **hourly activity heatmap**: a `7 rows (weekday) × 24 columns (hour)` grid where color intensity encodes magnitude, switchable among `Token / cost / active duration` metrics; hovering any cell shows the exact value, with a `少 → 多` (low → high) legend.
 
 ### 3. Model and project distributions
 
-![Model and project distributions](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-29-29.png)
+![Model and project distributions](picture/Snipaste_2026-08-19_21-29-29.png)
 
 Two **donut charts** break usage down by Token (or cost) share:
 
@@ -39,7 +39,7 @@ The screenshot shows a total of 822.0M Tokens, dominated by `deepseek-v4-flash` 
 
 ### 4. Activity heatmap and detailed records
 
-![Activity heatmap and detailed records](https://github.com/skkjkk/dsh-usage-dashboard/releases/download/v0.3.7/Snipaste_2026-08-19_21-29-53.png)
+![Activity heatmap and detailed records](picture/Snipaste_2026-08-19_21-29-53.png)
 
 At the top is the **activity heatmap**: the latest 40 weeks in a `7 rows × 40 columns` calendar grid, with fixed square rounded cells and viewport-clamped edge tooltips that are never clipped by the card.
 
