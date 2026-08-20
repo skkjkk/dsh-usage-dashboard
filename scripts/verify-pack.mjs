@@ -7,6 +7,7 @@
 //   * 必需文件齐全（pricing CSV、cordis.patch.yml、package.json files 字段）
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const dir = process.argv[2]
 if (!dir) {
@@ -16,15 +17,15 @@ if (!dir) {
 const ok = (msg) => console.log('  ✔ ' + msg)
 const fail = (msg) => { console.error('  ✘ ' + msg); process.exitCode = 1 }
 
-// 1) 必需文件
-for (const f of ['package.json', 'lib/index.js', 'lib/client.js', 'lib/core/rollup.js', 'lib/core/pricing.js', 'pricing/vibe-usage-model-pricing.csv', 'cordis.patch.yml']) {
+// 1) 必需文件（pricing CSV 为构建期源文件，运行时只用生成的 lib/core/pricing.js，不随包发布）
+for (const f of ['package.json', 'lib/index.js', 'lib/client.js', 'lib/core/rollup.js', 'lib/core/pricing.js', 'cordis.patch.yml']) {
   if (existsSync(join(dir, f))) ok('contains ' + f)
   else fail('MISSING ' + f)
 }
 
 // 2) host bundle 可加载
 try {
-  const mod = await import('file:///' + join(dir, 'lib/index.js').replace(/\\/g, '/'))
+  const mod = await import(pathToFileURL(join(dir, 'lib/index.js')).href)
   const keys = Object.keys(mod).sort().join(',')
   if (typeof mod.apply === 'function' && Array.isArray(mod.inject)) ok('host bundle loads (exports: ' + keys + ', inject: ' + JSON.stringify(mod.inject) + ')')
   else fail('host bundle missing apply/inject')
@@ -34,7 +35,7 @@ try {
 
 // 3) core 引擎可加载 + 定价生效
 try {
-  const mod = await import('file:///' + join(dir, 'lib/core/rollup.js').replace(/\\/g, '/'))
+  const mod = await import(pathToFileURL(join(dir, 'lib/core/rollup.js')).href)
   if (typeof mod.foldSession === 'function' && typeof mod.queryUsage === 'function') ok('core engine loads')
   const p = mod.priceFor('deepseek-v4-flash')
   if (p && p.p && p.p.length === 3) ok('pricing from CSV active (deepseek-v4-flash ¥' + p.p.join('/') + '/M)')
