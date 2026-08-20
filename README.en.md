@@ -8,6 +8,8 @@
 
 `dsh-usage-dashboard` is a DSH **bundle plugin**. It reads local DSH session data and adds a **Settings → 数据看板** view for usage statistics. All aggregation stays on the local machine; **session content is never sent to any external service**.
 
+The interaction model is inspired by VibeCafe.ai's Vibe Usage: this is a local DSH usage dashboard with a similar metric-toggle, distribution-hover and detail-browsing flow. All rollups and aggregation are completed locally; no session content or derived usage data is uploaded.
+
 ## Features
 
 ### Filters and time range
@@ -32,7 +34,7 @@ A `7 rows (weekday) × 24 columns (hour)` grid where color intensity encodes mag
 
 ### Model and project distributions
 
-Two **donut charts** break usage down by Token (or cost) share: **model distribution** by model, **project distribution** by project (using the canonical `cwd` with DSH workspace membership as fallback). Toggle Token / cost; the top 6 slices each get a fixed color and the rest aggregate into "其他" / "Other" (names hidden), with totals conserved; hover highlights the matching slice.
+Two **donut charts** break usage down by Token (or cost) share: **model distribution** by model, **project distribution** by project (using the canonical `cwd` with DSH workspace membership as fallback). Toggle Token / cost; the top 6 slices each get a fixed color and the rest aggregate into "其他" / "Other" (names hidden), with totals conserved. Hovering a model / project, including the aggregated Other item, or its matching slice dims the rest and switches the donut center to that item's Token and cost summary: Token mode shows only the hovered item’s Token value in K/M/B form, while cost mode shows only the hovered item’s CNY cost; the legend still shows exact Token / cost values and share.
 
 ![Model and project distributions](picture/Snipaste_2026-08-19_21-29-29.png)
 
@@ -127,7 +129,7 @@ The verifier checks that host / core / client bundles load, the bundle patch and
 
 ## Version
 
-Current release: `0.3.7`
+Current release: `0.3.8`
 
 ## License
 
