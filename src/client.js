@@ -679,7 +679,7 @@ return {
       const segs = items.map((x, i) => {
         const frac = total > 0 ? x.v / total : 0
         const len = frac > 0 ? Math.max(0, frac * C - 1.5) : 0
-        const seg = h('circle', {
+        const circleProps = {
           key: i,
           cx: 60, cy: 60, r: R,
           fill: 'none',
@@ -688,8 +688,16 @@ return {
           strokeDasharray: len + ' ' + C,
           strokeDashoffset: -acc,
           strokeLinecap: 'butt',
-          opacity: x.dim ? 0.18 : 1
-        })
+          opacity: x.dim ? 0.18 : 1,
+          role: x.ariaLabel ? 'img' : undefined,
+          'aria-label': x.ariaLabel,
+          onMouseEnter: x.onMouseEnter,
+          onMouseLeave: x.onMouseLeave,
+          onFocus: x.onMouseEnter,
+          onBlur: x.onMouseLeave,
+          tabIndex: x.ariaLabel ? 0 : undefined
+        }
+        const seg = x.title ? h('circle', circleProps, h('title', null, x.title)) : h('circle', circleProps)
         acc += frac * C
         return seg
       })
@@ -727,7 +735,20 @@ return {
         }
       }
       const total = items.reduce((s, x) => s + x.v, 0)
-      const opts = [{ key: 'token', label: 'Token' }, { key: 'cost', label: '费用' }]
+      const totalTokens = items.reduce((s, x) => s + x.tokens, 0)
+      const totalCost = items.reduce((s, x) => s + x.cost, 0)
+      const hoverItem = hover === null ? null : items.find((x) => x.id === hover) || null
+      const activeHover = hoverItem ? hover : null
+      const centerTarget = hoverItem || { tokens: totalTokens, cost: totalCost }
+      const centerValue = mode === 'cost' ? fmtCny(centerTarget.cost) : fmtH9(centerTarget.tokens)
+       const centerLabel = hoverItem
+         ? (mode === 'cost' ? '当前费用' : '当前 Token')
+         : (mode === 'cost' ? '总费用' : '总 Token')
+       const opts = [{ key: 'token', label: 'Token' }, { key: 'cost', label: '费用' }]
+      const pctLabel = (x) => (total > 0 ? (x.v / total * 100).toFixed(1) : '0.0') + '%'
+      const fullLabel = (x) => (x.id === '__other__' ? '其他（聚合）' : x.label) + '：Token ' + fmtIntl(x.tokens) + '，费用 ' + fmtCny(x.cost) + '，占比 ' + pctLabel(x)
+      const totalLabel = (mode === 'cost' ? '总费用 ' + fmtCny(totalCost) + '，Token ' + fmtIntl(totalTokens) : '总 Token ' + fmtIntl(totalTokens) + '，费用 ' + fmtCny(totalCost))
+      const centerTitle = hoverItem ? fullLabel(hoverItem) : totalLabel
       const head = h('div', { className: 'dd-chart-head' },
         h('div', { className: 'dd-chart-title' },
           h('span', { className: 'icon' }, props.icon || ICON_PIE),
@@ -740,21 +761,34 @@ return {
       } else {
         body = h('div', { className: 'dd-dist-body' },
           h('div', { className: 'dd-dist-donut' },
-            h(Donut, { items: items.map((x) => ({ v: x.v, color: x.color, dim: hover !== null && hover !== x.id })) }),
-            h('div', { className: 'dd-dist-center' },
-              h('span', { className: 'v' }, mode === 'cost' ? fmtCny(total) : fmtH9(total)),
-              h('span', { className: 'l' }, mode === 'cost' ? '总费用' : '总 Token'))),
-          h('div', { className: 'dd-dist-legend' },
-            items.map((x) => h('div', {
-              key: x.id,
-              className: 'dd-dist-item' + (hover !== null && hover !== x.id ? ' dim' : ''),
+            h(Donut, { items: items.map((x) => ({
+              v: x.v,
+              color: x.color,
+              dim: activeHover !== null && activeHover !== x.id,
+              title: fullLabel(x),
+              ariaLabel: fullLabel(x),
               onMouseEnter: () => setHover(x.id),
               onMouseLeave: () => setHover(null)
-            },
-              h('span', { className: 'dot', style: { backgroundColor: x.color } }),
-              h('span', { className: 'name', title: x.label }, x.label),
-              h('span', { className: 'val' }, mode === 'cost' ? fmtCny(x.cost) : fmtIntl(x.tokens)),
-              h('span', { className: 'pct' }, (total > 0 ? (x.v / total * 100).toFixed(1) : '0.0') + '%')))))
+            })) }),
+            h('div', { className: 'dd-dist-center', title: centerTitle, 'aria-label': centerTitle },
+              h('span', { className: 'v' }, centerValue),
+               h('span', { className: 'l' }, centerLabel))),
+          h('div', { className: 'dd-dist-legend' },
+            items.map((x) => {
+              const label = fullLabel(x)
+              return h('div', {
+                key: x.id,
+                className: 'dd-dist-item' + (activeHover !== null && activeHover !== x.id ? ' dim' : ''),
+                title: label,
+                'aria-label': label,
+                onMouseEnter: () => setHover(x.id),
+                onMouseLeave: () => setHover(null)
+              },
+                h('span', { className: 'dot', style: { backgroundColor: x.color } }),
+                h('span', { className: 'name', title: x.label }, x.label),
+                h('span', { className: 'val' }, mode === 'cost' ? fmtCny(x.cost) : fmtIntl(x.tokens)),
+                h('span', { className: 'pct' }, pctLabel(x)))
+            })))
       }
       return h('div', { className: 'dd-dist' }, head, body)
     }
