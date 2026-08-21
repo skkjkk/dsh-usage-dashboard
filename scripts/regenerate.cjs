@@ -220,7 +220,9 @@ let c = clientSrc
     "ctx.effect(() => styles.insert(CSS))",
     `ctx.effect(() => {
         const tagId = ${JSON.stringify(PACKAGE_ID + '/dashboard.module.css')};
-        if (typeof document !== 'undefined' && document.querySelector('style[data-plugin-css=' + JSON.stringify(tagId) + ']') === null) {
+        if (typeof document !== 'undefined') {
+          const old = document.querySelectorAll('style[data-plugin-css=' + JSON.stringify(tagId) + ']');
+          for (var _i = 0; _i < old.length; _i++) old[_i].remove();
           const tag = document.createElement('style');
           tag.dataset.plugin = ${JSON.stringify(PACKAGE_ID)};
           tag.dataset.pluginCss = tagId;
