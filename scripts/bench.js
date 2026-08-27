@@ -5,8 +5,10 @@
 // session data, then asserts field-level equality of every dashboard payload.
 //
 // Usage: npm run bench   (node scripts/bench.js)
+import { execFileSync } from 'node:child_process'
 import { foldSession, foldAppend, queryUsage, queryDetail, queryCalendar, priceFor, priceForAt, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, presetBucketCount, cellOf } from '../src/core/rollup.js'
 
+const HOUR = 3600000
 const DAY = 86400000
 
 // ---------- deterministic RNG ----------
@@ -33,9 +35,13 @@ const CWDS = ['D:/a/alpha', 'D:/b/beta', 'C:/dev/gamma', 'D:/a/delta', 'E:/misc'
 function genSession(rnd, idx, now) {
   const msgs = 40 + Math.floor(rnd() * 40)
   const events = []
-  // start at least one day in the past so no synthetic event lands in the
-  // future (session spans stay < 1 day given the gap distribution)
-  const start = now - DAY - Math.floor(rnd() * 85) * DAY - Math.floor(rnd() * DAY * 0.5)
+  // Keep a few deterministic sessions inside today's window so the today
+  // edge path is exercised, while leaving enough historical sessions for all
+  // rolling-window comparisons. The 8h recent offset is larger than the
+  // generated session duration, so no event lands in the future.
+  const start = idx < 8
+    ? now - 8 * HOUR - Math.floor(rnd() * 2 * HOUR)
+    : now - DAY - Math.floor(rnd() * 85) * DAY - Math.floor(rnd() * DAY * 0.5)
   const cwd = CWDS[idx % CWDS.length]
   let t = start
   let turn = 0
@@ -526,6 +532,16 @@ function compareUsage(label, l, n) {
   assertEq(label + '.meta.dist.projects.cost', projectCost, nt.cost, 1e-6)
 }
 
+function assertUsageMeaningful(label, req, result) {
+  const [lo, hi] = rangeBounds(req)
+  if (!(result.totals.sessions > 0 && result.totals.totalTokens > 0)) {
+    throw new Error(label + ': synthetic window unexpectedly empty')
+  }
+  if (result.totals.totalMs < 0 || result.totals.totalMs > hi - lo) {
+    throw new Error(label + ': totalMs outside window bounds: ' + result.totals.totalMs)
+  }
+}
+
 function compareDetail(label, l, n) {
   assertEq(label + '.gran', l.gran, n.gran)
   assertEq(label + '.total', l.total, n.total)
@@ -563,7 +579,7 @@ const SESSIONS = Number(process.env.BENCH_SESSIONS || 300)
 const REPEAT = Number(process.env.BENCH_REPEAT || 50)
 
 const rnd = mulberry32(20260815)
-const now = Date.now()
+const now = fixedNow
 const sessions = []
 for (let i = 0; i < SESSIONS; i++) sessions.push(genSession(rnd, i, now))
 const totalEvents = sessions.reduce((s, x) => s + x.events.length, 0)
@@ -604,12 +620,12 @@ const fixedRollups = fixedSessions.map((s) => {
 })
 
 const REQS = [
-  { name: 'today', req: { range: 'today' } },
-  { name: '7d', req: { range: '7d' } },
-  { name: '30d', req: { range: '30d' } },
-  { name: '90d', req: { range: '90d' } },
-  { name: 'custom', req: { range: 'custom', from: now - 45 * 86400000, to: now } },
-  { name: '7d+model', req: { range: '7d', models: ['deepseek-v4-flash'] } }
+  { name: 'today', req: { range: 'today', now } },
+  { name: '7d', req: { range: '7d', now } },
+  { name: '30d', req: { range: '30d', now } },
+  { name: '90d', req: { range: '90d', now } },
+  { name: 'custom', req: { range: 'custom', now, from: now - 45 * DAY, to: now } },
+  { name: '7d+model', req: { range: '7d', now, models: ['deepseek-v4-flash'] } }
 ]
 
 console.log('\n[0a] activeMs generation semantics (TTFT/tool wait excluded)')
@@ -665,6 +681,26 @@ console.log('\n[0c] preset trend bucket counts')
     assertEq('preset.' + range + '.bucketCount', keys.length, expected[range])
   }
   console.log('  preset counts           OK (today 14h, 24H 24h, 7D 7d, 30D 30d, 90D 13w)')
+}
+
+console.log('\n[0d] DST-safe local calendar buckets')
+{
+  const code = [
+    "import { bucketSeries } from './src/core/rollup.js'",
+    "const now = new Date(2024, 2, 11, 12, 0, 0, 0).getTime()",
+    "const end = new Date(now); end.setHours(0, 0, 0, 0)",
+    "const start = new Date(end); start.setDate(start.getDate() - 6)",
+    "const expected = []",
+    "for (let i = 0; i < 7; i++) { expected.push(start.getTime()); start.setDate(start.getDate() + 1) }",
+    "const actual = bucketSeries(now - 7 * 86400000, now, 'day', 7)",
+    "if (actual.length !== expected.length || actual.some((v, i) => v !== expected[i])) throw new Error(JSON.stringify({ actual, expected }))"
+  ].join('\n')
+  execFileSync(process.execPath, ['--input-type=module', '-e', code], {
+    cwd: process.cwd(),
+    env: { ...process.env, TZ: 'America/New_York' },
+    stdio: 'inherit'
+  })
+  console.log('  DST calendar buckets    OK (America/New_York spring transition)')
 }
 
 console.log('\n[0] totalMs union semantics (parallel sessions counted once)')
@@ -760,22 +796,23 @@ console.log('\n[1] correctness (field-level, 1e-9 tolerance)')
 for (const { name, req } of REQS) {
   const l = legacyUsage(fixedSessions, req)
   const n = queryUsage(fixedRollups, req, {})
+  assertUsageMeaningful('usage:' + name, req, n)
   compareUsage('usage:' + name, l, n)
   console.log('  usage:' + name.padEnd(12) + ' OK')
 }
 {
   // Detail comparison using fixedSessions / fixedRollups (before threshold,
   // so priceForAt uses CSV pricing and costs match the legacy algorithm).
-  const l = legacyDetail(fixedSessions, { range: '30d' })
-  const n = queryDetail(fixedRollups, { range: '30d', limit: 200 })
+  const l = legacyDetail(fixedSessions, { range: '30d', now: fixedNow })
+  const n = queryDetail(fixedRollups, { range: '30d', now: fixedNow, limit: 200 })
   compareDetail('detail:30d', l, n)
   console.log('  detail:30d              OK')
-  const l2 = legacyDetail(fixedSessions, { range: '7d', models: ['gpt-5', 'deepseek-chat'] })
-  const n2 = queryDetail(fixedRollups, { range: '7d', models: ['gpt-5', 'deepseek-chat'], limit: 200 })
+  const l2 = legacyDetail(fixedSessions, { range: '7d', now: fixedNow, models: ['gpt-5', 'deepseek-chat'] })
+  const n2 = queryDetail(fixedRollups, { range: '7d', now: fixedNow, models: ['gpt-5', 'deepseek-chat'], limit: 200 })
   compareDetail('detail:7d+model', l2, n2)
   console.log('  detail:7d+model         OK')
-  const l3 = legacyDetail(fixedSessions, { range: 'today' })
-  const n3 = queryDetail(fixedRollups, { range: 'today', limit: 200 })
+  const l3 = legacyDetail(fixedSessions, { range: 'today', now: fixedNow })
+  const n3 = queryDetail(fixedRollups, { range: 'today', now: fixedNow, limit: 200 })
   compareDetail('detail:today', l3, n3)
   console.log('  detail:today            OK')
 }

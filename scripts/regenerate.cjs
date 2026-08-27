@@ -238,6 +238,15 @@ let c = clientSrc
 if (!c.includes('module.exports = {')) {
   c = c.replace('return {', 'module.exports = {', 1)
 }
+if (c.includes('ctx.interval(') || c.includes('styles.insert(')) {
+  throw new Error('client transform left host-only API references in lib/client.js')
+}
+if (!c.includes('clearInterval(off)')) {
+  throw new Error('client transform did not produce interval cleanup')
+}
+if (!c.includes('module.exports = {')) {
+  throw new Error('client transform did not produce module.exports')
+}
 
 const clientOut = `window.__ModuleLoader__.load({
   id: ${JSON.stringify(PACKAGE_ID)},
