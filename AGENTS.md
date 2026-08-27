@@ -21,7 +21,7 @@ dsh-usage-dashboard — DSH (DeepSeek Harness) usage statistics dashboard plugin
 - `queryDetail` rows are grouped by **(time bucket, model, project)** — the same hour used by two models yields two rows, each showing its project name. `rollup.projectTitle` is set by the host glue at fold time.
 - The client bundle runs in the browser without bundler/TSX: plain JS + `React.createElement` only.
 - The host bundle is ESM (`.js` under `"type": "module"`); the build script itself is CommonJS (`.cjs`).
-- Cost figures are estimates: USD price × 7 → CNY, from the generated `PRICES` table (`pricing/vibe-usage-model-pricing.csv`). New/changed prices belong in the CSV, never in code. DeepSeek V4 flash/pro 自 2026-08-17 00:00（北京时间）起按峰谷定价（rollup.js priceForAt(model, t)）：高峰 9:00-12:00、14:00-18:00（UTC+8），空闲为高峰一半（元/M tokens）；生效前及非 DeepSeek 模型按 CSV 静态价。新峰谷价改动在 rollup.js 的 DS_PEAK，勿改 CSV。
+- Cost figures are estimates: USD price × 7 → CNY, from the generated `PRICES` table (`pricing/vibe-usage-model-pricing.csv`). New/changed prices belong in the CSV, never in code. DeepSeek V4 flash/pro 自 2026-08-17 00:00（北京时间）起按峰谷定价（rollup.js priceForAt(model, t)）：高峰 周一至周五 9:00-12:00、14:00-18:00（UTC+8），空闲为高峰一半（元/M tokens）；生效前及非 DeepSeek 模型按 CSV 静态价。新峰谷价改动在 rollup.js 的 DS_PEAK，勿改 CSV。
 - All aggregation is local; never send session data anywhere.
 
 ## Performance architecture (v0.3)
