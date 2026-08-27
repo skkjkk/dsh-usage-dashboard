@@ -20,13 +20,13 @@ A filter bar sits at the top: the time range switches among `today / 24H / 7D / 
 
 A row of metric cards covering: estimated cost, total / input / output / cached Tokens, active duration, total duration, session count, total message count and user message count. Each card shows a **percentage change versus the previous period** (a zero baseline is hidden rather than showing a fabricated `+100%`), with a smooth tween animation on value changes. Clicking the **cost card** toggles ¥ / $; clicking a **Token card** toggles international units (K/M/B) and Chinese units (万 / 亿). **When a model filter is active, the duration and session cards collapse, leaving only the cost and Token cards** for a more focused comparison.
 
-![KPI overview and hourly trend](picture/Snipaste_2026-08-19_21-28-02.png)
+![KPI overview and hourly trend](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/Snipaste_2026-08-19_21-28-02.png)
 
 ### Trend chart
 
 Granularity adapts to the selected range — **hourly / daily / weekly** (today and 24H use hourly, 7D/30D/90D use daily, longer ranges use weekly). It switches among **Token / cost / duration** modes; in Token mode output / input / cache stack as segments with independently toggleable legend items; in duration mode it separates active from total duration. Click any bar to highlight it (others dim); hover for details.
 
-![Daily trend and hourly activity heatmap](picture/Snipaste_2026-08-19_21-28-49.png)
+![Daily trend and hourly activity heatmap](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/Snipaste_2026-08-19_21-28-49.png)
 
 ### Hourly activity heatmap
 
@@ -36,13 +36,13 @@ A `7 rows (weekday) × 24 columns (hour)` grid where color intensity encodes mag
 
 Two **donut charts** break usage down by Token (or cost) share: **model distribution** by model, **project distribution** by project (using the canonical `cwd` with DSH workspace membership as fallback). Toggle Token / cost; the top 6 slices each get a fixed color and the rest aggregate into "其他" / "Other" (names hidden), with totals conserved. Hovering a model / project, including the aggregated Other item, or its matching slice dims the rest and switches the donut center to that item's Token and cost summary: Token mode shows only the hovered item’s Token value in K/M/B form, while cost mode shows only the hovered item’s CNY cost; the legend still shows exact Token / cost values and share.
 
-![Model and project distributions](picture/Snipaste_2026-08-19_21-29-29.png)
+![Model and project distributions](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/Snipaste_2026-08-19_21-29-29.png)
 
 ### Activity heatmap (calendar)
 
 The latest **40 weeks** in a `7 rows × 40 columns` calendar grid, with fixed square rounded cells; colored by daily Token bands (`0 / ≥1M / ≥10M / ≥30M / ≥60M / ≥100M / ≥200M / ≥250M`), and edge-date floating tooltips clamped to the viewport.
 
-![Activity heatmap and detailed records](picture/Snipaste_2026-08-19_21-29-53.png)
+![Activity heatmap and detailed records](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/Snipaste_2026-08-19_21-29-53.png)
 
 ### Detailed records
 

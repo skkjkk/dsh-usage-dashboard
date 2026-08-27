@@ -20,13 +20,13 @@
 
 一组指标卡片，覆盖：预估费用、总 Token、输入 / 输出 / 缓存 Token、活跃时长、总时长、会话数、总消息数、用户消息数。每张卡片带相对上一周期的**环比百分比**（基线为零时自动隐藏，避免伪造的 `+100%`），数值带平滑过渡动画。点击**费用卡片**可在 ¥ / $ 间切换；点击 **Token 卡片**可在国际单位（K/M/B）与中文单位（万 / 亿）间切换。**选择模型筛选后，时长与会话类卡片会自动收起，仅保留费用与 Token 五项**，让对比更聚焦。
 
-![KPI 总览与每小时趋势](picture/Snipaste_2026-08-19_21-28-02.png)
+![KPI 总览与每小时趋势](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/Snipaste_2026-08-19_21-28-02.png)
 
 ### 趋势图
 
 随所选范围自动采用**小时 / 天 / 周**粒度（今天与 24H 为每小时趋势，7D/30D/90D 为每日趋势，更长范围为每周趋势）。可在 **Token / 费用 / 时长** 三种口径间切换；Token 口径下输出 / 输入 / 缓存分段堆叠，图例可单独显隐；时长口径区分活跃时长与总时长。点击任意柱子可高亮该项（其余变淡），悬停查看明细。
 
-![每日趋势与分时活跃热力图](picture/Snipaste_2026-08-19_21-28-49.png)
+![每日趋势与分时活跃热力图](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/Snipaste_2026-08-19_21-28-49.png)
 
 ### 分时活跃热力图
 
@@ -36,13 +36,13 @@
 
 两张**环形图**分别从 Token（或费用）占比视角拆解用量：**模型分布**按模型拆分，**项目分布**按项目（基于会话 `cwd` 与 DSH workspace 归属）拆分。可在 Token / 费用间切换；占比前 6 项各有固定配色，其余聚合为「其他」（不显示具体名称），总量守恒。悬停模型 / 项目（含「其他」聚合项）或对应扇区时，其他图例与扇区变淡，圆环中心会切换为当前项的 Token 与费用摘要：Token 模式中心只显示当前项的 K/M/B 缩写 Token，费用模式中心只显示当前项的人民币费用；右侧图例仍显示精确 Token / 费用与占比。
 
-![模型分布与项目分布](picture/Snipaste_2026-08-19_21-29-29.png)
+![模型分布与项目分布](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/Snipaste_2026-08-19_21-29-29.png)
 
 ### 活跃热力图（日历）
 
 最近 **40 周**的 `7 行 × 40 列` 日历网格，单元格固定为正方形并带圆角；按每日 Token 量分档着色（`0 / ≥1M / ≥10M / ≥30M / ≥60M / ≥100M / ≥200M / ≥250M`），边缘日期的浮动 tooltip 自动限制在视口内。
 
-![活跃热力图与详细记录](picture/Snipaste_2026-08-19_21-29-53.png)
+![活跃热力图与详细记录](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/Snipaste_2026-08-19_21-29-53.png)
 
 ### 详细记录
 
