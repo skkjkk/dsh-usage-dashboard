@@ -28,12 +28,13 @@ export function priceFor(model) {
 }
 
 // ---------- DeepSeek 峰谷定价（2026-08-17 00:00 北京时间起生效） ----------
-// 官方口径（UTC+8）：高峰时段 = 每日 9:00-12:00 与 14:00-18:00，其余为空闲时段；
+// 官方口径（UTC+8）：高峰时段 = 周一至周五 9:00-12:00 与 14:00-18:00，其余（含周末）为空闲时段；
 // 空闲时段价格为高峰时段的一半（元/百万 tokens）。生效前的事件按 CSV 静态价（USD×7）计。
 const DS_PEAK_SINCE = Date.UTC(2026, 7, 16, 16) // 2026-08-16T16:00Z = 08-17 00:00 +08:00
 // model → [输入(缓存未命中), 输出, 缓存(命中)] × [空闲, 高峰]
 const DS_PEAK = {
   'deepseek-v4-flash': { in: [1.5, 3.0], out: [4.5, 9.0], cache: [0.05, 0.10] },
+  'deepseek-v4-flash-vision-exp': { in: [1.5, 3.0], out: [4.5, 9.0], cache: [0.05, 0.10] },
   'deepseek-v4-pro': { in: [4.5, 9.0], out: [13.5, 27.0], cache: [0.15, 0.30] }
 }
 
@@ -44,7 +45,11 @@ export function bjHour(t) {
 
 // t 是否处于高峰时段（9:00-12:00、14:00-18:00，北京时间）
 export function isDSPeak(t) {
-  const h = bjHour(t)
+  // 官方口径：高峰仅北京时间周一至周五 9:00-12:00、14:00-18:00；周末与节假日外均为空闲
+  const bj = new Date(t + 8 * 3600000)
+  const day = bj.getUTCDay() // 0=周日, 6=周六
+  if (day === 0 || day === 6) return false
+  const h = bj.getUTCHours()
   return (h >= 9 && h < 12) || (h >= 14 && h < 18)
 }
 
