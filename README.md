@@ -4,7 +4,7 @@
 
 🌐 语言 / Language: **[English](README.en.md)** · 中文
 
-[![npm](https://img.shields.io/npm/v/%40skkjkk%2Fdsh-usage-dashboard)](https://www.npmjs.com/package/@skkjkk/dsh-usage-dashboard) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![npm](https://img.shields.io/npm/v/%40skkjkk%2Fdsh-usage-dashboard)](https://www.npmjs.com/package/@skkjkk/dsh-usage-dashboard) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) · [更新日志](CHANGELOG.md)
 
 `dsh-usage-dashboard` 是一个 DSH **bundle 插件**。它直接读取 DSH 本地会话数据，在 **设置 → 数据看板** 中提供用量统计。所有聚合都在本机完成，**不会向外部服务发送任何会话内容**。
 
@@ -53,7 +53,7 @@
 - **Token** = 输入 Token + 输出 Token + 缓存 Token。
 - **活跃时长** 只累计 AI 实际生成内容的时间：从首个 `assistant/chunk` 到该 turn 完成；不包含排队、首 Token 延迟、思考间隔或工具等待。并行会话分别累计，因此活跃时长可能超过 24 小时。
 - **总时长** 是每个会话首条消息到末条消息的时间跨度；重叠的并行会话区间先合并，再按所选窗口裁剪后求和，不会重复计算重叠时间。
-- **费用** 是估算值，价格来自本仓库的定价表 `pricing/vibe-usage-model-pricing.csv`（覆盖 203 个模型，由构建脚本生成 `lib/core/pricing.js`），按美元价格 ×7 折算人民币；未匹配的模型暂不计费。DeepSeek V4 在 2026-08-17 起按北京时间高峰 / 空闲时段计费（高峰 9:00–12:00、14:00–18:00，空闲为高峰一半）。
+- **费用** 是估算值，价格来自本仓库的定价表 `pricing/vibe-usage-model-pricing.csv`（覆盖 204 个模型，由构建脚本生成 `lib/core/pricing.js`），按美元价格 ×7 折算人民币；未匹配的模型暂不计费。DeepSeek V4 在 2026-08-17 起按北京时间工作日高峰 / 空闲时段计费（周一至周五高峰 9:00–12:00、14:00–18:00，周末及其余时段为空闲，空闲为高峰一半）。
 - **项目** 优先使用会话 header 中的 canonical `cwd`，再结合 DSH workspace membership 回填；路径分隔符、大小写和尾部斜杠会统一后再分组。
 - 环比基线为零时没有有限百分比，界面会隐藏该百分比，不显示伪造的 `+100%`。
 
@@ -103,7 +103,7 @@ node scripts/smoke-host.mjs
 npm test           # 依次执行 build + bench + host smoke test
 ```
 
-`npm test` 覆盖：Token / 费用 / 消息数 / 日历聚合一致性、`foldAppend` 与完整 `foldSession` 的增量等价性、活跃时长与总时长的并集 / 窗口边界、模型 / 项目分布与总 Token / 总费用守恒，以及 `/dash-api/usage`、`/dash-api/detail`、`/dash-api/calendar` 三条 host 路由。
+`npm test` 覆盖：Token / 费用 / 消息数 / 日历聚合一致性、`foldAppend` 与完整 `foldSession` 的增量等价性、活跃时长与总时长的并集 / 窗口边界、模型 / 项目分布与总 Token / 总费用守恒，以及 `/dash-api/usage`、`/dash-api/detail`、`/dash-api/calendar` 三条 host 路由。针对性回归还覆盖边缘桶、无 usage 消息、缓存竞态、session 列表滞后、UTC+8、原型键和超长趋势范围。
 
 发布前可验证 npm 包内容：
 
@@ -129,7 +129,7 @@ node scripts/verify-pack.mjs <package-dir>
 
 ## 版本
 
-当前发布版本：`0.3.8`
+当前发布版本：`0.3.9`
 
 ## License
 
