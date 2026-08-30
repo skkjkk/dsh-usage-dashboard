@@ -17,13 +17,15 @@
 // 定价表：由 scripts/regenerate.cjs 从 pricing/vibe-usage-model-pricing.csv 生成（USD × 7 → ¥/M tokens），见 ./pricing.js
 import { PRICES, VENDORS } from './pricing.js'
 
+const hasOwn = (table, key) => Object.prototype.hasOwnProperty.call(table, key)
+
 // 模型 → 定价；未匹配返回 null（不计费）
 export function priceFor(model) {
   const id = String(model || '')
   if (!id) return null
-  if (PRICES[id]) return { matched: id, p: PRICES[id] }
+  if (hasOwn(PRICES, id)) return { matched: id, p: PRICES[id] }
   const stripped = id.replace(/-free$/, '')
-  if (stripped !== id && PRICES[stripped]) return { matched: stripped, p: PRICES[stripped] }
+  if (stripped !== id && hasOwn(PRICES, stripped)) return { matched: stripped, p: PRICES[stripped] }
   return null
 }
 
@@ -54,7 +56,7 @@ export function priceForAt(model, t) {
   const id = String(model || '')
   if (!id) return null
   const stripped = id.replace(/-free$/, '')
-  const key = DS_PEAK[stripped] ? stripped : (DS_PEAK[id] ? id : null)
+  const key = hasOwn(DS_PEAK, stripped) ? stripped : (hasOwn(DS_PEAK, id) ? id : null)
   if (key && typeof t === 'number' && t >= DS_PEAK_SINCE) {
     const pk = isDSPeak(t) ? 1 : 0
     const ds = DS_PEAK[key]
@@ -73,35 +75,47 @@ export function priceForAt(model, t) {
 const HOUR = 3600000
 const DAY = 86400000
 const WEEK = 7 * DAY
+const BJ_OFFSET = 8 * HOUR
 
 export function num(v) {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0
 }
 function pad2(n) { return n < 10 ? '0' + n : String(n) }
+
+// All dashboard buckets use the fixed UTC+8 business timezone. Bucket keys are
+// still absolute timestamps: a Beijing midnight is represented by its UTC time.
+function bjDate(t) { return new Date(t + BJ_OFFSET) }
+function bjDayStart(t) {
+  const d = bjDate(t)
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - BJ_OFFSET
+}
+function bjSundayStart(t) {
+  const d = bjDate(t)
+  return bjDayStart(t) - d.getUTCDay() * DAY
+}
 export function mondayOf(t) {
-  const d = new Date(t)
-  const day = (d.getDay() + 6) % 7
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - day).getTime()
+  const d = bjDate(t)
+  const day = (d.getUTCDay() + 6) % 7
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day) - BJ_OFFSET
 }
 export function cellOf(t) {
-  const d = new Date(t)
-  return d.getDay() * 24 + d.getHours()
+  const d = bjDate(t)
+  return d.getUTCDay() * 24 + d.getUTCHours()
 }
 function weekLabel(monday) {
-  const s = new Date(monday)
-  const e = new Date(monday + 6 * DAY)
-  return (s.getMonth() + 1) + '/' + s.getDate() + '-' + (e.getMonth() + 1) + '/' + e.getDate()
+  const s = bjDate(monday)
+  const e = bjDate(monday + 6 * DAY)
+  return (s.getUTCMonth() + 1) + '/' + s.getUTCDate() + '-' + (e.getUTCMonth() + 1) + '/' + e.getUTCDate()
 }
 export function hourOf(t) {
-  const d = new Date(t)
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours()).getTime()
+  const d = bjDate(t)
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours()) - BJ_OFFSET
 }
 export function rangeBounds(req) {
   const input = req || {}
   const now = typeof input.now === 'number' && Number.isFinite(input.now) ? input.now : Date.now()
   if (!input.range) return [0, now]
-  const d = new Date(now)
-  const sod = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const sod = bjDayStart(now)
   switch (input.range) {
     case 'today': return [sod, now]
     case '24h': return [now - DAY, now]
@@ -118,7 +132,9 @@ export function rangeBounds(req) {
 }
 export function prevWindow(range, lo, hi) {
   if (range === 'today') return [lo - DAY, lo - 1]
-  const span = hi - lo + 1
+  // Windows use inclusive event endpoints but a continuous duration of hi-lo;
+  // keep the previous window adjacent without adding a phantom millisecond.
+  const span = Math.max(0, hi - lo)
   return [lo - span, lo - 1]
 }
 export function pickGranularity(req, lo, hi) {
@@ -131,32 +147,34 @@ export function pickGranularity(req, lo, hi) {
   return 'week'
 }
 export function bucketKey(t, gran) {
-  const d = new Date(t)
   if (gran === 'hour') return hourOf(t)
-  if (gran === 'day') return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  if (gran === 'day') return bjDayStart(t)
   return mondayOf(t)
 }
 export function bucketLabel(key, gran) {
-  const d = new Date(key)
-  if (gran === 'hour') return pad2(d.getHours())
-  if (gran === 'day') return (d.getMonth() + 1) + '/' + d.getDate()
+  const d = bjDate(key)
+  if (gran === 'hour') return pad2(d.getUTCHours())
+  if (gran === 'day') return (d.getUTCMonth() + 1) + '/' + d.getUTCDate()
   return weekLabel(key)
 }
-// Return the calendar buckets touched by [lo, hi]. When count is supplied,
-// return exactly that many buckets ending at hi; preset rolling charts use this
-// form so the current hour/day is included without adding the lower edge twice.
+// Return all calendar buckets touched by [lo, hi]. Preset counts are a minimum:
+// a rolling window whose lower edge is mid-bucket needs one extra leading bucket
+// so its KPI data is still represented in the trend.
+const MAX_SERIES_BUCKETS = 50000
 export function bucketSeries(lo, hi, gran, count) {
   const keys = []
   const step = gran === 'hour' ? HOUR : gran === 'day' ? DAY : WEEK
   const end = bucketKey(hi, gran)
+  const naturalStart = end - step * (count - 1)
   let k = Number.isInteger(count) && count > 0
-    ? end - step * (count - 1)
+    ? Math.min(naturalStart, bucketKey(lo, gran))
     : bucketKey(lo, gran)
-  let guard = 0
-  while (k <= end && guard < 500) {
+  while (k <= end) {
+    if (keys.length >= MAX_SERIES_BUCKETS) {
+      throw new RangeError('trend range exceeds ' + MAX_SERIES_BUCKETS + ' buckets')
+    }
     keys.push(k)
     k += step
-    guard += 1
   }
   return keys
 }
@@ -178,10 +196,10 @@ export function presetBucketCount(range, gran) {
 //             to the hour where generation started; TTFT/tool wait excluded
 //   first/last/hasMsg: bucket message span (trend totalMs / sessions)
 //   evts:   lightweight per-event detail [t, type, model|null, in, out, cache,
-//           costIn, costOut, costCache] — used to make window EDGE buckets
-//           exact (windows rarely align on the hour: e.g. 7d starts at
-//           now-7d, not 00:00). Non-edge buckets use the aggregates.
-//           type: 0 user, 1 injected, 2 assistant, 3 toolCall, 4 toolResult, 5 step/start
+//           costIn, costOut, costCache, durUA, actMs, endT, cacheRead] — used
+//           to make window EDGE buckets exact (windows rarely align on the
+//           hour). Non-edge buckets use the aggregates. type: 0 user, 1 injected,
+//           2 assistant, 3 toolCall, 4 toolResult, 5 step/start, 6 generation
 //
 // foldSession folds a FULL event list; foldAppend applies ONE new event to an
 // existing rollup. The host keeps rollups live via DSH's "session/event"
@@ -304,6 +322,10 @@ export function foldAppend(r, ev) {
       // closed at the finish timestamp and this is a no-op.
       closeStep(r, ev.data, t)
       const usage = ev.data.usage
+      if (!usage) {
+        // 保留 message-only 边缘明细；不造 token/cost 行
+        b.evts.push([t, 2, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+      }
       if (usage) {
         const msg = ev.data.message
         const model = msg && msg.source ? String(msg.source.model || '') : ''
@@ -318,7 +340,7 @@ export function foldAppend(r, ev) {
           costOut = otp * pr.p[1] / 1e6
           costCache = (cr * pr.p[2] + cw * pr.p[0]) / 1e6
         }
-        b.evts.push([t, 2, model, inp, otp, cr + cw, costIn, costOut, costCache, r._lastUserT !== null ? Math.max(0, t - r._lastUserT) : 0])
+        b.evts.push([t, 2, model, inp, otp, cr + cw, costIn, costOut, costCache, r._lastUserT !== null ? Math.max(0, t - r._lastUserT) : 0, 0, 0, cr])
         let per = b.per.get(model)
         if (!per) {
           per = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] // in, out, cache, costIn, costOut, costCache, calls, durUA, matched, cacheRead
@@ -541,7 +563,7 @@ export function queryUsage(rollups, req, opts) {
       const prevEdge = inPrevB && isEdgeBucket(hk, plo, phi)
 
       if (curEdge) {
-        const lastT = edgeAccumulate(lo, hi, modelSet, b.evts, cellOf(lo), {
+        const lastT = edgeAccumulate(lo, hi, modelSet, b.evts, cell, {
           totals: cur.totals, heatToken, heatCost, heatDur,
           bucketMap, gran, modelAgg, projectAgg, cwd: cwdKey, gkSpan
         })
@@ -570,12 +592,14 @@ export function queryUsage(rollups, req, opts) {
           totals: prev.totals, heatToken: null, heatCost: null, heatDur: null,
           bucketMap: null, gran, modelAgg: null, projectAgg: null, cwd: null, gkSpan: null
         })
-      } else if (inPrevB && b.per.size > 0) {
-        if (modelSet === null) {
-          for (const [model, per] of b.per) acc(prev, per)
-        } else {
-          for (const [model, per] of b.per) {
-            if (modelSet.has(model)) acc(prev, per)
+      } else if (inPrevB) {
+        if (b.per.size > 0) {
+          if (modelSet === null) {
+            for (const [model, per] of b.per) acc(prev, per)
+          } else {
+            for (const [model, per] of b.per) {
+              if (modelSet.has(model)) acc(prev, per)
+            }
           }
         }
         prev.totals.userMessages += b.msg[0]
@@ -645,9 +669,11 @@ export function queryUsage(rollups, req, opts) {
   cur.totals.totalMs = mergeIntervals(curInts)
   prev.totals.totalMs = mergeIntervals(prevInts)
   // 趋势桶采用同样的并集口径（每小时/天去重叠）
+  const zeroBucket = () => ({ input: 0, output: 0, cache: 0, costIn: 0, costOut: 0,
+    costCache: 0, durMs: 0, totalMs: 0, sessions: 0, activeMs: 0 })
   for (const [gk, ints] of gkInts) {
-    const g = bucketMap.get(gk)
-    if (!g) continue
+    let g = bucketMap.get(gk)
+    if (!g) { g = zeroBucket(); bucketMap.set(gk, g) }
     g.totalMs = mergeIntervals(ints)
     g.sessions = ints.length
   }
@@ -720,7 +746,7 @@ export function queryUsage(rollups, req, opts) {
   const projects = Array.from(projectList.values()).sort((a, b) => a.title.localeCompare(b.title, 'zh'))
   // 模型 → 厂商（系列分组，来自 pricing CSV）；未收录模型归「其他」
   const vendors = {}
-  for (const m of models) vendors[m.id] = VENDORS[m.id] || '其他'
+  for (const m of models) vendors[m.id] = hasOwn(VENDORS, m.id) ? VENDORS[m.id] : '其他'
 
   return {
     totals: cur.totals,
@@ -773,8 +799,9 @@ function mergeModel(map, model, per) {
 // with the hour). Iterates the bucket's per-event detail and adds only events
 // within [tLo, tHi] to the sink. Non-edge buckets use the aggregates instead.
 // evts entry: [t, type, model|null, in, out, cache, costIn, costOut, costCache,
-//              durUA, actMs, endT] — type: 0 user, 1 injected, 2 assistant,
+//              durUA, actMs, endT, cacheRead] — type: 0 user, 1 injected, 2 assistant,
 //              3 toolCall, 4 toolResult, 5 step/start, 6 generation interval.
+//              cache is still cacheRead + cacheWrite; cacheRead is kept separately at index 12.
 function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
   let any = false
   let prevT = null
@@ -807,9 +834,11 @@ function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
       const model = e[2]
       if (model !== null) {
         const inp = e[3], otp = e[4], cache = e[5], costIn = e[6], costOut = e[7], costCache = e[8]
+        const cacheRead = Number(e[12]) || 0
         // dropdown / pricing rows carry the FULL model aggregate (unfiltered)
         if (sink.modelAgg) mergeModel(sink.modelAgg, model, [inp, otp, cache, costIn, costOut, costCache, 1, 0, 1])
         if (modelSet === null || modelSet.has(model)) {
+          sink.totals.cacheReadTokens += cacheRead
           sink.totals.cost += costIn + costOut + costCache
           sink.totals.inputTokens += inp
           sink.totals.outputTokens += otp
@@ -1024,8 +1053,7 @@ export function queryDetail(rollups, req) {
 export function queryCalendar(rollups, req) {
   const input = req || {}
   const now = typeof input.now === 'number' && Number.isFinite(input.now) ? input.now : Date.now()
-  const d = new Date(now)
-  const thisSunday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()).getTime()
+  const thisSunday = bjSundayStart(now)
   const start = thisSunday - 52 * 7 * DAY
   const end = now  // use now instead of fixed Saturday 00:00 (old bug)
   const modelSet = Array.isArray(input.models) && input.models.length ? new Set(input.models) : null
