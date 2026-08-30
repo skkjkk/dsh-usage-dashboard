@@ -15,13 +15,22 @@ const events = [
 ]
 const header = { id: sessionId, cwd, createdAt: from }
 const routes = new Map()
+let eventHandler = null
+let listCalls = 0
+let listVisible = true
+const lagHeader = { id: 'lag-marker', cwd: 'D:/lag-marker' }
 const services = {
   webServer: { register(definition) { routes.set(definition.path, definition.handler) } },
   sessionQuery: {
-    async listSessions() { return [{ header, live: false, persisted: true }] }
+    async listSessions() {
+      listCalls += 1
+      return listVisible ? [{ header, live: false, persisted: true }] : [{ header: lagHeader, live: false, persisted: true }]
+    }
   },
   sessionPersistence: {
-    async readFrom() { return { meta: header, events } }
+    async readFrom(id) {
+      return { meta: id === sessionId ? header : { id }, events: id === sessionId ? events : [] }
+    }
   },
   workspaceRegistry: {
     list() { return [{ path: cwd, title: 'Smoke Project', sessionIds: [sessionId] }] }
@@ -30,7 +39,7 @@ const services = {
 }
 const ctx = {
   get(name) { return services[name] },
-  on() {},
+  on(_name, handler) { eventHandler = handler },
   effect(fn) { return fn() || (() => {}) }
 }
 
@@ -49,7 +58,8 @@ async function request(path) {
   return JSON.parse(body)
 }
 
-const usage = await request('/dash-api/usage?range=custom&from=' + from + '&to=' + now)
+const queryPath = '/dash-api/usage?range=custom&from=' + from + '&to=' + now
+const usage = await request(queryPath)
 if (usage.totals.activeMs !== 1000) throw new Error('activeMs expected 1000, got ' + usage.totals.activeMs)
 if (usage.totals.totalMs !== 14000) throw new Error('totalMs expected 14000, got ' + usage.totals.totalMs)
 if (usage.meta.projects.length !== 1 || usage.meta.projects[0].title !== 'Smoke Project') {
@@ -58,4 +68,55 @@ if (usage.meta.projects.length !== 1 || usage.meta.projects[0].title !== 'Smoke 
 if (usage.meta.dist.projects.length !== 1 || usage.meta.dist.projects[0].label !== 'Smoke Project') {
   throw new Error('project distribution failed: ' + JSON.stringify(usage.meta.dist.projects))
 }
+if (listCalls !== 1) throw new Error('initial list call count expected 1, got ' + listCalls)
+
+// A metric event invalidates the cache and becomes visible on the next query.
+eventHandler({ id: sessionId, header }, {
+  type: 'assistant/message', time: now - 1000, seq: 8,
+  data: { usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } }
+})
+const fresh = await request(queryPath)
+if (fresh.totals.assistantMessages !== 2) throw new Error('metric event was not appended')
+const callsAfterMetric = listCalls
+
+// A non-finish chunk updates open generation state but must not flush the cache.
+eventHandler({ id: sessionId, header }, {
+  type: 'assistant/chunk', time: now - 800, seq: 9,
+  data: { turn: 1, step: 0, chunk: { type: 'text-delta', index: 0, text: 'partial' } }
+})
+const cached = await request(queryPath)
+if (listCalls !== callsAfterMetric) throw new Error('non-metric chunk unexpectedly flushed the cache')
+if (cached.totals.assistantMessages !== 2) throw new Error('cached metric result changed unexpectedly')
+
+// A listed session survives an omission when the list snapshot lags a prior event.
+listVisible = false
+eventHandler({ id: sessionId, header }, {
+  type: 'assistant/message', time: now - 700, seq: 10,
+  data: { usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } }
+})
+const listedLag = await request(queryPath)
+if (listedLag.totals.sessions !== 1) throw new Error('listed session was dropped by a lagging list')
+listVisible = true
+
+// An event-created session survives the first lagging list snapshot.
+const eventSessionId = 'event-created'
+const eventHeader = { id: eventSessionId, cwd: 'D:/event-project' }
+eventHandler({ id: eventSessionId, header: eventHeader }, {
+  type: 'user/message', time: now - 500, seq: 1, data: { source: { kind: 'user' } }
+})
+await new Promise((resolve) => setTimeout(resolve, 0))
+const withEventSession = await request(queryPath)
+if (withEventSession.totals.sessions !== 2) throw new Error('event-created session was dropped by a lagging list')
+
+// Once a later list still omits it and the recent-event grace has elapsed, it is collectable.
+const realDateNow = Date.now
+Date.now = () => now + 3 * 60000
+try {
+  const afterMissingSession = await request(queryPath + '&cleanup=1')
+  if (afterMissingSession.totals.sessions !== 1) throw new Error('deleted session state was retained forever')
+} finally {
+  Date.now = realDateNow
+}
+
 console.log('host smoke passed')
+console.log('  cache/event regressions     OK')

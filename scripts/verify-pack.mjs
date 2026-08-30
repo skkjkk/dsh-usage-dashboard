@@ -64,6 +64,22 @@ try {
 }
 
 // 6) 无个人数据残留
+// Keep the built-in checks generic. Release environments may add a trusted
+// project-specific pattern without removing the credential checks below.
+const personalPatterns = [
+  /gho_[A-Za-z0-9_]+/,
+  /ghp_[A-Za-z0-9_]+/,
+  /[A-Z0-9._%+-]+@[A-Z0-9.-]+[.][A-Z]{2,}/i
+]
+const customPersonalPattern = process.env.DASH_PERSONAL_SCAN_PATTERN
+if (customPersonalPattern) {
+  try {
+    personalPatterns.push(new RegExp(customPersonalPattern))
+  } catch (e) {
+    console.error('warning: invalid DASH_PERSONAL_SCAN_PATTERN; using default checks')
+  }
+}
+const hasPersonalData = (text) => personalPatterns.some((pattern) => pattern.test(text))
 const scan = (p) => {
   for (const e of readdirSync(p)) {
     const fp = join(p, e)
@@ -71,7 +87,7 @@ const scan = (p) => {
     if (/\.(js|cjs|mjs|json|yml|md|txt|csv)$/.test(e)) {
       try {
         const s = readFileSync(fp, 'utf8')
-        if (/gho_|ghp_|1764495524|王凯彪/.test(s)) fail('possible personal data in ' + fp.replace(dir, ''))
+        if (hasPersonalData(s)) fail('possible personal data in ' + fp.replace(dir, ''))
       } catch { /* binary */ }
     }
   }
