@@ -445,8 +445,7 @@ function legacyDetail(sessions, req) {
 function legacyCalendar(sessions, req) {
   const input = req || {}
   const now = typeof input.now === 'number' ? input.now : Date.now()
-  const d = new Date(now)
-  const thisSunday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()).getTime()
+  const thisSunday = bucketKey(now, 'day') - Math.floor(cellOf(now) / 24) * DAY
   const start = thisSunday - 52 * 7 * 86400000
   const end = now
   const modelSet = Array.isArray(input.models) && input.models.length ? new Set(input.models) : null
@@ -656,21 +655,107 @@ console.log('\n[0b] range and percentage boundaries')
 
 console.log('\n[0c] preset trend bucket counts')
 {
-  const probeNow = new Date(2026, 7, 19, 13, 30, 0, 0).getTime()
-  const expected = { today: 14, '24h': 24, '7d': 7, '30d': 30, '90d': 13 }
-  for (const range of Object.keys(expected)) {
+  const probeNow = Date.UTC(2026, 7, 19, 5, 30, 0, 0) // 13:30 Beijing time
+  const minimum = { today: 14, '24h': 24, '7d': 7, '30d': 30, '90d': 13 }
+  for (const range of Object.keys(minimum)) {
     const [lo, hi] = rangeBounds({ range, now: probeNow })
     const gran = pickGranularity({ range }, lo, hi)
-    const keys = bucketSeries(lo, hi, gran, presetBucketCount(range, gran))
-    assertEq('preset.' + range + '.bucketCount', keys.length, expected[range])
+    const count = presetBucketCount(range, gran)
+    const step = gran === 'hour' ? 3600000 : gran === 'day' ? DAY : 7 * DAY
+    const end = bucketKey(hi, gran)
+    const naturalStart = count ? end - step * (count - 1) : bucketKey(lo, gran)
+    const expectedStart = Math.min(naturalStart, bucketKey(lo, gran))
+    const expectedCount = Math.floor((end - expectedStart) / step) + 1
+    const keys = bucketSeries(lo, hi, gran, count)
+    assertEq('preset.' + range + '.minimum', keys.length >= minimum[range], true)
+    assertEq('preset.' + range + '.bucketCount', keys.length, expectedCount)
   }
-  console.log('  preset counts           OK (today 14h, 24H 24h, 7D 7d, 30D 30d, 90D 13w)')
+  console.log('  preset counts           OK (minimum preset span plus any partial lower-edge bucket)')
+}
+
+console.log('\n[0d] targeted edge and boundary regressions')
+{
+  const H = 3600000
+  const MIN = 60000
+  const probeNow = Date.UTC(2026, 7, 19, 7, 30) // 15:30 Beijing time
+  const hour = bucketKey(probeNow, 'hour')
+  const day = bucketKey(probeNow, 'day')
+  const assistant = (time, model = 'deepseek-v4-flash', cr = 0, cw = 0) => ({
+    type: 'assistant/message', time,
+    data: {
+      message: { source: { model } },
+      usage: { inputTokens: 1, outputTokens: 2, cacheReadTokens: cr, cacheWriteTokens: cw }
+    }
+  })
+  const noUsage = (time) => ({
+    type: 'assistant/message', time,
+    data: { message: { source: { model: 'deepseek-v4-flash' } } }
+  })
+  const user = (time) => ({ type: 'user/message', time, data: { source: { kind: 'user' } } })
+
+  const edge = hour + 10 * MIN
+  const edgeUsage = queryUsage([foldSession([assistant(edge, 'deepseek-v4-flash', 100)])], { range: 'today', now: probeNow })
+  assertEq('edgeHeat.eventCell', edgeUsage.heat.token[cellOf(edge)], 103)
+  assertEq('edgeHeat.beijingMidnight', edgeUsage.heat.token[cellOf(day)], 0)
+
+  const filtered = queryUsage([foldSession([
+    assistant(hour + 5 * MIN, 'deepseek-v4-flash', 123),
+    assistant(hour + 10 * MIN, 'deepseek-v4-pro', 456)
+  ])], { range: 'custom', from: hour, to: probeNow, models: ['deepseek-v4-flash'] })
+  assertEq('edgeFilter.cacheRead', filtered.totals.cacheReadTokens, 123)
+  assertEq('edgeFilter.cache', filtered.totals.cacheTokens, 123)
+
+  const messageUsage = queryUsage([foldSession([user(hour + MIN), noUsage(hour + 5 * MIN)])], { range: 'custom', from: hour, to: probeNow })
+  assertEq('messageOnly.user', messageUsage.totals.userMessages, 1)
+  assertEq('messageOnly.assistant', messageUsage.totals.assistantMessages, 1)
+  assertEq('messageOnly.total', messageUsage.totals.totalMessages, 2)
+  const isolatedUsage = queryUsage([foldSession([noUsage(edge)])], { range: 'custom', from: hour, to: probeNow })
+  const isolatedBucket = isolatedUsage.buckets.find((b) => b.sessions === 1)
+  if (!isolatedBucket) throw new Error('messageOnly.isolated trend bucket missing')
+  assertEq('messageOnly.isolated.totalMs', isolatedBucket.totalMs, 0)
+
+  const comparisonLo = day + 10 * H
+  const comparisonHi = comparisonLo + 5 * H - 1
+  const comparisonTimes = [
+    comparisonLo - 4 * H + 10 * MIN,
+    comparisonLo - 3 * H + 10 * MIN,
+    comparisonLo - 2 * H + 10 * MIN,
+    comparisonLo + H + 10 * MIN,
+    comparisonLo + 2 * H + 10 * MIN
+  ]
+  const comparison = queryUsage([foldSession(comparisonTimes.map(user))], { range: 'custom', from: comparisonLo, to: comparisonHi })
+  assertEq('previousMessages.current', comparison.totals.userMessages, 2)
+  assertEq('previousMessages.pct', comparison.totals.pct.userMessages, -33.33333333333333, 1e-9)
+
+  const rollingLo = probeNow - DAY
+  const lowerEdge = bucketKey(rollingLo, 'hour') + 40 * MIN
+  const rolling = queryUsage([foldSession([assistant(lowerEdge)])], { range: '24h', now: probeNow })
+  const trendTokens = rolling.buckets.reduce((sum, b) => sum + b.input + b.output + b.cache, 0)
+  assertEq('rollingTrend.coverage', trendTokens, rolling.totals.totalTokens)
+
+  assertEq('longSeries.bucketCount', bucketSeries(0, 1000 * DAY, 'day').length, 1001)
+  const [previousLo, previousHi] = prevWindow('custom', 100, 200)
+  assertEq('previousWindow.start', previousLo, 0)
+  assertEq('previousWindow.end', previousHi, 99)
+  const [zeroLo, zeroHi] = prevWindow('custom', 100, 100)
+  if (!(zeroHi < zeroLo)) throw new Error('previousWindow.zeroRange overlaps current range')
+
+  const prototypeRollup = foldSession([assistant(Date.UTC(2026, 8, 1), 'toString')])
+  const prototypeUsage = queryUsage([prototypeRollup], { range: 'custom', from: Date.UTC(2026, 8, 1) - 1, to: Date.UTC(2026, 8, 1) + 1 })
+  assertEq('prototype.priceFor', priceFor('toString'), null)
+  assertEq('prototype.priceForAt', priceForAt('toString', Date.UTC(2026, 8, 1)), null)
+  assertEq('prototype.cost', prototypeUsage.totals.cost, 0)
+
+  assertEq('timezone.todayStart', rangeBounds({ range: 'today', now: probeNow })[0], day)
+  assertEq('timezone.hourCell', cellOf(probeNow), 3 * 24 + 15)
+  assertEq('timezone.hourLabel', bucketLabel(hour, 'hour'), '15')
+  console.log('  targeted regressions     OK (edge heat/filter/message, rolling coverage, long series, comparison span, prototype keys, UTC+8)')
 }
 
 console.log('\n[0] totalMs union semantics (parallel sessions counted once)')
 {
   const H = 3600000
-  const todayMidnight = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime()
+  const todayMidnight = bucketKey(Date.now(), 'day')
   const mk = (id, ts) => {
     const events = []
     let turn = 0

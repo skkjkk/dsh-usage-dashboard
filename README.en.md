@@ -4,7 +4,7 @@
 
 🌐 Language: **[中文](README.md)** · English
 
-[![npm](https://img.shields.io/npm/v/%40skkjkk%2Fdsh-usage-dashboard)](https://www.npmjs.com/package/@skkjkk/dsh-usage-dashboard) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![npm](https://img.shields.io/npm/v/%40skkjkk%2Fdsh-usage-dashboard)](https://www.npmjs.com/package/@skkjkk/dsh-usage-dashboard) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) · [Changelog](CHANGELOG.md)
 
 `dsh-usage-dashboard` is a DSH **bundle plugin**. It reads local DSH session data and adds a **Settings → 数据看板** view for usage statistics. All aggregation stays on the local machine; **session content is never sent to any external service**.
 
@@ -53,7 +53,7 @@ A table grouped by `time bucket × model × project`, with columns `time / proje
 - **Tokens** = input + output + cache Tokens.
 - **Active duration** counts only actual AI generation time, from the first `assistant/chunk` event until the turn completes. Queueing, TTFT, idle thinking gaps and tool waits are excluded. Parallel sessions are summed independently, so active duration can exceed 24 hours.
 - **Total duration** is the span from the first message to the last message per session. Overlapping session spans are merged before summing and clipped to the selected window, so parallel work is not double-counted.
-- **Cost** is an estimate from this repo's pricing table `pricing/vibe-usage-model-pricing.csv` (203 models; built into `lib/core/pricing.js` by the build script), using USD × 7 for CNY. Unmatched models are not billed. DeepSeek V4 uses Beijing-time peak / off-peak pricing from 2026-08-17 (peak 9:00–12:00, 14:00–18:00; off-peak is half of peak).
+- **Cost** is an estimate from this repo's pricing table `pricing/vibe-usage-model-pricing.csv` (204 models; built into `lib/core/pricing.js` by the build script), using USD × 7 for CNY. Unmatched models are not billed. DeepSeek V4 uses Beijing-time peak / off-peak pricing from 2026-08-17 (peak 9:00–12:00, 14:00–18:00; off-peak is half of peak).
 - **Projects** use the canonical `cwd` from the session header when available, with DSH workspace membership as a fallback. Separators, case and trailing slashes are normalized before grouping.
 - A zero comparison baseline has no finite percentage; the UI hides that percentage instead of showing a fabricated `+100%`.
 
@@ -103,7 +103,7 @@ node scripts/smoke-host.mjs
 npm test           # runs build + bench + host smoke test in sequence
 ```
 
-`npm test` covers: Token / cost / message / calendar aggregation consistency, `foldAppend` vs full `foldSession` incremental equivalence, active and total duration union / window boundaries, model / project conservation, and the `/dash-api/usage`, `/dash-api/detail` and `/dash-api/calendar` host routes.
+`npm test` covers: Token / cost / message / calendar aggregation consistency, `foldAppend` vs full `foldSession` incremental equivalence, active and total duration union / window boundaries, model / project conservation, and the `/dash-api/usage`, `/dash-api/detail` and `/dash-api/calendar` host routes. Targeted regressions also cover edge buckets, message-only events, cache races, lagging session lists, UTC+8 boundaries, prototype keys and long trend ranges.
 
 Before publishing, inspect the packed artifact:
 
@@ -129,7 +129,7 @@ The verifier checks that host / core / client bundles load, the bundle patch and
 
 ## Version
 
-Current release: `0.3.8`
+Current release: `0.3.9`
 
 ## License
 

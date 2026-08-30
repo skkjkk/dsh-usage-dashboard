@@ -26,5 +26,5 @@ credlib.cs
 .npm-cache/
 .playwright-cli/
 
-# pricing source CSV (generated lib/core/pricing.js is what ships; do not commit source)
-pricing/
+# pricing/ is the tracked source for generated pricing tables.
+# package.json files only ships lib/ and cordis.patch.yml.

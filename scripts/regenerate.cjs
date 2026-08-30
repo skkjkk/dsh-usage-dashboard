@@ -82,14 +82,44 @@ const start = hostSrc.indexOf(marker)
 if (start < 0) throw new Error('host marker not found: ' + marker)
 const bodyStart = start + marker.length
 
-// 最小化 brace matcher：跳过单/双引号、模板字符串、行/块注释
-// 从 export function apply(ctx, config) { 的开括号开始，找匹配的闭括号
+// Lexical brace matcher: skip strings, templates, comments and regex literals.
+// This keeps host extraction stable when a regex pattern contains braces.
+function regexCanStart(src, pos) {
+  let i = pos - 1
+  while (i >= 0 && /\s/.test(src[i])) i--
+  if (i < 0) return true
+  const prev = src[i]
+  if ('([{,;:=!?&|+-*%^~<>'.includes(prev)) return true
+  if (prev === ')') {
+    // A regex can be the body of `if (x) /.../`, while `fn() / x` is division.
+    let depth = 1
+    let j = i - 1
+    while (j >= 0 && depth > 0) {
+      if (src[j] === ')') depth++
+      else if (src[j] === '(') depth--
+      j--
+    }
+    while (j >= 0 && /\s/.test(src[j])) j--
+    const end = j + 1
+    while (j >= 0 && /[A-Za-z0-9_$]/.test(src[j])) j--
+    const word = src.slice(j + 1, end)
+    if (/^(?:if|while|for|with|switch|catch)$/.test(word)) return true
+  }
+  const end = i + 1
+  while (i >= 0 && /[A-Za-z0-9_$]/.test(src[i])) i--
+  const word = src.slice(i + 1, end)
+  return /^(?:return|throw|case|delete|void|typeof|instanceof|in|of|yield|await|else|do)$/.test(word)
+}
+
+// From export function apply(ctx, config) {, find the matching closing brace.
 function findMatchingClosingBrace(src, start) {
   let pos = start
   let depth = 1 // 已经消耗了调用标记里的 opening `{`
   let inSingle = false
   let inDouble = false
   let inTemplate = false
+  let inRegex = false
+  let inRegexClass = false
   let inLineComment = false
   let inBlockComment = false
 
@@ -110,7 +140,25 @@ function findMatchingClosingBrace(src, start) {
       continue
     }
     if (inTemplate) {
+      if (ch === '\\' && pos + 1 < src.length) { pos += 2; continue }
       if (ch === '`') inTemplate = false
+      pos++
+      continue
+    }
+    if (inRegex) {
+      if (ch === '\\' && pos + 1 < src.length) { pos += 2; continue }
+      if (inRegexClass) {
+        if (ch === ']') inRegexClass = false
+        pos++
+        continue
+      }
+      if (ch === '[') { inRegexClass = true; pos++; continue }
+      if (ch === '/') {
+        inRegex = false
+        pos++
+        while (pos < src.length && /[A-Za-z]/.test(src[pos])) pos++
+        continue
+      }
       pos++
       continue
     }
@@ -126,10 +174,11 @@ function findMatchingClosingBrace(src, start) {
       pos++
       continue
     }
-    // 状态转换：进入注释/字符串
+    // 状态转换：进入注释、正则或字符串
     if (ch === '/' && pos + 1 < src.length) {
       if (src[pos + 1] === '*') { inBlockComment = true; pos += 2; continue }
       if (src[pos + 1] === '/') { inLineComment = true; pos += 2; continue }
+      if (regexCanStart(src, pos)) { inRegex = true; pos++; continue }
     }
     if (ch === '`') { inTemplate = true; pos++; continue }
     if (ch === '\'') { inSingle = true; pos++; continue }
@@ -143,6 +192,16 @@ function findMatchingClosingBrace(src, start) {
     pos++
   }
   return -1
+}
+
+// Keep the extractor's tricky lexical cases executable as a build-time check.
+for (const sample of [
+  'export function apply() { if (true) /\\{/.test("x"); return 1 }',
+  'export function apply() { const x = /\\{\\/\\//; /* } */ return x }'
+]) {
+  const open = sample.indexOf('{', sample.indexOf('apply'))
+  const close = findMatchingClosingBrace(sample, open + 1)
+  if (close !== sample.lastIndexOf('}')) throw new Error('host brace matcher regression')
 }
 
 const closePos = findMatchingClosingBrace(hostSrc, bodyStart)
@@ -190,7 +249,7 @@ function registerJsonRoute(ctx, pathname, fn) {
         res.end(JSON.stringify(data))
       } catch (e) {
         res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
-        res.end(JSON.stringify({ error: String((e && e.message) || e) }))
+        res.end(JSON.stringify({ error: 'internal_error' }))
       }
     }
   }), 'usage-dashboard: ' + pathname)
