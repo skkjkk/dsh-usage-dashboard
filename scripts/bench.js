@@ -787,6 +787,174 @@ console.log('\n[0d] UTC+8 calendar buckets across DST')
   console.log('  UTC+8 calendar buckets OK (America/New_York spring transition)')
 }
 
+console.log('\n[0e] deterministic cache-metric regression assertions')
+{
+  const T0 = Date.UTC(2026, 7, 16, 10, 0, 0, 0) - 8 * HOUR // 2026-08-16 18:00 UTC (before peak threshold, static pricing)
+  const H = 3600000
+  const msg = (t, model, inp, otp, cr, cw) => ({
+    type: 'assistant/message', time: t,
+    data: {
+      turn: 0, step: 0,
+      usage: { inputTokens: inp, outputTokens: otp, cacheReadTokens: cr, cacheWriteTokens: cw },
+      message: { source: { model } }
+    }
+  })
+  const user = (t) => ({ type: 'user/message', time: t, data: { source: { kind: 'user' } } })
+
+  // --- (a) input=100, cacheRead=800, cacheWrite=100 → expected totals ---
+  // billedInput = input + cacheRead + cacheWrite = 100 + 800 + 100 = 1000
+  // cacheHitRate = cacheRead / cacheObserved * 100 = 800 / 1000 * 100 = 80
+  // cacheCoverage = cacheObserved / billedInput * 100 = 1000 / 1000 * 100 = 100
+  const evtsA = [
+    user(T0),
+    msg(T0 + HOUR, 'deepseek-v4-flash', 100, 50, 800, 100)
+  ]
+  const rollA = foldSession(evtsA)
+  rollA.id = 'cache-a'
+  rollA.cwd = 'D:/u'
+  rollA.projectTitle = 'u'
+  const qA = queryUsage([rollA], { range: 'custom', from: T0, to: T0 + 2 * HOUR }, {})
+  const tA = qA.totals
+  assertEq('cache.a.cacheRead', tA.cacheRead, 800)
+  assertEq('cache.a.cacheWrite', tA.cacheWrite, 100)
+  assertEq('cache.a.billedInput', tA.billedInput, 1000)
+  assertEq('cache.a.cacheObserved', tA.cacheObserved, 1000)
+  assertEq('cache.a.cacheHitRate', tA.cacheHitRate, 80)
+  assertEq('cache.a.cacheCoverage', tA.cacheCoverage, 100)
+  assertEq('cache.a.billedInputTokens alias', tA.billedInputTokens, 1000)
+  assertEq('cache.a.cacheObservedTokens alias', tA.cacheObservedTokens, 1000)
+  assertEq('cache.a.cacheReadTokens alias', tA.cacheReadTokens, 800)
+  assertEq('cache.a.cacheWriteTokens alias', tA.cacheWriteTokens, 100)
+  console.log('  cache basic totals           OK (input=100, cr=800, cw=100 → hitRate=80, coverage=100)')
+
+  // --- (b) weighted rate across two buckets/sessions uses sums not average ---
+  // Session 1: input=200, cr=400, cw=0 → billedInput=600, hitRate=400/600*100≈66.67
+  // Session 2: input=100, cr=100, cw=0  → billedInput=200, hitRate=100/200*100=50
+  // Sum-based: totalCr=500, totalObserved=800 → hitRate=500/800*100=62.5
+  // Average-of-rates would give (66.67+50)/2=58.33 — MUST NOT be this value
+  const s1T = T0 + 2 * HOUR
+  const evtsB = [
+    user(s1T),
+    msg(s1T + HOUR, 'deepseek-v4-flash', 200, 50, 400, 0),
+    user(s1T + 2 * HOUR),
+    msg(s1T + 3 * HOUR, 'deepseek-v4-flash', 100, 50, 100, 0)
+  ]
+  const rollB = foldSession(evtsB)
+  rollB.id = 'cache-b'
+  rollB.cwd = 'D:/u'
+  rollB.projectTitle = 'u'
+  const qB = queryUsage([rollB], { range: 'custom', from: s1T, to: s1T + 4 * HOUR }, {})
+  const tB = qB.totals
+  assertEq('cache.b.cacheRead', tB.cacheRead, 500)
+  assertEq('cache.b.billedInput', tB.billedInput, 800)
+  assertEq('cache.b.cacheObserved', tB.cacheObserved, 800)
+  assertEq('cache.b.cacheHitRate (sum-based)', tB.cacheHitRate, 62.5)
+  // Verify it's NOT the naive average-of-rates
+  if (Math.abs(tB.cacheHitRate - 58.333333333333336) < 0.01) throw new Error('cacheHitRate is average-of-rates, not sum-based')
+  console.log('  cache weighted rate          OK (two-session sum, not average of rates)')
+
+  // --- (c) missing cache fields: cacheObserved=0, cacheHitRate=null, coverage=0 ---
+  // An assistant/message without cache fields (cacheReadTokens/cacheWriteTokens absent)
+  // produces billedInput=inputTokens (10), cacheObserved=0, cacheHitRate=null,
+  // and cacheCoverage=0% (core coverage refactor: unknown-input coverage is 0%).
+  const noCacheMsg = (t) => ({
+    type: 'assistant/message', time: t,
+    data: {
+      turn: 0, step: 0,
+      usage: { inputTokens: 10, outputTokens: 5 }, // no cache fields at all
+      message: { source: { model: 'deepseek-v4-flash' } }
+    }
+  })
+  const evtsC = [
+    user(T0),
+    noCacheMsg(T0 + HOUR)
+  ]
+  const rollC = foldSession(evtsC)
+  rollC.id = 'cache-c'
+  rollC.cwd = 'D:/u'
+  rollC.projectTitle = 'u'
+  const qC = queryUsage([rollC], { range: 'custom', from: T0, to: T0 + 2 * HOUR }, {})
+  const tC = qC.totals
+  assertEq('cache.c.billedInput (no fields)', tC.billedInput, 10)
+  assertEq('cache.c.cacheObserved (no fields)', tC.cacheObserved, 0)
+  assertEq('cache.c.cacheHitRate (no fields)', tC.cacheHitRate, null)
+  assertEq('cache.c.cacheCoverage (no fields)', tC.cacheCoverage, 0)
+  // Also verify the totalTokens is just input+output (no cache contribution)
+  assertEq('cache.c.totalTokens', tC.totalTokens, 15)
+  console.log('  cache missing fields         OK (billedInput=10, cacheObserved=0, hitRate=null, coverage=0%)')
+
+  // --- (d) edge-window result matches full-window result for in-window events ---
+  // Use unaligned bounds (offset by 12345ms) so the lower-edge bucket is
+  // definitely an edge bucket, forcing edgeAccumulate to process the event
+  // per-entry rather than relying on the aggregate path.
+  const OFFSET = 12345
+  const evtsD = [
+    user(T0 + HOUR),
+    msg(T0 + HOUR + 1800000, 'deepseek-v4-flash', 100, 50, 800, 100)
+  ]
+  const rollD = foldSession(evtsD)
+  rollD.id = 'cache-d'
+  rollD.cwd = 'D:/u'
+  rollD.projectTitle = 'u'
+  const qFull = queryUsage([rollD], { range: 'custom', from: T0, to: T0 + 3 * HOUR }, {})
+  const qEdge = queryUsage([rollD], { range: 'custom', from: T0 + HOUR + OFFSET, to: T0 + 2 * HOUR + OFFSET }, {})
+  assertEq('cache.edge.cacheRead', qEdge.totals.cacheRead, qFull.totals.cacheRead)
+  assertEq('cache.edge.cacheWrite', qEdge.totals.cacheWrite, qFull.totals.cacheWrite)
+  assertEq('cache.edge.billedInput', qEdge.totals.billedInput, qFull.totals.billedInput)
+  assertEq('cache.edge.cacheObserved', qEdge.totals.cacheObserved, qFull.totals.cacheObserved)
+  assertEq('cache.edge.cacheHitRate', qEdge.totals.cacheHitRate, qFull.totals.cacheHitRate)
+  assertEq('cache.edge.cacheCoverage', qEdge.totals.cacheCoverage, qFull.totals.cacheCoverage)
+  // Also verify per-bucket consistency for the narrow window
+  const edgeBuckets = qEdge.buckets.filter((b) => b.cacheRead > 0 || b.billedInput > 0)
+  if (edgeBuckets.length === 0) throw new Error('edge-window: no bucket with cache data')
+  const edgeTotalCache = edgeBuckets.reduce((s, b) => s + b.cacheRead, 0)
+  const edgeTotalBilled = edgeBuckets.reduce((s, b) => s + b.billedInput, 0)
+  assertEq('cache.edge.bucketCacheSum', edgeTotalCache, qFull.totals.cacheRead)
+  assertEq('cache.edge.bucketBilledSum', edgeTotalBilled, qFull.totals.billedInput)
+  console.log('  cache edge-window            OK (unaligned bounds, edgeAccumulate preserves cache metrics)')
+
+  // --- (e) model meta exposes cacheHitRate, avgResponseMs, p50ResponseMs, p95ResponseMs, calls ---
+  // Build 3 messages with known generation durations via step/start+chunk+finish pattern.
+  // Durations: 500ms, 1500ms, 3000ms — all captured by the latency histogram
+  // (latencyHistAdd now correctly creates a histogram when starting from null).
+  const genDur = (baseT, dur) => {
+    const t = baseT
+    return [
+      user(t),
+      { type: 'step/start', time: t + 100, data: { turn: 0, step: 0 } },
+      { type: 'assistant/chunk', time: t + 200, data: { turn: 0, step: 0, chunk: { type: 'text-delta', index: 0, text: 'x' } } },
+      { type: 'assistant/chunk', time: t + 200 + dur, data: { turn: 0, step: 0, chunk: { type: 'finish', reason: 'stop' } } },
+      msg(t + 200 + dur + 1, 'deepseek-v4-flash', 100, 50, 800, 100)
+    ]
+  }
+  const evtsE = [
+    ...genDur(T0, 500),     // 500ms
+    ...genDur(T0 + 2 * HOUR, 1500), // 1500ms
+    ...genDur(T0 + 4 * HOUR, 3000)  // 3000ms
+  ]
+  const rollE = foldSession(evtsE)
+  rollE.id = 'cache-e'
+  rollE.cwd = 'D:/u'
+  rollE.projectTitle = 'u'
+  const qE = queryUsage([rollE], { range: 'custom', from: T0, to: T0 + 6 * HOUR }, {})
+  const models = qE.meta.models
+  const flash = models.find((m) => m.id === 'deepseek-v4-flash')
+  if (!flash) throw new Error('model meta missing deepseek-v4-flash')
+  assertEq('cache.meta.calls', flash.calls, 3)
+  if (flash.cacheHitRate == null) throw new Error('model cacheHitRate missing')
+  if (flash.avgResponseMs == null) throw new Error('model avgResponseMs missing')
+  if (flash.p50ResponseMs == null) throw new Error('model p50ResponseMs missing')
+  if (flash.p95ResponseMs == null) throw new Error('model p95ResponseMs missing')
+  assertEq('cache.meta.cacheHitRate', flash.cacheHitRate, 80)
+  // avgResponseMs = mean of [701, 1701, 3201] (t - _lastUserT fallback) ≈ 1867.67
+  assertEq('cache.meta.avgResponseMs', flash.avgResponseMs, 5603 / 3, 1)
+  // p50 of 3 samples: target=ceil(0.5*3)=2 → 2nd sorted value (1500) falls in bin upper=2000
+  assertEq('cache.meta.p50ResponseMs', flash.p50ResponseMs, 2000, 1)
+  // p95 of 3 samples: target=ceil(0.95*3)=3 → 3rd sorted value (3000) falls in bin upper=5000
+  assertEq('cache.meta.p95ResponseMs', flash.p95ResponseMs, 5000, 1)
+  console.log('  cache meta row fields      OK (cacheHitRate=' + flash.cacheHitRate + ', calls=' + flash.calls + ', avgResponseMs=' + flash.avgResponseMs.toFixed(2) + ', p50=' + flash.p50ResponseMs + ', p95=' + flash.p95ResponseMs + ')')
+}
+
 console.log('\n[0] totalMs union semantics (parallel sessions counted once)')
 {
   const H = 3600000
@@ -862,7 +1030,9 @@ console.log('\n[3] incremental fold equivalence (foldAppend == foldSession)')
         for (const [model, per] of b.per) {
           const ip = ib.per.get(model)
           if (!ip) throw new Error('inc-fold missing model ' + model)
-          for (let j = 0; j < per.length; j++) eq(per[j], ip[j])
+          // per arrays may contain histogram objects (index 10) that are
+          // structurally identical but not reference-equal; compare via JSON.
+          eq(JSON.stringify(per), JSON.stringify(ip))
         }
       }
       eq(full.modelMeta.size, inc.modelMeta.size)
@@ -956,8 +1126,8 @@ console.log('\n[4] DeepSeek 峰谷定价（2026-08-17 00:00 北京时间起）')
   const flash = 'deepseek-v4-flash'
   const vision = 'deepseek-v4-flash-vision-exp'
   const pro = 'deepseek-v4-pro'
-  const oldFlash = [3.08, 9.24, 0.098]
-  const oldPro = [9.24, 27.72, 0.308]
+  const oldFlash = [3, 9, 0.1]
+  const oldPro = [9, 27, 0.3]
   const cases = [
     // [model, t, expected p, expected matched]
     [flash, bj(17, 10), [3.0, 9.0, 0.10], flash],

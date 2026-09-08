@@ -18,8 +18,8 @@ try { existingPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 
 const PACKAGE_ID = existingPkg.name || '@skkjkk/dsh-usage-dashboard'
 
 // ---------- pricing: CSV → src/core/pricing.js + lib/core/pricing.js ----------
-// 计费标准 = pricing/vibe-usage-model-pricing.csv（缺失时抛出错误，非回退本地文件）。
-// 列：模型,厂商,输入($/M),输出($/M),缓存读取($/M) → [输入, 输出, 缓存] ¥/M tokens（$×7）。
+// 计费标准 = pricing/vibe-usage-model-pricing-extended.csv（CNY 直接定价，无需 × 7）。
+// 列：模型,厂商,输入(¥/M),输出(¥/M),缓存读取(¥/M)。
 function parsePricingCsv(text) {
   const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim())
   const prices = {}
@@ -28,18 +28,24 @@ function parsePricingCsv(text) {
     if (parts.length < 5 || !parts[0]) continue
     const num = (s) => { const n = parseFloat(s); return Number.isFinite(n) && n > 0 ? n : 0 }
     const r6 = (n) => Math.round(n * 1e6) / 1e6
-    prices[parts[0]] = [r6(num(parts[2]) * 7), r6(num(parts[3]) * 7), r6(num(parts[4]) * 7)]
+    prices[parts[0]] = [r6(num(parts[2])), r6(num(parts[3])), r6(num(parts[4]))]
   }
   return prices
 }
 function pricingSource() {
-  const local = path.join(root, 'pricing', 'vibe-usage-model-pricing.csv')
+  // 优先使用 CNY 格式的 extended CSV；若不存在则回退到旧版 USD CSV（× 7）
+  const extended = path.join(root, 'pricing', 'vibe-usage-model-pricing-extended.csv')
+  const original = path.join(root, 'pricing', 'vibe-usage-model-pricing.csv')
   let text = null
-  try { text = fs.readFileSync(local, 'utf8'); console.log('pricing csv:', local) } catch { /* next */ }
-  if (!text) throw new Error('pricing CSV not found (expected pricing/vibe-usage-model-pricing.csv)')
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim())
+  let csvFile = null
+  try { text = fs.readFileSync(extended, 'utf8'); csvFile = extended; console.log('pricing csv:', csvFile, '(CNY direct)') } catch { /* next */ }
+  if (!text) {
+    try { text = fs.readFileSync(original, 'utf8'); csvFile = original; console.log('pricing csv:', csvFile, '(USD × 7)') } catch {}
+  }
+  if (!text) throw new Error('pricing CSV not found (expected pricing/vibe-usage-model-pricing-extended.csv or pricing/vibe-usage-model-pricing.csv)')
   const prices = parsePricingCsv(text)
   const vendors = {}
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim())
   for (let i = 1; i < lines.length; i++) {
     const parts = lines[i].split(',').map((s) => s.replace(/^"|"$/g, '').trim())
     if (parts.length >= 2 && parts[0] && parts[1]) vendors[parts[0]] = parts[1]
@@ -48,7 +54,7 @@ function pricingSource() {
     .map((k) => JSON.stringify(k) + ':[' + prices[k].join(',') + ']').join(',\n  ')
   const vbody = Object.keys(vendors).sort()
     .map((k) => JSON.stringify(k) + ':' + JSON.stringify(vendors[k])).join(',\n  ')
-  const src = '// 定价与厂商表：由 scripts/regenerate.cjs 从 pricing/vibe-usage-model-pricing.csv 生成（USD × 7 → ¥/M tokens）。\n' +
+  const src = '// 定价与厂商表：由 scripts/regenerate.cjs 从 pricing/vibe-usage-model-pricing-extended.csv 生成（CNY 直接定价）。\n' +
     '// 请勿手改；更新定价请改 CSV 后运行 npm run build。\n' +
     'export const PRICES = {\n  ' + body + '\n}\n\n' +
     '// 模型 → 厂商（系列分组用）\n' +

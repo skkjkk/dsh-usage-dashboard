@@ -48,6 +48,38 @@ The latest **40 weeks** in a `7 rows × 40 columns` calendar grid, with fixed sq
 
 A table grouped by `time bucket × model × project`, with columns `time / project / model / tool / input / output / cache / cost` (tool is fixed to `dsh`); when one hour uses multiple models, each appears as a separate row. Paginated at **20 rows per page**, showing "显示 x–y 条，共 z 条" / "showing x–y of z", with prev/next paging. (The table below the screenshot above is this view.)
 
+### Model performance radar
+
+A **six-axis radar chart** comparing the top **4** models by call volume in the selected window. The six axes and their relative scores (0–100, max per axis normalized to 100):
+
+- **Response efficiency** = output Tokens / average response latency (ms)
+- **Response speed** = 1 / p50 response latency (ms)
+- **Consistency** = 1 / (1 + p95/p50), where p50/p95 are estimated from a logarithmic latency histogram in the rollup
+- **Cost efficiency** = output Tokens / cost; when cost is unavailable (model not found in `pricing/vibe-usage-model-pricing.csv`), this axis is omitted from normalization and the list/tooltips render "—".
+- **Cache hit** = cache hit rate (%)
+- **Token output** = output Tokens / billed input Tokens (`billedInput`), expressed as a percentage
+
+Clicking a vertex or a right-side list item highlights that model (others dim). When a model filter is active, only models matching the filter compete for the Top-4 slots; an empty-state message shows when no model has usage data.
+
+### Cache hit-rate trend
+
+A line + scatter time-series showing cache hit rate across every time bucket in the selected window (Y axis fixed at 0–100%).
+
+**Hit-rate formula** (same definition at bucket and aggregate level):
+
+```
+cacheHitRate = cacheRead / cacheObserved × 100%
+```
+
+Where:
+- **`cacheRead`** = sum of event-level `usage.cacheReadTokens` reported by the provider.
+- **`cacheObserved`** = sum of `inputTokens + cacheRead + cacheWrite` over rows whose provider explicitly reported `cacheReadTokens` or `cacheWriteTokens`; i.e. the billed input of the telemetry-visible subset. Rows without cache telemetry are excluded from this denominator so the hit rate is not diluted by unknown providers.
+- **`cacheRead`** = sum of provider-reported `usage.cacheReadTokens` over those same rows.
+- **`billedInput`** = `inputTokens + cacheTokens` (= `inputTokens + cacheRead + cacheWrite`) summed across **all** rows in the window, including those without cache telemetry — the total charged-input口径.
+- **Coverage `cacheCoverage`** = `cacheObserved / billedInput × 100%`; when no provider reports cache info, coverage is 0% and the rate shows "—".
+
+The header shows the **current-window** hit rate, a **weighted-average** hit rate (per-bucket rate weighted by each bucket's `cacheObserved`), and the **period-over-period delta** in percentage points (current − previous window, hidden when the prior baseline is zero). Gaps in the line appear only between non-adjacent buckets.
+
 ## Data semantics
 
 - **Tokens** = input + output + cache Tokens.
@@ -55,6 +87,9 @@ A table grouped by `time bucket × model × project`, with columns `time / proje
 - **Total duration** is the span from the first message to the last message per session. Overlapping session spans are merged before summing and clipped to the selected window, so parallel work is not double-counted.
 - **Cost** is an estimate from this repo's pricing table `pricing/vibe-usage-model-pricing.csv` (204 models; built into `lib/core/pricing.js` by the build script), using USD × 7 for CNY. Unmatched models are not billed. DeepSeek V4 uses Beijing-time weekday peak / off-peak pricing from 2026-08-17 (Monday-Friday peak 9:00–12:00 and 14:00–18:00; weekends and other hours are off-peak at half price).
 - **Projects** use the canonical `cwd` from the session header when available, with DSH workspace membership as a fallback. Separators, case and trailing slashes are normalized before grouping.
+- **Cache hit rate** = `cacheRead / cacheObserved × 100%`: numerator is provider-reported `usage.cacheReadTokens`; denominator is the `inputTokens + cacheRead + cacheWrite` sum over rows that explicitly reported `cacheReadTokens` or `cacheWriteTokens` (the telemetry-visible billed input). Rows without cache telemetry are excluded from the denominator rather than treated as 0%.
+- **Billed input `billedInput`** = `inputTokens + cacheTokens` summed across all rows (including those without cache telemetry); this is the full charged-input口径.
+- **Cache-data coverage** = `cacheObserved / billedInput × 100%`; when all providers lack cache metadata the coverage is 0% and both current and weighted rates display "—".
 - A zero comparison baseline has no finite percentage; the UI hides that percentage instead of showing a fabricated `+100%`.
 
 ## Install
@@ -103,7 +138,7 @@ node scripts/smoke-host.mjs
 npm test           # runs build + bench + host smoke test in sequence
 ```
 
-`npm test` covers: Token / cost / message / calendar aggregation consistency, `foldAppend` vs full `foldSession` incremental equivalence, active and total duration union / window boundaries, model / project conservation, and the `/dash-api/usage`, `/dash-api/detail` and `/dash-api/calendar` host routes. Targeted regressions also cover edge buckets, message-only events, cache races, lagging session lists, UTC+8 boundaries, prototype keys and long trend ranges.
+`npm test` covers: Token / cost / message / calendar aggregation consistency, `foldAppend` vs full `foldSession` incremental equivalence, active and total duration union / window boundaries, model / project conservation, disjoint cache-hit-ratio semantics (`cacheRead` / `cacheObserved` vs `billedInput` conservation), Top-4 radar relative-score normalization and gap rendering, and the `/dash-api/usage`, `/dash-api/detail` and `/dash-api/calendar` host routes. Targeted regressions also cover edge buckets, message-only events, cache races, lagging session lists, UTC+8 boundaries, prototype keys and long trend ranges.
 
 Before publishing, inspect the packed artifact:
 
@@ -117,7 +152,7 @@ The verifier checks that host / core / client bundles load, the bundle patch and
 
 ## Freshness and performance
 
-- **Pure aggregation engine** `src/core/rollup.js`: `foldSession` folds a session into a compact per-hour rollup, `foldAppend` updates it incrementally per event (byte-identical to a full refold), and `queryUsage / queryDetail / queryCalendar` answer any window / filter in memory.
+- **Pure aggregation engine** `src/core/rollup.js`: `foldSession` folds a session into a compact per-hour rollup, `foldAppend` updates it incrementally per event (byte-identical to a full refold), and `queryUsage / queryDetail / queryCalendar` answer any window / filter in memory; the disjoint cache-hit-ratio fields (`cacheRead` / `cacheObserved` / `billedInput`) are computed in the same pass.
 - **Event-driven refresh**: each session materializes one in-memory rollup at startup (live sessions read from the in-memory Session object, persisted sessions via `persistence.readFrom` once); thereafter `session/event` events are folded in via `foldAppend`, so a refresh never re-parses full logs. A 60-second reconcile discovers new or removed sessions.
 - **Request cache**: 30s TTL with stale-while-revalidate and single-flight; invalidated as soon as new events arrive. Pre-warmed ~500ms after boot, so every view returns in milliseconds thereafter.
 
