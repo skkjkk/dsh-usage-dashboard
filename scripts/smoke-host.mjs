@@ -44,7 +44,15 @@ const services = {
   workspaceRegistry: {
     list() { return [{ path: cwd, title: 'Smoke Project', sessionIds: [sessionId] }] }
   },
-  sessions: { get() { return null } }
+  sessions: { get() { return null } },
+  // no-op timer: apply() registers its reconcile/pre-warm effects through
+  // ctx.effect and must NOT skip the route registrations when it fires them.
+  // The callbacks never run — the test drives events explicitly and asserts
+  // listSessions() call counts, so a real timer would perturb those counts.
+  timer: {
+    setInterval() { return () => {} },
+    timeout() { return () => {} }
+  }
 }
 const ctx = {
   get(name) { return services[name] },
@@ -145,5 +153,25 @@ try {
   Date.now = realDateNow
 }
 
+// Route registration must not depend on the optional timer service: without it
+// only periodic reconcile + pre-warm degrade, the API still comes up.
+{
+  const noTimerRoutes = new Map()
+  const noTimerCtx = {
+    get(name) {
+      if (name === 'webServer') return { register(d) { noTimerRoutes.set(d.path, d.handler) } }
+      if (name === 'timer') return undefined
+      return services[name]
+    },
+    on() {},
+    effect(fn) { return typeof fn === 'function' ? (fn() || (() => {})) : (() => {}) }
+  }
+  apply(noTimerCtx, {})
+  for (const p of ['/dash-api/usage', '/dash-api/detail', '/dash-api/calendar']) {
+    if (!noTimerRoutes.has(p)) throw new Error('route not registered without timer service: ' + p)
+  }
+}
+
 console.log('host smoke passed')
 console.log('  cache/event regressions     OK')
+console.log('  routes survive no timer     OK')

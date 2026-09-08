@@ -212,6 +212,59 @@ for (const sample of [
 
 const closePos = findMatchingClosingBrace(hostSrc, bodyStart)
 if (closePos < 0) throw new Error('matching closing brace not found for host apply function')
+
+// ---- build guard: undeclared UPPER_SNAKE_CASE constants ----
+// The host bundle is assembled by extracting ONLY the body of
+// `export function apply(...)` from src/host.js, so a constant declared at
+// module scope there is silently dropped while its usages survive. The result
+// passes `node --check` but throws ReferenceError at DSH boot. UPPER_SNAKE_CASE
+// is this project's convention for module constants, so an identifier used but
+// never declared is treated as a dropped declaration. Comments are stripped
+// first (string-aware) so prose cannot trigger false positives.
+function stripComments(src) {
+  let out = ''
+  let i = 0
+  let str = null
+  while (i < src.length) {
+    const ch = src[i]
+    const two = src.slice(i, i + 2)
+    if (str) {
+      if (ch === '\\') { out += ch + (src[i + 1] || ''); i += 2; continue }
+      if (ch === str) str = null
+      out += ch; i += 1; continue
+    }
+    if (ch === '/' && two === '//') { while (i < src.length && src[i] !== '\n') i += 1; out += '\n'; continue }
+    if (ch === '/' && two === '/*') {
+      i += 2
+      while (i < src.length && src.slice(i, i + 2) !== '*/') i += 1
+      i = Math.min(src.length, i + 2); out += ' '; continue
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { str = ch; out += ch; i += 1; continue }
+    out += ch; i += 1
+  }
+  return out
+}
+
+function assertNoUndeclaredConstants(src, label) {
+  const code = stripComments(src)
+  const declared = new Set()
+  for (const m of code.matchAll(/\b(?:const|let)\s+([A-Z][A-Z0-9_]*)\b/g)) declared.add(m[1])
+  const used = new Set()
+  for (const m of code.matchAll(/\b([A-Z][A-Z0-9_]{2,})\b/g)) used.add(m[1])
+  // uppercase JS globals / static members that are not project constants
+  const builtins = new Set(['JSON', 'URL', 'NaN', 'Infinity', 'EPSILON',
+    'MAX_SAFE_INTEGER', 'MIN_SAFE_INTEGER', 'MAX_VALUE', 'MIN_VALUE',
+    'POSITIVE_INFINITY', 'NEGATIVE_INFINITY', 'IS_GLOBAL', 'IS_NAN', 'IS_INTEGER'])
+  const missing = [...used].filter((n) => !declared.has(n) && !builtins.has(n))
+  if (missing.length) {
+    throw new Error(label + ': used but never declared → ' + missing.join(', ') +
+      '\n  module-scope declarations above `export function apply` are dropped by the host ' +
+      'body extraction — move them inside apply() so they survive into lib/index.js')
+  }
+  return missing
+}
+assertNoUndeclaredConstants(hostSrc, 'src/host.js')
+
 let body = hostSrc.slice(bodyStart, closePos)
 // 只清理尾部空白行（v0.2 host 直接以 export function apply 定义，
 // 函数体内嵌套的闭合括号必须原样保留）
@@ -271,6 +324,7 @@ export const inject = ["webServer", "sessionQuery", "sessionPersistence", "works
 `
 
 fs.writeFileSync(path.join(outDir, 'index.js'), hostOut)
+assertNoUndeclaredConstants(hostOut, 'lib/index.js')
 console.log('host lib/index.js:', hostOut.length, 'bytes')
 
 // ---------- client ----------

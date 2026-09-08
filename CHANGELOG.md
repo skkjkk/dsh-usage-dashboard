@@ -9,6 +9,15 @@ All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 - 新增「模型效能雷达」卡片：在筛选窗口内展示调用量前 **4** 个模型的六维雷达对比，六轴为响应效率（输出 Token / 平均响应 ms）、响应速度（1 / p50 ms）、一致性（1 / (1 + p95/p50)，分位数来自对数直方图）、成本效率（输出 Token / 费用）、缓存命中（%）与 Token 产出（输出 / 计费输入 `billedInput` × 100%）；各轴在窗口内 Max 归一化为 0–100。右侧列表点击或雷达点 hover 高亮对应模型、其余变淡。
 - 新增「缓存命中率趋势」卡片：按所选时间范围的每桶绘制缓存命中率折线 + 散点，Y 轴固定 0–100%；展示当前窗口命中率、加权平均命中率（以各桶 `cacheObserved` 加权）与环比百分点变化。断点仅在非相邻桶间出现。
 
+### 修复
+
+- 修复构建产物 `lib/index.js` 无法启动的致命回归：5 个调优常量（`CACHE_TTL_MS`、`RECONCILE_INTERVAL_MS`、`CACHE_MAX_FAILURES`、`CACHE_STALE_MULTIPLIER`、`PREWARM_DELAY_MS`）曾声明在 `src/host.js` 的模块作用域，而构建只抽取 `export function apply(...)` 的函数体，常量被丢弃、引用全部保留——`node --check` 通过，但 DSH 启动即 `ReferenceError`。常量现已移入 `apply()` 内部。
+- 新增构建期守卫：`scripts/regenerate.cjs` 对 `src/host.js` 与 `lib/index.js` 双向扫描 UPPER_SNAKE_CASE 标识符，「使用但未声明」即硬失败（同时覆盖常量被丢弃与拼写不一致两类），并给出明确修复提示。
+- 修正缓存失败计数字段名 `CACHE_MAX_FAIL` → `CACHE_MAX_FAILURES`：原代码引用的常量名从未声明，失败计数淘汰分支实际不可达。
+- `apply()` 不再因缺少可选 `timer` 服务而提前 `return`：`/dash-api/*` 路由无条件注册，仅定时 reconcile 与启动预热降级。`scripts/smoke-host.mjs` 补齐 timer stub 并新增「routes survive no timer」断言，`npm test` 恢复全绿。
+- `playwright` 从 `dependencies` 移至 `devDependencies`：运行期看板不依赖浏览器驱动，下游安装不再拉取该重依赖。
+- 清理 3 个从未使用的死常量（`FAST_FILE_THRESHOLD_BYTES`、`PARALLEL_WORKERS`、`EVENT_LISTENERS_KEY`）与过期的 "5 min CACHE_TTL_MS" 注释（实际 30s）。
+
 ### 数据口径
 
 - 汇总与分桶口径沿用 disjoint bucket 约定：**缓存命中率** = `cacheRead / cacheObserved × 100%`，其中 `cacheRead` 来自 provider 的 `usage.cacheReadTokens`；**`cacheObserved`** = 有显式 cache 遥测的行（provider 报告了 `cacheReadTokens` 或 `cacheWriteTokens`）的 `inputTokens + cacheRead + cacheWrite` 之和，即带 telemetry 的计费输入，未报告的行排除出分母。**`billedInput`** = 全窗口 `inputTokens + cacheTokens` 之和（含未知 telemetry 行），作为覆盖率分母；**覆盖率** = `cacheObserved / billedInput × 100%`，全未知时显示「—」。成本效率轴对未计费模型作 omission 处理（不参与归一化，显示「—」），不映射到 100。

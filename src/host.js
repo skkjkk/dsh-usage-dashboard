@@ -13,7 +13,8 @@
 //         DSH runs.
 //       - a 60s reconcile timer loads newly created sessions and drops
 //         removed ones.
-//   * Request-level cache (5 min CACHE_TTL_MS + stale-while-revalidate, single-flight)
+//   * Request-level cache (CACHE_TTL_MS = 30s, aligned with the client poll;
+//     stale-while-revalidate + single-flight guards repeated identical queries)
 //     still guards repeated identical queries.
 //   * Result: after boot, every dashboard view (any range / filter) is served
 //     from memory in milliseconds; the only slow phase is the one-time cold
@@ -22,17 +23,19 @@
 import { foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, sessionTitle } from './core/rollup.js'
 import { BusinessException } from './core/errors.js'
 
-// ---- named constants (replace scattered magic numbers) ----
-const CACHE_TTL_MS = 30 * 1000
-const RECONCILE_INTERVAL_MS = 60000
-const FAST_FILE_THRESHOLD_BYTES = 1024 * 1024
-const CACHE_MAX_FAILURES = 3
-const CACHE_STALE_MULTIPLIER = 2
-const PARALLEL_WORKERS = 4
-const PREWARM_DELAY_MS = 500
-const EVENT_LISTENERS_KEY = 'sessionQuery' // ctx.get() key for session listing
-
 export function apply(ctx, config) {
+  // ---- named constants (replace scattered magic numbers) ----
+  // IMPORTANT: keep these INSIDE apply(). scripts/regenerate.cjs extracts only
+  // the body of `export function apply(...)` into lib/index.js, so anything
+  // declared at module scope is silently dropped from the bundle (the build
+  // guard in regenerate.cjs now fails the build when a referenced
+  // UPPER_SNAKE_CASE constant is not declared inside the bundle).
+  const CACHE_TTL_MS = 30 * 1000
+  const RECONCILE_INTERVAL_MS = 60000
+  const CACHE_MAX_FAILURES = 3
+  const CACHE_STALE_MULTIPLIER = 2
+  const PREWARM_DELAY_MS = 500
+
   // request-level response cache: key → { at, data, failCount }
   const cache = new Map()
   let dataVersion = 0
@@ -392,14 +395,16 @@ export function apply(ctx, config) {
     }
   })
 
-  // reconcile: load newly created sessions, drop removed ones
-  // all states participate in stats; reconcile reloads sessions with needsReload
-  // or empty rollup, without truncation cap
+  // reconcile: load newly created sessions, drop removed ones.
+  // All states participate in stats; reconcile reloads sessions with
+  // needsReload or an empty rollup, without a truncation cap.
+  // The routes below are registered unconditionally — a missing timer
+  // service only disables periodic reconcile + pre-warm, never the API.
   const timer = getCtxService('timer')
-  if (!timer) return
-  ctx.effect(() => timer.setInterval(async () => {
-    const q = getCtxService('sessionQuery')
-    if (!q || !ready) return
+  if (timer) {
+    ctx.effect(() => timer.setInterval(async () => {
+      const q = getCtxService('sessionQuery')
+      if (!q || !ready) return
 
       const listEpoch = eventEpoch
       let recs = []
@@ -425,7 +430,7 @@ export function apply(ctx, config) {
           states.delete(id)
         }
       }
-      // reload sessions that have needsReload or empty rollup
+      // reload sessions that have needsReload or an empty rollup
       // fixed 4 workers, no infinite creation
       const WORKER_COUNT = 4
       let cursor = 0
@@ -441,8 +446,9 @@ export function apply(ctx, config) {
       await Promise.all(Array.from({ length: WORKER_COUNT }, () => worker()))
     }, RECONCILE_INTERVAL_MS), 'usage-dashboard: reconcile')
 
-  // pre-warm the cold load right after startup: first open is instant
-  ctx.effect(() => timer.timeout(() => { getRollups().catch(() => {}) }, PREWARM_DELAY_MS), 'usage-dashboard: prewarm')
+    // pre-warm the cold load right after startup: first open is instant
+    ctx.effect(() => timer.timeout(() => { getRollups().catch(() => {}) }, PREWARM_DELAY_MS), 'usage-dashboard: prewarm')
+  }
 
   // ---------- single-flight request helpers ----------
 
@@ -460,7 +466,7 @@ export function apply(ctx, config) {
       hit = null
     }
     // if entry exceeded max failures, drop it and recompute
-    if (hit && (hit.failCount || 0) >= CACHE_MAX_FAIL) {
+    if (hit && (hit.failCount || 0) >= CACHE_MAX_FAILURES) {
       cache.delete(key)
       hit = null
     }
