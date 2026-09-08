@@ -13,29 +13,38 @@
 //         DSH runs.
 //       - a 60s reconcile timer loads newly created sessions and drops
 //         removed ones.
-//   * Request-level cache (5 min TTL + stale-while-revalidate, single-flight)
+//   * Request-level cache (5 min CACHE_TTL_MS + stale-while-revalidate, single-flight)
 //     still guards repeated identical queries.
 //   * Result: after boot, every dashboard view (any range / filter) is served
 //     from memory in milliseconds; the only slow phase is the one-time cold
 //     load, warmed right after startup.
 
 import { foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, sessionTitle } from './core/rollup.js'
+import { BusinessException } from './core/errors.js'
+
+// ---- named constants (replace scattered magic numbers) ----
+const CACHE_TTL_MS = 30 * 1000
+const RECONCILE_INTERVAL_MS = 60000
+const FAST_FILE_THRESHOLD_BYTES = 1024 * 1024
+const CACHE_MAX_FAILURES = 3
+const CACHE_STALE_MULTIPLIER = 2
+const PARALLEL_WORKERS = 4
+const PREWARM_DELAY_MS = 500
+const EVENT_LISTENERS_KEY = 'sessionQuery' // ctx.get() key for session listing
 
 export function apply(ctx, config) {
-  const TTL = 30 * 1000 // 与客户端 30s 轮询对齐：查询本身 ~1-2ms，缓存只为并发去重，不冻结旧数据
-  const RECONCILE_MS = 60000
-  const FAST_FILE_BYTES = 1024 * 1024 // 冷启动快批次阈值：活跃会话 + ≤1MB 文件先加载
-
   // request-level response cache: key → { at, data, failCount }
   const cache = new Map()
   let dataVersion = 0
-  const CACHE_MAX_FAIL = 3
-  const CACHE_STALE_MULTIPLIER = 2 // 清理阈值：TTL * 2
   // session rollup state: session id → { rollup, cwd, title, at, pending[], needsReload }
   const states = new Map()
   let ready = false
   let initPromise = null
   const inflight = new Map() // cache key → { version, promise }
+
+  function getCtxService(key) {
+    try { return ctx.get(key) } catch (e) { return null }
+  }
   function startInflight(key, compute) {
     const version = dataVersion
     const active = inflight.get(key)
@@ -334,7 +343,7 @@ export function apply(ctx, config) {
         if (!seen.has(id)) {
           const now = Date.now()
           if (keepMissingState(st, listEpoch)) continue
-          if (st.lastEventAt && now - st.lastEventAt < RECONCILE_MS * 2) continue
+          if (st.lastEventAt && now - st.lastEventAt < RECONCILE_INTERVAL_MS * 2) continue
           states.delete(id)
         }
       }
@@ -386,11 +395,11 @@ export function apply(ctx, config) {
   // reconcile: load newly created sessions, drop removed ones
   // all states participate in stats; reconcile reloads sessions with needsReload
   // or empty rollup, without truncation cap
-  const timer = ctx.get('timer')
-  if (timer) {
-    ctx.effect(() => timer.setInterval(async () => {
-      const q = ctx.get('sessionQuery')
-      if (!q || !ready) return
+  const timer = getCtxService('timer')
+  if (!timer) return
+  ctx.effect(() => timer.setInterval(async () => {
+    const q = getCtxService('sessionQuery')
+    if (!q || !ready) return
 
       const listEpoch = eventEpoch
       let recs = []
@@ -412,7 +421,7 @@ export function apply(ctx, config) {
         if (!seen.has(id)) {
           const now = Date.now()
           if (keepMissingState(st, listEpoch)) continue
-          if (st.lastEventAt && now - st.lastEventAt < RECONCILE_MS * 2) continue
+          if (st.lastEventAt && now - st.lastEventAt < RECONCILE_INTERVAL_MS * 2) continue
           states.delete(id)
         }
       }
@@ -430,21 +439,18 @@ export function apply(ctx, config) {
         }
       }
       await Promise.all(Array.from({ length: WORKER_COUNT }, () => worker()))
-    }, RECONCILE_MS), 'usage-dashboard: reconcile')
-  }
+    }, RECONCILE_INTERVAL_MS), 'usage-dashboard: reconcile')
 
   // pre-warm the cold load right after startup: first open is instant
-  if (timer) {
-    ctx.effect(() => timer.timeout(() => { getRollups().catch(() => {}) }, 500), 'usage-dashboard: prewarm')
-  }
+  ctx.effect(() => timer.timeout(() => { getRollups().catch(() => {}) }, PREWARM_DELAY_MS), 'usage-dashboard: prewarm')
 
   // ---------- single-flight request helpers ----------
 
   async function cached(key, compute) {
     const now = Date.now()
-    // Clean up entries older than TTL * 2 (but not inflight entries)
+    // Clean up entries older than CACHE_TTL_MS * 2 (but not inflight entries)
     for (const [k, v] of cache.entries()) {
-      if (!inflight.has(k) && now - v.at >= TTL * CACHE_STALE_MULTIPLIER) {
+      if (!inflight.has(k) && now - v.at >= CACHE_TTL_MS * CACHE_STALE_MULTIPLIER) {
         cache.delete(k)
       }
     }
@@ -459,7 +465,7 @@ export function apply(ctx, config) {
       hit = null
     }
     // if hit exists and not expired, return it (stale-while-revalidate)
-    if (hit && now - hit.at < TTL) {
+    if (hit && now - hit.at < CACHE_TTL_MS) {
       return hit.data
     }
     if (hit) {

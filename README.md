@@ -48,6 +48,38 @@
 
 按「时间桶 × 模型 × 项目」分组的明细表，列含 `时间 / 项目 / 模型 / 工具 / 输入 / 输出 / 缓存 / 费用`（工具固定为 `dsh`）；同一小时用多个模型时分别成行。分页展示（每页 20 条），显示「显示 x–y 条，共 z 条」，可翻页。（上图下方即为此表。）
 
+### 模型效能雷达
+
+一张**六轴雷达图**，展示当前筛选窗口内调用量前 **4** 个模型的效能对比。六个维度及其相对得分（0–100，各维度内 Top-1 归一化为 100）：
+
+- **响应效率** = 输出 Token / 平均响应时长（ms）
+- **响应速度** = 1 / p50 响应时长（ms）
+- **一致性** = 1 / (1 + p95/p50)，p50/p95 由日志内对数分桶直方图估算
+- **成本效率** = 输出 Token / 费用；费用未知（模型在定价表 `pricing/vibe-usage-model-pricing.csv` 中未匹配）时该维度从归一化中剔除，列表与 tooltip 显示「—」。
+- **缓存命中** = 缓存命中率（%）
+- **Token 产出** = 输出 Token / 计费输入 Token（`billedInput`），乘以 100 得百分比
+
+点击雷达上的点或右侧列表项可高亮单个模型（其余变淡）。模型筛选激活时仅展示通过筛选的模型中的 Top-4；无可用数据时显示「暂无可用模型数据」。
+
+### 缓存命中率趋势
+
+一条折线 + 散点的时间序列图，展示所选范围内**每个时间桶**的缓存命中率变化（Y 轴固定 0–100%）。
+
+**命中率公式**（分桶与汇总口径相同）：
+
+```
+cacheHitRate = cacheRead / cacheObserved × 100%
+```
+
+其中：
+- **`cacheRead`** = 事件级 `usage.cacheReadTokens` 的求和（来自 provider 的显式字段）。
+- **`cacheObserved`** = 有显式 cache 遥测的行（provider 报告了 `cacheReadTokens` 或 `cacheWriteTokens`）的 `inputTokens + cacheRead + cacheWrite` 之和；即**带 telemetry 的计费输入**。未报告的行不计入 `cacheObserved`（分母保持纯净），但仍会计入 `billedInput` 与覆盖率分母。
+- **`cacheRead`** = 这些行中 provider 显式报告的 `usage.cacheReadTokens` 之和。
+- **`billedInput`** = 窗口内所有行的 `inputTokens + cacheTokens` 之和（= `inputTokens + cacheRead + cacheWrite`），代表被计费的全部输入口径。
+- **覆盖率 `cacheCoverage`** = `cacheObserved / billedInput × 100%`；当所有事件均无法提供 cache 信息时覆盖率为 0%，命中率为「—」。
+
+界面上同时展示**当前窗口**命中率、**加权平均**命中率（按各桶 `cacheObserved` 加权）与**环比变化**（当前 − 上一窗口，单位百分点，基线为零时隐藏）。断点仅在相邻桶之间出现（中间有空桶时不连线）。
+
 ## 数据口径
 
 - **Token** = 输入 Token + 输出 Token + 缓存 Token。
@@ -55,6 +87,7 @@
 - **总时长** 是每个会话首条消息到末条消息的时间跨度；重叠的并行会话区间先合并，再按所选窗口裁剪后求和，不会重复计算重叠时间。
 - **费用** 是估算值，价格来自本仓库的定价表 `pricing/vibe-usage-model-pricing.csv`（覆盖 204 个模型，由构建脚本生成 `lib/core/pricing.js`），按美元价格 ×7 折算人民币；未匹配的模型暂不计费。DeepSeek V4 在 2026-08-17 起按北京时间工作日高峰 / 空闲时段计费（周一至周五高峰 9:00–12:00、14:00–18:00，周末及其余时段为空闲，空闲为高峰一半）。
 - **项目** 优先使用会话 header 中的 canonical `cwd`，再结合 DSH workspace membership 回填；路径分隔符、大小写和尾部斜杠会统一后再分组。
+- **缓存命中率** = `cacheRead / cacheObserved × 100%`，其中分子 `cacheRead` 来自 provider 显式的 `usage.cacheReadTokens`，分母 `cacheObserved` 仅限 provider 报告了 `cacheReadTokens` 或 `cacheWriteTokens` 的行，取这些行的 `inputTokens + cacheRead + cacheWrite` 之和；未报告的行排除出分母，不虚构 0%。**计费输入 `billedInput`** = 全窗口 `inputTokens + cacheTokens` 之和，包含未知 telemetry 的行；**缓存数据覆盖率** = `cacheObserved / billedInput × 100%`，全未知时覆盖率为 0%、命中率和加权命中率显示「—」。
 - 环比基线为零时没有有限百分比，界面会隐藏该百分比，不显示伪造的 `+100%`。
 
 ## 安装
@@ -103,7 +136,7 @@ node scripts/smoke-host.mjs
 npm test           # 依次执行 build + bench + host smoke test
 ```
 
-`npm test` 覆盖：Token / 费用 / 消息数 / 日历聚合一致性、`foldAppend` 与完整 `foldSession` 的增量等价性、活跃时长与总时长的并集 / 窗口边界、模型 / 项目分布与总 Token / 总费用守恒，以及 `/dash-api/usage`、`/dash-api/detail`、`/dash-api/calendar` 三条 host 路由。针对性回归还覆盖边缘桶、无 usage 消息、缓存竞态、session 列表滞后、UTC+8、原型键和超长趋势范围。
+`npm test` 覆盖：Token / 费用 / 消息数 / 日历聚合一致性、`foldAppend` 与完整 `foldSession` 的增量等价性、活跃时长与总时长的并集 / 窗口边界、模型 / 项目分布与总 Token / 总费用守恒、缓存命中率的 disjoint 口径（`cacheRead` / `cacheObserved` 与 `billedInput` 守恒）、Top-4 雷达相对得分归一与断点渲染，以及 `/dash-api/usage`、`/dash-api/detail`、`/dash-api/calendar` 三条 host 路由。针对性回归还覆盖边缘桶、无 usage 消息、缓存竞态、session 列表滞后、UTC+8、原型键和超长趋势范围。
 
 发布前可验证 npm 包内容：
 
@@ -117,7 +150,7 @@ node scripts/verify-pack.mjs <package-dir>
 
 ## 实时性与性能
 
-- **纯聚合引擎** `src/core/rollup.js`：`foldSession` 把一次会话折叠为按小时分桶的紧凑 rollup，`foldAppend` 以单事件增量更新（与全量重算字节级一致），`queryUsage / queryDetail / queryCalendar` 在内存中回答任意窗口与筛选。
+- **纯聚合引擎** `src/core/rollup.js`：`foldSession` 把一次会话折叠为按小时分桶的紧凑 rollup，`foldAppend` 以单事件增量更新（与全量重算字节级一致），`queryUsage / queryDetail / queryCalendar` 在内存中回答任意窗口与筛选；缓存命中率的 `cacheRead` / `cacheObserved` / `billedInput` 口径也在引擎侧一次遍历完成。
 - **事件驱动刷新**：启动时为每个会话建立一次内存 rollup（活跃会话直接读内存中的会话对象，持久化会话经 `persistence.readFrom` 读取一次）；之后 `session/event` 事件经 `foldAppend` 增量写入，刷新时不再重新解析完整日志。每 60 秒一次 reconcile 发现新 / 移除的会话。
 - **请求缓存**：30 秒 TTL + 陈旧仍可复用（stale-while-revalidate）+ 单飞（single-flight），新事件到达即失效。启动后约 500ms 预热，此后任意视图均在毫秒级返回。
 

@@ -16,8 +16,55 @@
 
 // 定价表：由 scripts/regenerate.cjs 从 pricing/vibe-usage-model-pricing.csv 生成（USD × 7 → ¥/M tokens），见 ./pricing.js
 import { PRICES, VENDORS } from './pricing.js'
+import { BusinessException } from './errors.js'
 
 const hasOwn = (table, key) => Object.prototype.hasOwnProperty.call(table, key)
+
+// ---- named constants (replace scattered magic numbers) ----
+const HOUR = 3600000
+const DAY = 86400000
+const WEEK = 7 * DAY
+const BJ_OFFSET = 8 * HOUR
+const INTER_MSG_GAP_MS = 600000 // ≤ 10 min inter-message gap
+const MAX_SERIES_BUCKETS = 50000
+const BUCKET_MSG_TYPES = 5 // [user, injected, assistant, tool_call, tool_result]
+const EVT_FIELD_LENGTH = 15
+// per-model aggregate indices
+const PER_INPUT = 0
+const PER_OUTPUT = 1
+const PER_CACHE = 2
+const PER_COST_IN = 3
+const PER_COST_OUT = 4
+const PER_COST_CACHE = 5
+const PER_CALLS = 6
+const PER_RESP_MS_SUM = 7
+const PER_MATCHED = 8
+const PER_CACHE_READ = 9
+const PER_LATENCY_BINS = 10
+const PER_BILLED_INPUT_TOTAL = 11
+const PER_OBSERVED_BILLED = 12
+const PER_OBSERVED_INPUT = 13
+// per-bucket msg-count indices
+const MSG_USER = 0
+const MSG_INJECTED = 1
+const MSG_ASSISTANT = 2
+const MSG_TOOL_CALL = 3
+const MSG_TOOL_RESULT = 4
+const EVT_IDX_T = 0
+const EVT_IDX_TYPE = 1
+const EVT_IDX_MODEL = 2
+const EVT_IDX_IN = 3
+const EVT_IDX_OUT = 4
+const EVT_IDX_CACHE = 5
+const EVT_IDX_COST_IN = 6
+const EVT_IDX_COST_OUT = 7
+const EVT_IDX_COST_CACHE = 8
+const EVT_IDX_DUR_UA = 9
+const EVT_IDX_ACT_MS = 10
+const EVT_IDX_END_T = 11
+const EVT_IDX_CACHE_READ = 12
+const EVT_IDX_CACHE_KNOWN = 13
+const EVT_IDX_LATENCY_KNOWN = 14
 
 // 模型 → 定价；未匹配返回 null（不计费）
 export function priceFor(model) {
@@ -42,13 +89,13 @@ const DS_PEAK = {
 
 // 北京时间（UTC+8）小时数 0-23
 export function bjHour(t) {
-  return new Date(t + 8 * 3600000).getUTCHours()
+  return new Date(t + BJ_OFFSET).getUTCHours()
 }
 
 // t 是否处于高峰时段（工作日 9:00-12:00、14:00-18:00，北京时间）
 export function isDSPeak(t) {
-  const bj = new Date(t + 8 * 3600000)
-  const day = bj.getUTCDay() // 0=周日, 6=周六
+  const bj = new Date(t + BJ_OFFSET)
+  const day = bj.getUTCDay()
   if (day === 0 || day === 6) return false
   const h = bj.getUTCHours()
   return (h >= 9 && h < 12) || (h >= 14 && h < 18)
@@ -75,14 +122,40 @@ export function priceForAt(model, t) {
   return priceFor(id)
 }
 
-// ---------- time helpers ----------
-const HOUR = 3600000
-const DAY = 86400000
-const WEEK = 7 * DAY
-const BJ_OFFSET = 8 * HOUR
-
 export function num(v) {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0
+}
+
+// Response-latency histogram
+const LATENCY_BIN_UPPER = [250, 500, 1000, 2000, 3000, 5000, 8000, 12000, 20000, 30000, 60000, 120000, 300000, 600000, 1800000, 3600000]
+function newLatencyBins() { return new Array(LATENCY_BIN_UPPER.length + 1).fill(0) }
+function latencyBin(ms) {
+  for (let i = 0; i < LATENCY_BIN_UPPER.length; i++) {
+    if (ms <= LATENCY_BIN_UPPER[i]) return i
+  }
+  return LATENCY_BIN_UPPER.length
+}
+function mergeLatencyBins(target, source) {
+  if (!source) return
+  for (let i = 0; i < target.length; i++) target[i] += source[i] || 0
+}
+function quantileFromBins(bins, q) {
+  if (!bins) return null
+  const total = bins.reduce((sum, n) => sum + (Number(n) || 0), 0)
+  if (!(total > 0)) return null
+  const wanted = Math.max(1, Math.ceil(total * q))
+  let seen = 0
+  for (let i = 0; i < bins.length; i++) {
+    seen += Number(bins[i]) || 0
+    if (seen >= wanted) return LATENCY_BIN_UPPER[Math.min(i, LATENCY_BIN_UPPER.length - 1)]
+  }
+  return LATENCY_BIN_UPPER[LATENCY_BIN_UPPER.length - 1]
+}
+function cacheRate(read, observed) {
+  return observed > 0 ? read / observed * 100 : null
+}
+function cacheCoverage(observed, billed) {
+  return billed > 0 ? observed / billed * 100 : 0
 }
 function pad2(n) { return n < 10 ? '0' + n : String(n) }
 
@@ -164,7 +237,6 @@ export function bucketLabel(key, gran) {
 // Return all calendar buckets touched by [lo, hi]. Preset counts are a minimum:
 // a rolling window whose lower edge is mid-bucket needs one extra leading bucket
 // so its KPI data is still represented in the trend.
-const MAX_SERIES_BUCKETS = 50000
 export function bucketSeries(lo, hi, gran, count) {
   const keys = []
   const step = gran === 'hour' ? HOUR : gran === 'day' ? DAY : WEEK
@@ -230,7 +302,7 @@ function bucketAt(r, t) {
   const hk = hourOf(t)
   let b = r.buckets.get(hk)
   if (!b) {
-    b = { per: new Map(), msg: [0, 0, 0, 0, 0], durGap: 0, activeMs: 0, first: 0, last: 0, hasMsg: false, evts: [] }
+    b = { per: new Map(), msg: new Array(BUCKET_MSG_TYPES).fill(0), durGap: 0, activeMs: 0, first: 0, last: 0, hasMsg: false, evts: [] }
     r.buckets.set(hk, b)
   }
   return b
@@ -250,7 +322,9 @@ function openGeneration(r, data, t) {
   }
   if (!step.generation) {
     const b = bucketAt(r, t)
-    const evt = [t, 6, null, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    const evt = new Array(EVT_FIELD_LENGTH).fill(0)
+    evt[EVT_IDX_T] = t
+    evt[EVT_IDX_TYPE] = 6
     b.evts.push(evt)
     step.generation = { t, hk: hourOf(t), evtIdx: b.evts.length - 1, bucketEvts: b.evts }
   }
@@ -261,28 +335,51 @@ function closeGeneration(step, end) {
   const gen = step && step.generation
   if (!gen) return
   if (typeof end === 'number' && end > gen.t) {
-    gen.bucketEvts[gen.evtIdx][10] = end - gen.t
-    gen.bucketEvts[gen.evtIdx][11] = end
+    gen.bucketEvts[gen.evtIdx][EVT_IDX_ACT_MS] = end - gen.t
+    gen.bucketEvts[gen.evtIdx][EVT_IDX_END_T] = end
   }
   step.generation = null
 }
 
 function closeStep(r, data, end) {
   const key = stepKey(data)
-  if (key === undefined || key === 'undefined:undefined') return
+  if (key === undefined || key === 'undefined:undefined') return 0
   const step = r._openSteps.get(key)
-  if (!step) return
+  if (!step) return 0
+  // Capture the open generation BEFORE closeGeneration clears it.
+  const gen = step.generation
   closeGeneration(step, end)
+  let dur = 0
+  if (gen && Array.isArray(gen.bucketEvts[gen.evtIdx]) && typeof gen.bucketEvts[gen.evtIdx][EVT_IDX_ACT_MS] === 'number') {
+    dur = gen.bucketEvts[gen.evtIdx][EVT_IDX_ACT_MS] || 0
+  }
   r._openSteps.delete(key)
+  return dur
 }
 
 // inter-message gap ≤ 10min → attributed to the hour of the EARLIER message
-function trackMsg(r, t) {
-  const lt = r._lastMsgT
+function trackInterMsgGap(r, t) {
+  const lastT = r._lastMsgT
   r._lastMsgT = t
-  if (lt !== null) {
-    const gap = t - lt
-    if (gap > 0 && gap <= 600000) bucketAt(r, lt).durGap += gap
+  if (lastT !== null) {
+    const gap = t - lastT
+    if (gap > 0 && gap <= INTER_MSG_GAP_MS) bucketAt(r, lastT).durGap += gap
+  }
+}
+
+function newPerAggregate() {
+  // [in, out, cache, costIn, costOut, costCache, calls, responseMsSum,
+  //  matched, cacheRead, latencyBins, billedInputTotal, observedBilled, observedInput]
+  return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null, 0, 0, 0]
+}
+
+function newZeroBucket() {
+  return {
+    input: 0, output: 0, cache: 0,
+    cacheRead: 0, cacheWrite: 0,
+    billedInput: 0, cacheObserved: 0,
+    costIn: 0, costOut: 0, costCache: 0,
+    durMs: 0, totalMs: 0, sessions: 0, activeMs: 0
   }
 }
 
@@ -305,30 +402,43 @@ export function foldAppend(r, ev) {
     case 'user/message': {
       const src = ev.data && ev.data.source
       const b = bucketAt(r, t)
-      if (src && src.kind === 'user') b.msg[0] += 1
-      else b.msg[1] += 1
+      if (src && src.kind === 'user') b.msg[MSG_USER] += 1
+      else b.msg[MSG_INJECTED] += 1
       r._lastUserT = t
       b.hasMsg = true
       if (t < b.first || !b.first) b.first = t
       if (t > b.last) b.last = t
-      b.evts.push([t, src && src.kind === 'user' ? 0 : 1, null, 0, 0, 0, 0, 0, 0])
-      trackMsg(r, t)
+      const evt = new Array(EVT_FIELD_LENGTH).fill(0)
+      evt[EVT_IDX_T] = t
+      evt[EVT_IDX_TYPE] = src && src.kind === 'user' ? 0 : 1
+      b.evts.push(evt)
+      trackInterMsgGap(r, t)
       break
     }
     case 'assistant/message': {
       const b = bucketAt(r, t)
-      b.msg[2] += 1
+      b.msg[MSG_ASSISTANT] += 1
       b.hasMsg = true
       if (t < b.first || !b.first) b.first = t
       if (t > b.last) b.last = t
       // assistant/message is the completion fallback for providers that do not
       // emit a finish chunk. When chunks are present, closeGeneration already
       // closed at the finish timestamp and this is a no-op.
-      closeStep(r, ev.data, t)
+      let genDurMs = closeStep(r, ev.data, t)
       const usage = ev.data.usage
+      // Detect cache telemetry with own-property checks
+      const hasOwnCacheRead = usage && Object.prototype.hasOwnProperty.call(usage, 'cacheReadTokens')
+      const hasOwnCacheWrite = usage && Object.prototype.hasOwnProperty.call(usage, 'cacheWriteTokens')
+      const cacheKnown = hasOwnCacheRead || hasOwnCacheWrite
+      let latencyKnown = genDurMs > 0
       if (!usage) {
         // 保留 message-only 边缘明细；不造 token/cost 行
-        b.evts.push([t, 2, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        const evt = new Array(EVT_FIELD_LENGTH).fill(0)
+        evt[EVT_IDX_T] = t
+        evt[EVT_IDX_TYPE] = 2
+        evt[EVT_IDX_CACHE_KNOWN] = cacheKnown ? 1 : 0
+        evt[EVT_IDX_LATENCY_KNOWN] = latencyKnown ? 1 : 0
+        b.evts.push(evt)
       }
       if (usage) {
         const msg = ev.data.message
@@ -336,55 +446,93 @@ export function foldAppend(r, ev) {
         const pr = priceForAt(model, t)
         const inp = num(usage.inputTokens)
         const otp = num(usage.outputTokens)
-        const cr = num(usage.cacheReadTokens)
-        const cw = num(usage.cacheWriteTokens)
+        const cr = cacheKnown ? num(usage.cacheReadTokens) : 0
+        const cw = cacheKnown ? num(usage.cacheWriteTokens) : 0
         let costIn = 0, costOut = 0, costCache = 0
         if (pr) {
           costIn = inp * pr.p[0] / 1e6
           costOut = otp * pr.p[1] / 1e6
           costCache = (cr * pr.p[2] + cw * pr.p[0]) / 1e6
         }
-        b.evts.push([t, 2, model, inp, otp, cr + cw, costIn, costOut, costCache, r._lastUserT !== null ? Math.max(0, t - r._lastUserT) : 0, 0, 0, cr])
+        // Fallback: use time since last user message if no generation data
+        if (!latencyKnown && r._lastUserT !== null) {
+          genDurMs = Math.max(0, t - r._lastUserT)
+        }
+        latencyKnown = genDurMs > 0
+        const durUA = r._lastUserT !== null ? Math.max(0, t - r._lastUserT) : 0
+        // evt: [t, type, model, inp, otp, cache, costIn, costOut, costCache, durUA, actMs, endT, cacheRead, cacheKnown, latencyKnown]
+      const evt = new Array(EVT_FIELD_LENGTH).fill(0)
+      evt[EVT_IDX_T] = t
+      evt[EVT_IDX_TYPE] = 2
+      evt[EVT_IDX_MODEL] = model
+      evt[EVT_IDX_IN] = inp
+      evt[EVT_IDX_OUT] = otp
+      evt[EVT_IDX_CACHE] = cr + cw
+      evt[EVT_IDX_COST_IN] = costIn
+      evt[EVT_IDX_COST_OUT] = costOut
+      evt[EVT_IDX_COST_CACHE] = costCache
+      evt[EVT_IDX_DUR_UA] = durUA
+      evt[EVT_IDX_CACHE_READ] = cr
+      evt[EVT_IDX_CACHE_KNOWN] = cacheKnown ? 1 : 0
+      evt[EVT_IDX_LATENCY_KNOWN] = latencyKnown ? 1 : 0
+      b.evts.push(evt)
         let per = b.per.get(model)
         if (!per) {
-          per = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] // in, out, cache, costIn, costOut, costCache, calls, durUA, matched, cacheRead
+          per = newPerAggregate()
           b.per.set(model, per)
         }
-        per[0] += inp
-        per[1] += otp
-        per[2] += cr + cw
-        per[3] += costIn
-        per[4] += costOut
-        per[5] += costCache
-        per[6] += 1
-        per[8] = pr ? 1 : per[8]
-        per[9] += cr
-        if (r._lastUserT !== null) per[7] += Math.max(0, t - r._lastUserT)
+        const modelMatched = !!pr
+        per[PER_INPUT] += inp
+        per[PER_OUTPUT] += otp
+        per[PER_CACHE] += cr + cw
+        per[PER_COST_IN] += costIn
+        per[PER_COST_OUT] += costOut
+        per[PER_COST_CACHE] += costCache
+        per[PER_CALLS] += 1
+        per[PER_RESP_MS_SUM] += genDurMs || 0
+        per[PER_MATCHED] = modelMatched ? 1 : per[PER_MATCHED]
+        per[PER_CACHE_READ] += cr
+        per[PER_BILLED_INPUT_TOTAL] += inp + cr + cw
+        if (cacheKnown) {
+          per[PER_OBSERVED_BILLED] += inp + cr + cw
+          per[PER_OBSERVED_INPUT] += inp
+        }
+        if (genDurMs > 0) {
+          const bin = latencyBin(genDurMs)
+          if (!per[PER_LATENCY_BINS]) per[PER_LATENCY_BINS] = newLatencyBins()
+          per[PER_LATENCY_BINS][bin] += 1
+        }
         // 元数据总是更新为「最近一条事件」的取价结果（DeepSeek 峰谷价随事件时间变化）
         if (pr) r.modelMeta.set(model, { matched: pr.matched, p: pr.p, peak: pr.peak || null, off: pr.off || null, ds: !!pr.ds })
       }
-      trackMsg(r, t)
+      trackInterMsgGap(r, t)
       break
     }
     case 'tool/call': {
       const b = bucketAt(r, t)
-      b.msg[3] += 1
+      b.msg[MSG_TOOL_CALL] += 1
       b.hasMsg = true
       if (t < b.first || !b.first) b.first = t
       if (t > b.last) b.last = t
       // Tool execution is part of the session span, but never active generation.
-      b.evts.push([t, 3, null, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-      trackMsg(r, t)
+      const evt = new Array(EVT_FIELD_LENGTH).fill(0)
+      evt[EVT_IDX_T] = t
+      evt[EVT_IDX_TYPE] = 3
+      b.evts.push(evt)
+      trackInterMsgGap(r, t)
       break
     }
     case 'tool/result': {
       const b = bucketAt(r, t)
-      b.msg[4] += 1
+      b.msg[MSG_TOOL_RESULT] += 1
       b.hasMsg = true
       if (t < b.first || !b.first) b.first = t
       if (t > b.last) b.last = t
-      b.evts.push([t, 4, null, 0, 0, 0, 0, 0, 0])
-      trackMsg(r, t)
+      const evt = new Array(EVT_FIELD_LENGTH).fill(0)
+      evt[EVT_IDX_T] = t
+      evt[EVT_IDX_TYPE] = 4
+      b.evts.push(evt)
+      trackInterMsgGap(r, t)
       break
     }
     case 'assistant/chunk': {
@@ -427,9 +575,12 @@ export function queryUsage(rollups, req, opts) {
   if (!req || !req.range) {
     return {
       totals: {
-        cost: 0, inputTokens: 0, outputTokens: 0, cacheTokens: 0, cacheReadTokens: 0, totalTokens: 0,
+        cost: 0, inputTokens: 0, outputTokens: 0, cacheTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
+        billedInputTokens: 0, cacheObservedTokens: 0, totalTokens: 0,
         activeMs: 0, totalMs: 0, sessions: 0,
-        userMessages: 0, injectedMessages: 0, assistantMessages: 0, toolCalls: 0, toolResults: 0, totalMessages: 0
+        userMessages: 0, injectedMessages: 0, assistantMessages: 0, toolCalls: 0, toolResults: 0, totalMessages: 0,
+        cacheRead: 0, cacheWrite: 0, billedInput: 0, cacheObserved: 0,
+        cacheHitRate: null, cacheCoverage: null, previousCacheHitRate: null, cacheHitRateDeltaPp: null
       },
       buckets: [],
       granularity: 'hour',
@@ -446,9 +597,12 @@ export function queryUsage(rollups, req, opts) {
 
   const mk = () => ({
     totals: {
-      cost: 0, inputTokens: 0, outputTokens: 0, cacheTokens: 0, cacheReadTokens: 0, totalTokens: 0,
+      cost: 0, inputTokens: 0, outputTokens: 0, cacheTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
+      billedInputTokens: 0, cacheObservedTokens: 0, totalTokens: 0,
       activeMs: 0, totalMs: 0, sessions: 0,
-      userMessages: 0, injectedMessages: 0, assistantMessages: 0, toolCalls: 0, toolResults: 0, totalMessages: 0
+      userMessages: 0, injectedMessages: 0, assistantMessages: 0, toolCalls: 0, toolResults: 0, totalMessages: 0,
+      cacheRead: 0, cacheWrite: 0, billedInput: 0, cacheObserved: 0,
+      cacheHitRate: null, cacheCoverage: null, previousCacheHitRate: null, cacheHitRateDeltaPp: null
     },
     matchedTokens: 0, totalUsageTokens: 0
   })
@@ -466,14 +620,51 @@ export function queryUsage(rollups, req, opts) {
   const projectAgg = new Map()    // cwd → { input, output, cache, cost }
   const projectList = new Map()   // cwd → { id, title, sessions } (all rollups)
 
-  const acc = (agg, per) => {
-    agg.totals.cost += per[3] + per[4] + per[5]
-    agg.totals.inputTokens += per[0]
-    agg.totals.outputTokens += per[1]
-    agg.totals.cacheTokens += per[2]
-    agg.totals.cacheReadTokens += per[9]
-    if (per[8]) agg.matchedTokens += per[0] + per[1] + per[2]
-    agg.totalUsageTokens += per[0] + per[1] + per[2]
+  function accumulatePer(agg, per) {
+    agg.totals.cost += per[PER_COST_IN] + per[PER_COST_OUT] + per[PER_COST_CACHE]
+    agg.totals.inputTokens += per[PER_INPUT]
+    agg.totals.outputTokens += per[PER_OUTPUT]
+    agg.totals.cacheTokens += per[PER_CACHE]
+    agg.totals.cacheReadTokens += per[PER_CACHE_READ]
+    agg.totals.cacheWriteTokens += Math.max(0, per[PER_CACHE] - per[PER_CACHE_READ])
+    if (per[PER_BILLED_INPUT_TOTAL]) {
+      const observed = per[PER_OBSERVED_BILLED]
+      const cacheWrite = observed
+        ? Math.max(0, observed - per[PER_CACHE_READ] - (per[PER_OBSERVED_INPUT] || 0))
+        : Math.max(0, per[PER_BILLED_INPUT_TOTAL] - per[PER_CACHE_READ] - per[PER_INPUT])
+      if (observed) agg.totals.cacheObserved += observed
+      agg.totals.billedInput += per[PER_BILLED_INPUT_TOTAL]
+      agg.totals.cacheRead += per[PER_CACHE_READ]
+      agg.totals.cacheWrite += cacheWrite
+      agg.totals.billedInputTokens = agg.totals.billedInput
+      agg.totals.cacheObservedTokens = agg.totals.cacheObserved
+      agg.totals.cacheReadTokens = agg.totals.cacheRead
+      agg.totals.cacheWriteTokens = agg.totals.cacheWrite
+    }
+    if (per[PER_MATCHED]) agg.matchedTokens += per[PER_INPUT] + per[PER_OUTPUT] + per[PER_CACHE]
+    agg.totalUsageTokens += per[PER_INPUT] + per[PER_OUTPUT] + per[PER_CACHE]
+  }
+
+  function newZeroBucket() {
+    return {
+      input: 0, output: 0, cache: 0,
+      cacheRead: 0, cacheWrite: 0, billedInput: 0, cacheObserved: 0,
+      costIn: 0, costOut: 0, costCache: 0,
+      durMs: 0, totalMs: 0, sessions: 0, activeMs: 0
+    }
+  }
+
+  function addPerBucket(g, pg, per) {
+    g.input += per[PER_INPUT]; g.output += per[PER_OUTPUT]; g.cache += per[PER_CACHE]
+    g.cacheRead += per[PER_CACHE_READ]
+    g.cacheWrite += Math.max(0, per[PER_CACHE] - per[PER_CACHE_READ])
+    g.billedInput += per[PER_BILLED_INPUT_TOTAL]
+    g.cacheObserved += per[PER_OBSERVED_BILLED]
+    g.costIn += per[PER_COST_IN]; g.costOut += per[PER_COST_OUT]; g.costCache += per[PER_COST_CACHE]
+    if (pg) {
+      pg.input += per[PER_INPUT]; pg.output += per[PER_OUTPUT]; pg.cache += per[PER_CACHE]
+      pg.cost += per[PER_COST_IN] + per[PER_COST_OUT] + per[PER_COST_CACHE]
+    }
   }
 
   for (let i = 0; i < rollups.length; i++) {
@@ -544,12 +735,12 @@ export function queryUsage(rollups, req, opts) {
           const firstT = firstInWindow(b, lo, hi)
           if (firstT !== null) {
             const gap = firstT - last.t
-            if (gap > 0 && gap <= 600000) {
+            if (gap > 0 && gap <= INTER_MSG_GAP_MS) {
               heatDur[cellOf(last.t)] += gap
               const gk = bucketKey(last.t, gran)
               let g = bucketMap.get(gk)
               if (!g) {
-                g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0, activeMs: 0 }
+                g = newZeroBucket()
                 bucketMap.set(gk, g)
               }
               g.durMs += gap
@@ -575,9 +766,9 @@ export function queryUsage(rollups, req, opts) {
       } else if (inCurB && b.per.size > 0) {
         if (modelSet === null) {
           for (const [model, per] of b.per) {
-            acc(cur, per)
-            heatToken[cell] += per[0] + per[1] + per[2]
-            heatCost[cell] += per[3] + per[4] + per[5]
+            accumulatePer(cur, per)
+            heatToken[cell] += per[PER_INPUT] + per[PER_OUTPUT] + per[PER_CACHE]
+            heatCost[cell] += per[PER_COST_IN] + per[PER_COST_OUT] + per[PER_COST_CACHE]
             mergeModel(modelAgg, model, per)
           }
         } else {
@@ -585,9 +776,9 @@ export function queryUsage(rollups, req, opts) {
             // dropdown / pricing rows list EVERY model in the window
             mergeModel(modelAgg, model, per)
             if (!modelSet.has(model)) continue
-            acc(cur, per)
-            heatToken[cell] += per[0] + per[1] + per[2]
-            heatCost[cell] += per[3] + per[4] + per[5]
+            accumulatePer(cur, per)
+            heatToken[cell] += per[PER_INPUT] + per[PER_OUTPUT] + per[PER_CACHE]
+            heatCost[cell] += per[PER_COST_IN] + per[PER_COST_OUT] + per[PER_COST_CACHE]
           }
         }
       }
@@ -599,34 +790,31 @@ export function queryUsage(rollups, req, opts) {
       } else if (inPrevB) {
         if (b.per.size > 0) {
           if (modelSet === null) {
-            for (const [model, per] of b.per) acc(prev, per)
+            for (const [model, per] of b.per) accumulatePer(prev, per)
           } else {
             for (const [model, per] of b.per) {
-              if (modelSet.has(model)) acc(prev, per)
+              if (modelSet.has(model)) accumulatePer(prev, per)
             }
           }
         }
-        prev.totals.userMessages += b.msg[0]
-        prev.totals.injectedMessages += b.msg[1]
-        prev.totals.assistantMessages += b.msg[2]
-        prev.totals.toolCalls += b.msg[3]
-        prev.totals.toolResults += b.msg[4]
+        prev.totals.userMessages += b.msg[MSG_USER]
+        prev.totals.injectedMessages += b.msg[MSG_INJECTED]
+        prev.totals.assistantMessages += b.msg[MSG_ASSISTANT]
+        prev.totals.toolCalls += b.msg[MSG_TOOL_CALL]
+        prev.totals.toolResults += b.msg[MSG_TOOL_RESULT]
       }
 
       if (inCurB) {
         if (!curEdge) {
-          cur.totals.userMessages += b.msg[0]
-          cur.totals.injectedMessages += b.msg[1]
-          cur.totals.assistantMessages += b.msg[2]
-          cur.totals.toolCalls += b.msg[3]
-          cur.totals.toolResults += b.msg[4]
+          cur.totals.userMessages += b.msg[MSG_USER]
+          cur.totals.injectedMessages += b.msg[MSG_INJECTED]
+          cur.totals.assistantMessages += b.msg[MSG_ASSISTANT]
+          cur.totals.toolCalls += b.msg[MSG_TOOL_CALL]
+          cur.totals.toolResults += b.msg[MSG_TOOL_RESULT]
           heatDur[cell] += b.durGap
           const gk = bucketKey(hk, gran)
           let g = bucketMap.get(gk)
-          if (!g) {
-            g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0, activeMs: 0 }
-            bucketMap.set(gk, g)
-          }
+          if (!g) { g = newZeroBucket(); bucketMap.set(gk, g) }
           g.durMs += b.durGap
           if (b.hasMsg) {
             let sp = gkSpan.get(gk)
@@ -639,21 +827,9 @@ export function queryUsage(rollups, req, opts) {
           if (b.per.size > 0) {
             let pg = projectAgg.get(cwdKey)
             if (!pg) { pg = { input: 0, output: 0, cache: 0, cost: 0 }; projectAgg.set(cwdKey, pg) }
-            if (modelSet === null) {
-              for (const per of b.per.values()) {
-                g.input += per[0]; g.output += per[1]; g.cache += per[2]
-                g.costIn += per[3]; g.costOut += per[4]; g.costCache += per[5]
-                pg.input += per[0]; pg.output += per[1]; pg.cache += per[2]
-                pg.cost += per[3] + per[4] + per[5]
-              }
-            } else {
-              for (const [model, per] of b.per) {
-                if (!modelSet.has(model)) continue
-                g.input += per[0]; g.output += per[1]; g.cache += per[2]
-                g.costIn += per[3]; g.costOut += per[4]; g.costCache += per[5]
-                pg.input += per[0]; pg.output += per[1]; pg.cache += per[2]
-                pg.cost += per[3] + per[4] + per[5]
-              }
+            for (const [model, per] of b.per) {
+              if (modelSet !== null && !modelSet.has(model)) continue
+              addPerBucket(g, pg, per)
             }
           }
         }
@@ -673,11 +849,9 @@ export function queryUsage(rollups, req, opts) {
   cur.totals.totalMs = mergeIntervals(curInts)
   prev.totals.totalMs = mergeIntervals(prevInts)
   // 趋势桶采用同样的并集口径（每小时/天去重叠）
-  const zeroBucket = () => ({ input: 0, output: 0, cache: 0, costIn: 0, costOut: 0,
-    costCache: 0, durMs: 0, totalMs: 0, sessions: 0, activeMs: 0 })
   for (const [gk, ints] of gkInts) {
     let g = bucketMap.get(gk)
-    if (!g) { g = zeroBucket(); bucketMap.set(gk, g) }
+    if (!g) { g = newZeroBucket(); bucketMap.set(gk, g) }
     g.totalMs = mergeIntervals(ints)
     g.sessions = ints.length
   }
@@ -686,6 +860,22 @@ export function queryUsage(rollups, req, opts) {
   cur.totals.totalMessages = cur.totals.userMessages + cur.totals.injectedMessages + cur.totals.assistantMessages + cur.totals.toolCalls + cur.totals.toolResults
   prev.totals.totalTokens = prev.totals.inputTokens + prev.totals.outputTokens + prev.totals.cacheTokens
   prev.totals.totalMessages = prev.totals.userMessages + prev.totals.injectedMessages + prev.totals.assistantMessages + prev.totals.toolCalls + prev.totals.toolResults
+  // Cache metric aliases for totals — use direct fields (set by edgeAccumulate)
+  // when available, falling back to token aliases (set by acc()).
+  for (const tag of ['cur', 'prev']) {
+    const t = tag === 'cur' ? cur.totals : prev.totals
+    t.cacheRead ??= t.cacheReadTokens
+    t.cacheWrite ??= t.cacheWriteTokens
+    t.billedInput ??= t.billedInputTokens
+    t.cacheObserved ??= t.cacheObservedTokens
+  }
+  cur.totals.cacheHitRate = cacheRate(cur.totals.cacheRead, cur.totals.cacheObserved)
+  cur.totals.cacheCoverage = cacheCoverage(cur.totals.cacheObserved, cur.totals.billedInput)
+  prev.totals.cacheHitRate = cacheRate(prev.totals.cacheRead, prev.totals.cacheObserved)
+  prev.totals.cacheCoverage = cacheCoverage(prev.totals.cacheObserved, prev.totals.billedInput)
+  cur.totals.previousCacheHitRate = prev.totals.cacheHitRate
+  cur.totals.cacheHitRateDeltaPp = cur.totals.cacheHitRate !== null && prev.totals.cacheHitRate !== null
+    ? cur.totals.cacheHitRate - prev.totals.cacheHitRate : null
 
   function pct(c, p) {
     // 以零为基线时百分比没有有限定义；隐藏该项比伪造 +100% 更准确。
@@ -707,22 +897,29 @@ export function queryUsage(rollups, req, opts) {
 
   // patch window-less pricing metadata (matched / price) onto the model aggregate
   patchModelMeta(modelAgg, rollups)
+  finalizeModelAggStats(modelAgg)
 
   const keys = bucketSeries(lo, hi, gran, presetBucketCount(req.range, gran))
   const buckets = keys.map((bk) => {
     const b = bucketMap.get(bk)
+    if (!b) {
+      return {
+        label: bucketLabel(bk, gran),
+        input: 0, output: 0, cache: 0, cacheRead: 0, cacheWrite: 0, billedInput: 0, cacheObserved: 0,
+        cacheHitRate: null, cacheCoverage: 0,
+        costIn: 0, costOut: 0, costCache: 0,
+        durMs: 0, totalMs: 0, sessions: 0, activeMs: 0
+      }
+    }
     return {
       label: bucketLabel(bk, gran),
-      input: b ? b.input : 0,
-      output: b ? b.output : 0,
-      cache: b ? b.cache : 0,
-      costIn: b ? b.costIn : 0,
-      costOut: b ? b.costOut : 0,
-      costCache: b ? b.costCache : 0,
-      durMs: b ? b.durMs : 0,
-      totalMs: b ? b.totalMs : 0,
-      sessions: b ? b.sessions : 0,
-      activeMs: b ? b.activeMs : 0
+      input: b.input, output: b.output, cache: b.cache,
+      cacheRead: b.cacheRead, cacheWrite: b.cacheWrite,
+      billedInput: b.billedInput, cacheObserved: b.cacheObserved,
+      cacheHitRate: b.cacheObserved > 0 ? cacheRate(b.cacheRead, b.cacheObserved) : null,
+      cacheCoverage: cacheCoverage(b.cacheObserved, b.billedInput),
+      costIn: b.costIn, costOut: b.costOut, costCache: b.costCache,
+      durMs: b.durMs, totalMs: b.totalMs, sessions: b.sessions, activeMs: b.activeMs
     }
   })
 
@@ -786,17 +983,41 @@ function mergeIntervals(ints) {
 function mergeModel(map, model, per) {
   let g = map.get(model)
   if (!g) {
-    g = { id: model, calls: 0, input: 0, output: 0, cache: 0, cost: 0, matched: null, p: null }
+    g = { id: model, calls: 0, input: 0, output: 0, cache: 0, cost: 0, matched: null, p: null,
+      cacheRead: 0, cacheWrite: 0, billedInput: 0, cacheObserved: 0,
+      responseMsSum: 0, latencyBins: null }
     map.set(model, g)
   }
-  g.calls += per[6]
-  g.input += per[0]
-  g.output += per[1]
-  g.cache += per[2]
-  g.cost += per[3] + per[4] + per[5]
-  // matched/p come from the rollup-level modelMeta; mergeModel receives per only,
-  // so the caller patches matched/p afterwards (see queryUsage model patching below)
+  g.calls += per[PER_CALLS]
+  g.input += per[PER_INPUT]
+  g.output += per[PER_OUTPUT]
+  g.cache += per[PER_CACHE]
+  g.cost += per[PER_COST_IN] + per[PER_COST_OUT] + per[PER_COST_CACHE]
+  g.cacheRead += per[PER_CACHE_READ]
+  g.cacheWrite += Math.max(0, per[PER_CACHE] - per[PER_CACHE_READ])
+  g.billedInput += per[PER_BILLED_INPUT_TOTAL]
+  g.cacheObserved += per[PER_OBSERVED_BILLED]
+  g.responseMsSum += per[PER_RESP_MS_SUM]
+  if (per[PER_LATENCY_BINS]) {
+    if (!g.latencyBins) g.latencyBins = newLatencyBins()
+    mergeLatencyBins(g.latencyBins, per[PER_LATENCY_BINS])
+  }
+  // matched/p/ds/peak/off come from the rollup-level modelMeta; mergeModel receives per only,
+  // so the caller patches them afterwards (see queryUsage model patching below)
   return g
+}
+
+// Finalize per-model stats: cache hit rate, coverage, latency percentiles
+function finalizeModelAggStats(modelAgg) {
+  for (const m of modelAgg.values()) {
+    m.cacheHitRate = cacheRate(m.cacheRead, m.cacheObserved)
+    m.cacheCoverage = cacheCoverage(m.cacheObserved, m.billedInput)
+    if (m.latencyBins) {
+      m.avgResponseMs = m.responseMsSum > 0 ? m.responseMsSum / m.calls : null
+      m.p50ResponseMs = quantileFromBins(m.latencyBins, 0.5)
+      m.p95ResponseMs = quantileFromBins(m.latencyBins, 0.95)
+    }
+  }
 }
 
 // Exact accumulation of one window EDGE bucket (window bounds rarely align
@@ -839,25 +1060,57 @@ function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
       if (model !== null) {
         const inp = e[3], otp = e[4], cache = e[5], costIn = e[6], costOut = e[7], costCache = e[8]
         const cacheRead = Number(e[12]) || 0
-        // dropdown / pricing rows carry the FULL model aggregate (unfiltered)
-        if (sink.modelAgg) mergeModel(sink.modelAgg, model, [inp, otp, cache, costIn, costOut, costCache, 1, 0, 1])
+        const cacheKnown = !!e[13]
+        const latencyKnown = !!e[14]
+        const cacheWrite = Math.max(0, cache - cacheRead)
+        // billedInput is always the full charged input; only observed portion counts toward cacheHitRate denominator.
+        const billedInput = inp + cache
+        const observedBilled = cacheKnown ? billedInput : 0
+        const observedInput = cacheKnown ? inp : 0
+        // dropdown / pricing rows carry the FULL model aggregate (unfiltered).
+        // per: [in,out,cache,costIn,costOut,costCache,calls,responseMsSum,matched,cacheRead,latencyBins,billedInputTotal,observedBilled,observedInput]
+        const genDurMs = e[9] || 0
+        if (sink.modelAgg) mergeModel(sink.modelAgg, model, [inp, otp, cache, costIn, costOut, costCache, 1, genDurMs, 1, cacheRead, null, billedInput, observedBilled, observedInput])
+        if (sink.modelAgg && latencyKnown) {
+          const g = sink.modelAgg.get(model)
+          if (g) {
+            if (!g.latencyBins) g.latencyBins = newLatencyBins()
+            g.latencyBins[latencyBin(genDurMs)] += 1
+          }
+        }
         if (modelSet === null || modelSet.has(model)) {
-          sink.totals.cacheReadTokens += cacheRead
           sink.totals.cost += costIn + costOut + costCache
           sink.totals.inputTokens += inp
           sink.totals.outputTokens += otp
           sink.totals.cacheTokens += cache
+          sink.totals.billedInput += billedInput
+          sink.totals.billedInputTokens = sink.totals.billedInput
+          sink.totals.cacheReadTokens += cacheRead
+          sink.totals.cacheWriteTokens += cacheWrite
+          if (cacheKnown) {
+            sink.totals.cacheRead += cacheRead
+            sink.totals.cacheWrite += cacheWrite
+            sink.totals.cacheObserved += observedBilled
+          }
+          sink.totals.billedInputTokens = sink.totals.billedInput
+          sink.totals.cacheObservedTokens = sink.totals.cacheObserved
           if (sink.heatToken) sink.heatToken[cell] += inp + otp + cache
           if (sink.heatCost) sink.heatCost[cell] += costIn + costOut + costCache
           if (sink.bucketMap) {
             const gk = bucketKey(t, sink.gran)
             let g = sink.bucketMap.get(gk)
             if (!g) {
-              g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0, activeMs: 0 }
+              g = newZeroBucket()
               sink.bucketMap.set(gk, g)
             }
             g.input += inp; g.output += otp; g.cache += cache
             g.costIn += costIn; g.costOut += costOut; g.costCache += costCache
+            g.billedInput += billedInput
+            if (cacheKnown) {
+              g.cacheRead += cacheRead
+              g.cacheWrite += cacheWrite
+              g.cacheObserved += observedBilled
+            }
             if (sink.projectAgg) {
               let pg = sink.projectAgg.get(sink.cwd)
               if (!pg) { pg = { input: 0, output: 0, cache: 0, cost: 0 }; sink.projectAgg.set(sink.cwd, pg) }
@@ -882,7 +1135,7 @@ function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
           const gk = bucketKey(prevT, sink.gran)
           let g = sink.bucketMap.get(gk)
           if (!g) {
-            g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0, activeMs: 0 }
+            g = { input: 0, output: 0, cache: 0, cacheRead: 0, cacheWrite: 0, billedInput: 0, cacheObserved: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0, activeMs: 0 }
             sink.bucketMap.set(gk, g)
           }
           g.durMs += gap
@@ -904,6 +1157,8 @@ function edgeAccumulate(tLo, tHi, modelSet, evts, cell, sink) {
 function computeRollupActiveMs(r, lo, hi, gran, sink, isCurrent) {
   let totalActive = 0
   for (const [hk, b] of r.buckets) {
+    if (hk > hi) break
+    if (hk + HOUR <= lo) continue
     for (let i = 0; i < b.evts.length; i++) {
       const e = b.evts[i]
       const type = e[1]
@@ -927,7 +1182,7 @@ function computeRollupActiveMs(r, lo, hi, gran, sink, isCurrent) {
         const gk = bucketKey(isectStart, gran)
         let g = sink.bucketMap.get(gk)
         if (!g) {
-          g = { input: 0, output: 0, cache: 0, costIn: 0, costOut: 0, costCache: 0, durMs: 0, totalMs: 0, sessions: 0, activeMs: 0 }
+          g = newZeroBucket()
           sink.bucketMap.set(gk, g)
         }
         g.activeMs = (g.activeMs || 0) + dur
@@ -1039,10 +1294,10 @@ export function queryDetail(rollups, req) {
           row = { t: gk, project, model: model || '', input: 0, output: 0, cache: 0, cost: 0 }
           bucketMap.set(key, row)
         }
-        row.input += per[0]
-        row.output += per[1]
-        row.cache += per[2]
-        row.cost += per[3] + per[4] + per[5]
+        row.input += per[PER_INPUT]
+        row.output += per[PER_OUTPUT]
+        row.cache += per[PER_CACHE]
+        row.cost += per[PER_COST_IN] + per[PER_COST_OUT] + per[PER_COST_CACHE]
       }
     }
   }
@@ -1084,10 +1339,10 @@ export function queryCalendar(rollups, req) {
           total += e[3] + e[4] + e[5]
         }
       } else if (modelSet === null) {
-        for (const per of b.per.values()) total += per[0] + per[1] + per[2]
+        for (const per of b.per.values()) total += per[PER_INPUT] + per[PER_OUTPUT] + per[PER_CACHE]
       } else {
         for (const [model, per] of b.per) {
-          if (modelSet.has(model)) total += per[0] + per[1] + per[2]
+          if (modelSet.has(model)) total += per[PER_INPUT] + per[PER_OUTPUT] + per[PER_CACHE]
         }
       }
       if (total > 0) dayMap.set(dk, (dayMap.get(dk) || 0) + total)
@@ -1108,3 +1363,8 @@ export function sessionTitle(rec, pathTitle) {
   const base = cwd.split(/[\\/]/).filter(Boolean).pop() || ''
   return hdr.title || (hdr.meta && hdr.meta.title) || rec.title || pathTitle.get(cwd) || base || hdr.id || '未知会话'
 }
+
+
+
+
+

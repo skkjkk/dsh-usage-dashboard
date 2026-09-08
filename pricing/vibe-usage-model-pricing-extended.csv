@@ -1,0 +1,246 @@
+模型,厂商,输入(￥/M),输出(￥/M),缓存读取(￥/M)
+claude-3-haiku,Anthropic,1.75,8.75,0.21
+claude-3-opus,Anthropic,105,525,10.5
+claude-3.5-haiku,Anthropic,5.6,28,0.56
+claude-3.5-sonnet,Anthropic,21,105,2.1
+claude-3.7-sonnet,Anthropic,21,105,2.1
+claude-fable-5,Anthropic,70,350,7
+claude-fable-5.1,Anthropic,70,350,1.75
+claude-haiku-4-5,Anthropic,7,35,0.7
+claude-mythos-5,Anthropic,70,350,7
+claude-opus-4,Anthropic,105,525,10.5
+claude-opus-4-1,Anthropic,105,525,10.5
+claude-opus-4-5,Anthropic,35,175,3.5
+claude-opus-4-6,Anthropic,35,175,3.5
+claude-opus-4-7,Anthropic,35,175,3.5
+claude-opus-4-8,Anthropic,35,175,3.5
+claude-opus-4-8-fast,Anthropic,70,350,7
+claude-opus-5,Anthropic,35,175,3.5
+claude-opus-5-fast,Anthropic,70,350,7
+claude-sonnet-4,Anthropic,21,105,2.1
+claude-sonnet-4-5,Anthropic,21,105,2.1
+claude-sonnet-4-6,Anthropic,21,105,2.1
+claude-sonnet-5,Anthropic,14,70,1.4
+codex-mini-latest,OpenAI,10.5,42,2.625
+gpt-3.5-turbo,OpenAI,3.5,10.5,
+gpt-4,OpenAI,210,420,
+gpt-4-turbo,OpenAI,70,210,
+gpt-4.1,OpenAI,14,56,3.5
+gpt-4.1-mini,OpenAI,2.8,11.2,0.7
+gpt-4.1-nano,OpenAI,0.7,2.8,0.175
+gpt-4o,OpenAI,17.5,70,8.75
+gpt-4o-mini,OpenAI,1.05,4.2,0.525
+gpt-5,OpenAI,8.75,70,0.875
+gpt-5-codex,OpenAI,8.75,70,0.875
+gpt-5-mini,OpenAI,1.75,14,0.175
+gpt-5-nano,OpenAI,0.35,2.8,0.035
+gpt-5.1,OpenAI,8.75,70,0.875
+gpt-5.1-codex,OpenAI,8.75,70,0.875
+gpt-5.1-codex-max,OpenAI,8.75,70,0.875
+gpt-5.1-codex-mini,OpenAI,1.75,14,0.175
+gpt-5.2,OpenAI,12.25,98,1.225
+gpt-5.2-codex,OpenAI,12.25,98,1.225
+gpt-5.3-codex,OpenAI,12.25,98,1.225
+gpt-5.4,OpenAI,17.5,105,1.75
+gpt-5.4-codex,OpenAI,17.5,105,1.75
+gpt-5.4-mini,OpenAI,5.25,31.5,0.525
+gpt-5.4-nano,OpenAI,1.4,8.75,0.14
+gpt-5.4-pro,OpenAI,210,1260,
+gpt-5.5,OpenAI,35,210,3.5
+gpt-5.5-codex,OpenAI,17.5,105,1.75
+gpt-5.5-fast,OpenAI,87.5,525,8.75
+gpt-5.5-flex,OpenAI,17.5,105,1.75
+gpt-5.5-pro,OpenAI,210,1260,
+gpt-5.6-cyber,OpenAI,87.5,525,8.75
+gpt-5.6-luna,OpenAI,1.4,8.4,0.14
+gpt-5.6-luna-batch,OpenAI,0.7,4.2,0.07
+gpt-5.6-luna-fast,OpenAI,2.8,16.8,0.28
+gpt-5.6-luna-flex,OpenAI,0.7,4.2,0.07
+gpt-5.6-sol,OpenAI,35,210,3.5
+gpt-5.6-sol-batch,OpenAI,17.5,105,1.75
+gpt-5.6-sol-fast,OpenAI,70,420,7
+gpt-5.6-sol-flex,OpenAI,17.5,105,1.75
+gpt-5.6-terra,OpenAI,14,84,1.4
+gpt-5.6-terra-batch,OpenAI,8.75,52.5,0.875
+gpt-5.6-terra-fast,OpenAI,35,210,3.5
+gpt-5.6-terra-flex,OpenAI,8.75,52.5,0.875
+gpt-6-astra,OpenAI,70,350,7
+o1,OpenAI,105,420,52.5
+o1-mini,OpenAI,7.7,30.8,3.85
+o1-preview,OpenAI,105,420,52.5
+o3,OpenAI,14,56,3.5
+o3-mini,OpenAI,7.7,30.8,3.85
+o3-pro,OpenAI,140,560,
+o4-mini,OpenAI,7.7,30.8,1.925
+gemini-1.5-flash,Google,0.525,2.1,0.0525
+gemini-1.5-pro,Google,24.5,73.5,
+gemini-2.0-flash,Google,0.7,2.8,0.07
+gemini-2.0-flash-lite,Google,0.525,2.1,0.0525
+gemini-2.0-flash-thinking,Google,0.7,2.8,0.07
+gemini-2.5-flash,Google,2.1,17.5,0.21
+gemini-2.5-flash-lite,Google,1.05,8.75,0.105
+gemini-2.5-pro,Google,8.75,70,0.875
+gemini-3-flash,Google,3.5,21,0.35
+gemini-3-flash-preview,Google,3.5,21,0.35
+gemini-3-pro,Google,14,84,1.4
+gemini-3-pro-preview,Google,14,84,1.4
+gemini-3.1-flash-lite,Google,1.75,10.5,0.175
+gemini-3.1-flash-lite-preview,Google,1.75,10.5,0.175
+gemini-3.1-pro,Google,14,84,1.4
+gemini-3.1-pro-preview,Google,14,84,1.4
+gemini-3.5-flash,Google,10.5,63,1.05
+gemini-3.5-flash-lite,Google,2.1,17.5,0.21
+gemini-3.5-flash-preview,Google,10.5,63,1.05
+gemini-3.6-flash,Google,10.5,52.5,1.05
+gemini-3.7-flash,Google,10.5,52.5,1.05
+gemini-3.7-flash-batch,Google,5.25,26.25,0.525
+gemini-3.7-flash-fast,Google,18.9,94.5,1.89
+gemini-3.7-flash-flex,Google,5.25,26.25,0.525
+gemini-3.8-flash,Google,5.25,26.25,0.525
+gemini-3.8-flash-batch,Google,2.625,13.125,0.2625
+gemini-3.8-flash-fast,Google,9.45,47.25,0.945
+gemini-3.8-flash-flex,Google,2.625,13.125,0.2625
+muse-spark-1.1,Meta,8.75,29.75,1.05
+deepseek-chat,DeepSeek,0.98,1.96,0.0196
+deepseek-coder,DeepSeek,0.98,1.96,
+deepseek-r1,DeepSeek,3.85,15.33,0.98
+deepseek-reasoner,DeepSeek,0.98,1.96,0.0196
+deepseek-v3,DeepSeek,1.89,7.7,0.49
+deepseek-v3.1,DeepSeek,3.92,11.76,0.49
+deepseek-v3.2,DeepSeek,1.96,2.94,0.196
+deepseek-v4-flash,DeepSeek,3,9,0.1
+deepseek-v4-pro,DeepSeek,9,27,0.3
+deepseek-v4-flash-vision-exp,DeepSeek,3,9,0.1
+qwen-coder,Alibaba,2,8,0.4
+qwen-max,Alibaba,2.4,9.6,0.48
+qwen-plus,Alibaba,0.8,2,0.1
+qwen-turbo,Alibaba,0.5,2,0.1
+qwen3-coder-next,Alibaba,6,24,1.2
+qwen3-coder-plus,Alibaba,4,16,0.8
+qwen3-max,Alibaba,7,28,1.4
+qwen3.5-plus,Alibaba,0.8,4.8,0.24
+qwen3.6-flash,Alibaba,0.6,2.4,0.12
+qwen3.6-plus,Alibaba,2,12,0.6
+qwen3.7-flash,Alibaba,0.6,2.4,0.12
+qwen3.7-max,Alibaba,12,36,1.8
+qwen3.7-plus,Alibaba,2,8,0.4
+qwen3.8-max,Alibaba,12,36,1.8
+glm-4.5,Zhipu AI,1.2,8,0.24
+glm-4.5-air,Zhipu AI,1.2,8,0.24
+glm-4.5-airx,Zhipu AI,8,32,1.6
+glm-4.5-x,Zhipu AI,16,64,3.2
+glm-4.5v,Zhipu AI,4,12,0.8
+glm-4.6,Zhipu AI,2,6,0.4
+glm-4.7,Zhipu AI,4,16,0.8
+glm-4.7-flashx,Zhipu AI,0.5,3,0.1
+glm-5,Zhipu AI,6,22,1.5
+glm-5-code,Zhipu AI,8,28,2
+glm-5-turbo,Zhipu AI,7,26,1.8
+glm-5.1,Zhipu AI,8,28,2
+glm-5.2,Zhipu AI,8,28,2
+glm-5.3,Zhipu AI,8,28,2
+glm-5.3-flash,Zhipu AI,0.8,2.8,0.23
+glm-5v-turbo,Zhipu AI,7,26,1.8
+k2p6,Moonshot AI,6.5,27,1.35
+kimi-for-coding,Moonshot AI,6,30,1.5
+kimi-for-coding-highspeed,Moonshot AI,18,90,4.5
+kimi-k2,Moonshot AI,6,24,1.2
+kimi-k2.5,Moonshot AI,4,21,1
+kimi-k2.6,Moonshot AI,6.5,27,1.35
+kimi-k2.7-code,Moonshot AI,6.5,27,1.35
+kimi-k3,Moonshot AI,20,100,5
+moonshot-v1-128k,Moonshot AI,12,36,1.8
+moonshot-v1-32k,Moonshot AI,6,18,0.9
+moonshot-v1-8k,Moonshot AI,2,8,0.4
+minimax-m2,MiniMax,2.1,8.4,0.42
+minimax-m2.1,MiniMax,2.1,8.4,0.42
+minimax-m2.5,MiniMax,2.1,8.4,0.42
+minimax-m2.7,MiniMax,2.1,8.4,0.42
+minimax-m2.7-highspeed,MiniMax,4.2,16.8,0.84
+minimax-m3,MiniMax,2.1,8.4,0.42
+codestral-2508,Mistral AI,2.1,6.3,
+ministral-14b-2512,Mistral AI,1.4,1.4,
+ministral-3b-2512,Mistral AI,0.7,0.7,
+ministral-8b-2512,Mistral AI,1.05,1.05,
+mistral-large-2512,Mistral AI,3.5,10.5,
+mistral-medium-3-5,Mistral AI,10.5,52.5,
+mistral-small-2603,Mistral AI,1.05,4.2,
+mistral-large-3,Mistral AI,3.5,10.5,
+mistral-medium-3.5,Mistral AI,10.5,52.5,
+mistral-small-4,Mistral AI,1.05,4.2,
+magistral-medium,Mistral AI,14,35,
+magistral-small,Mistral AI,3.5,10.5,
+mistral-nemo,Mistral AI,0.14,0.21,
+grok-3-beta,xAI,21,105,5.25
+grok-4,xAI,21,105,5.25
+grok-4-0709,xAI,21,105,5.25
+grok-4.20-multi-agent,xAI,8.75,17.5,1.4
+grok-4.20-non-reasoning,xAI,8.75,17.5,1.4
+grok-4.20-reasoning,xAI,8.75,17.5,1.4
+grok-4.3,xAI,8.75,17.5,1.4
+grok-4.5,xAI,14,42,2.1
+grok-4.6,xAI,14,42,3.5
+grok-build-0.1,xAI,7,14,1.4
+grok-code-fast-1,xAI,1.4,10.5,0.14
+auto,Cursor,8.75,42,1.75
+composer-1,Cursor,8.75,70,0.875
+composer-1.5,Cursor,24.5,122.5,2.45
+composer-2,Cursor,3.5,17.5,1.4
+composer-2.5,Cursor,3.5,17.5,1.4
+hy3,Tencent,1,4,0.25
+hy3-preview,Tencent,1.3,4.2,0.42
+doubao-lite-128k,ByteDance,0.3,0.6,0.03
+doubao-pro-128k,ByteDance,0.8,2,0.1
+doubao-seed-2.0-code,ByteDance,3.2,16,0.64
+doubao-seed-2.0-lite,ByteDance,0.6,3.6,0.12
+doubao-seed-2.0-mini,ByteDance,0.2,1.0,0.04
+doubao-seed-2.0-pro,ByteDance,3.2,9.6,0.64
+doubao-seed-2.1-pro,ByteDance,6,30,1.5
+doubao-seed-2.1-turbo,ByteDance,3,15,0.75
+doubao-seed-code,ByteDance,1,8,0.4
+mimo-v2-flash,Xiaomi,0.7,2.1,0.07
+mimo-v2-omni,Xiaomi,3,14,0.7
+mimo-v2-pro,Xiaomi,7,21,1.4
+mimo-v2.5,Xiaomi,1,2,0.02
+mimo-v2.5-pro,Xiaomi,3,6,0.025
+mimo-v2.5-pro-ultraspeed,Xiaomi,9,18,0.075
+step-3.5-flash,StepFun,0.7,2.1,0.14
+step-3.7-flash,StepFun,1.4,8,0.4
+step3,StepFun,4,10,0.5
+ling-2.6-1t,inclusionAI,0.525,4.375,
+ling-2.6-flash,inclusionAI,0.581,1.75,
+ling-3.0-flash,inclusionAI,0.5,1.5,0.075
+ring-2.6-1t,inclusionAI,0.525,4.375,
+longcat-2.0,美团,2.1,8.4,0.042
+agnes-2.0-flash,Sapiens AI,0,0,
+agnes-2.5-flash,Sapiens AI,0,0,
+agnes-2.5-pro,Sapiens AI,3,6,0.03
+agnes-2.5-pro-alpha,Sapiens AI,3,6,0.03
+command-r-plus,Cohere,17.5,70,
+command-a,Cohere,17.5,70,
+command-r-finetuned,Cohere,2.1,8.4,
+command-r,Cohere,1.05,4.2,
+aya-expanse,Cohere,3.5,10.5,
+command-r7b,Cohere,0.2625,1.05,
+ernie-5.0,Baidu,6,24,
+ernie-4.5-turbo,Baidu,0.56,2.24,
+ernie-4.5,Baidu,4,16,0.8
+yi-lightning,01.ai,5.6,5.6,0.35
+yi-vision-v2,01.ai,5.6,5.6,0.35
+yi-large,01.ai,5.6,5.6,0.35
+jamba-large-1.7,AI21 Labs,14,56,2.8
+jamba-instruct,AI21 Labs,3.5,4.9,0.35
+inflection-3-pi,Inflection AI,17.5,70,
+sonar-pro,Perplexity,21,105,
+sonar-reasoning-pro,Perplexity,14,56,
+sonar,Perplexity,7,7,
+nemotron-3-super-120b,Nvidia,0.595,2.8,
+phi-4,Microsoft,0.875,3.5,
+phi-4-mini,Microsoft,0.525,2.1,
+phi-4-multimodal,Microsoft,0.56,2.24,
+phi-4-reasoning,Microsoft,0.875,3.5,
+amazon-nova-2-lite,AWS,0.21,1.68,
+amazon-nova-micro,AWS,0.105,0.42,
+amazon-nova-lite,AWS,0.21,1.68,
+amazon-nova-pro,AWS,5.6,22.4,
+amazon-nova-premier,AWS,17.5,87.5,4.375
