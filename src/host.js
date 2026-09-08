@@ -35,14 +35,21 @@ export function apply(ctx, config) {
   const CACHE_MAX_FAILURES = 3
   const CACHE_STALE_MULTIPLIER = 2
   const PREWARM_DELAY_MS = 500
+  // How long a settled rollup list stays authoritative before getRollups()
+  // re-lists sessions. Re-listing 100+ sessions is the dominant cost of a
+  // dashboard recompute, so background revalidates must not re-list on every
+  // key miss.
+  const ROLLUP_SNAPSHOT_MS = 5000
 
-  // request-level response cache: key → { at, data, failCount }
+  // request-level response cache: key → { at, data, failCount, version }
   const cache = new Map()
   let dataVersion = 0
   // session rollup state: session id → { rollup, cwd, title, at, pending[], needsReload }
   const states = new Map()
   let ready = false
   let initPromise = null
+  let rollupSnapshot = null
+  let rollupSnapshotAt = 0
   const inflight = new Map() // cache key → { version, promise }
 
   function getCtxService(key) {
@@ -53,24 +60,24 @@ export function apply(ctx, config) {
     const active = inflight.get(key)
     if (active && active.version === version) return active.promise
     const promise = Promise.resolve().then(compute).then((data) => {
-      if (dataVersion === version) {
-        cache.set(key, { at: Date.now(), data, failCount: 0, version })
-      }
+      // Single-flight allows at most one live compute per key, so the settling
+      // result is always the newest one for that key. Write it even when newer
+      // events bumped dataVersion mid-flight — the old `dataVersion === version`
+      // gate discarded those results and, combined with per-event cache
+      // clearing, left every entry permanently stale in a busy session.
+      cache.set(key, { at: Date.now(), data, failCount: 0, version: dataVersion })
       return data
     }).catch((e) => {
-      // A stale refresh keeps serving its last good value, but records failures
-      // so the normal max-failure eviction policy remains effective. Never let
-      // an old version mutate a cache entry created after invalidation.
-      if (dataVersion === version) {
-        const entry = cache.get(key)
-        if (entry && entry.version === version) {
-          cache.set(key, {
-            at: entry.at,
-            data: entry.data,
-            failCount: (entry.failCount || 0) + 1,
-            version: entry.version
-          })
-        }
+      // Keep the last good value visible; count failures so the max-failure
+      // eviction policy stays effective.
+      const entry = cache.get(key)
+      if (entry) {
+        cache.set(key, {
+          at: entry.at,
+          data: entry.data,
+          failCount: (entry.failCount || 0) + 1,
+          version: entry.version
+        })
       }
       throw e
     }).finally(() => {
@@ -291,8 +298,21 @@ export function apply(ctx, config) {
   }
 
   function invalidate() {
+    // Bump the version only. The cache is deliberately NOT cleared: entries
+    // keyed by a superseded version keep being served (stale-while-revalidate)
+    // while a background recompute lands the fresh value. Clearing here turned
+    // every streamed metric event into a cold recompute on the next dashboard
+    // request.
     dataVersion += 1
-    cache.clear()
+  }
+
+  // Remember a settled rollup list so a background revalidate does not re-list
+  // every session (the dominant cost of a recompute). New/removed sessions are
+  // still picked up by the event stream and the 60s reconcile.
+  function snapshotRollups(out) {
+    rollupSnapshot = out
+    rollupSnapshotAt = Date.now()
+    return out
   }
 
   // Materialize every known session once, then serve all queries from the
@@ -300,11 +320,15 @@ export function apply(ctx, config) {
   // session created before the plugin's event listener was attached.
   async function getRollups() {
     if (initPromise) return initPromise
+    const snapNow = Date.now()
+    if (rollupSnapshot && snapNow - rollupSnapshotAt < ROLLUP_SNAPSHOT_MS) {
+      return rollupSnapshot
+    }
     initPromise = (async () => {
       const q = ctx.get('sessionQuery')
       if (!q) {
         ready = true
-        return currentRollups()
+        return snapshotRollups(currentRollups())
       }
       // Capture before the async list call so events arriving while the
       // persistence snapshot is being assembled are treated as newer.
@@ -312,11 +336,11 @@ export function apply(ctx, config) {
       const listEpoch = eventEpoch
       let records = []
       try { records = await q.listSessions() } catch (e) {
-        return currentRollups()
+        return snapshotRollups(currentRollups())
       }
       if (records.length === 0 && states.size > 0) {
         ready = true
-        return currentRollups()
+        return snapshotRollups(currentRollups())
       }
       const seen = new Set()
       const toLoad = []
@@ -351,7 +375,7 @@ export function apply(ctx, config) {
         }
       }
       ready = true
-      return currentRollups()
+      return snapshotRollups(currentRollups())
     })().finally(() => { initPromise = null })
     return initPromise
   }
@@ -461,21 +485,21 @@ export function apply(ctx, config) {
       }
     }
     let hit = cache.get(key)
-    if (hit && hit.version !== dataVersion) {
-      cache.delete(key)
-      hit = null
-    }
     // if entry exceeded max failures, drop it and recompute
     if (hit && (hit.failCount || 0) >= CACHE_MAX_FAILURES) {
       cache.delete(key)
       hit = null
     }
-    // if hit exists and not expired, return it (stale-while-revalidate)
-    if (hit && now - hit.at < CACHE_TTL_MS) {
+    // Fast path: current data version and inside the TTL.
+    if (hit && hit.version === dataVersion && now - hit.at < CACHE_TTL_MS) {
       return hit.data
     }
     if (hit) {
-      // stale-while-revalidate: serve stale data, refresh in background (single-flight)
+      // Stale-while-revalidate. An entry is "stale" when the data version moved
+      // on (any metric event) or the TTL expired. Serve the last good value
+      // immediately and recompute in the background — deleting the entry here
+      // made every event of a busy session cost a full cold recompute on the
+      // next request, which is what made range switching feel slow.
       startInflight(key, compute).catch(() => {})
       return hit.data
     }
@@ -483,7 +507,7 @@ export function apply(ctx, config) {
     // first compute failure should NOT cache data:null; instead allow the
     // promise to propagate the error; the caller handles graceful degradation
     const active = inflight.get(key)
-    if (active && active.version === dataVersion) return active.promise
+    if (active) return active.promise
     const p = startInflight(key, compute)
     try {
       return await p

@@ -105,13 +105,26 @@ if (cacheTotals.cacheWriteTokens !== cacheTotals.cacheWrite) throw new Error('ca
 if (cacheTotals.billedInputTokens !== cacheTotals.billedInput) throw new Error('billedInputTokens alias mismatch: ' + cacheTotals.billedInputTokens + ' != ' + cacheTotals.billedInput)
 if (cacheTotals.cacheObservedTokens !== cacheTotals.cacheObserved) throw new Error('cacheObservedTokens alias mismatch: ' + cacheTotals.cacheObservedTokens + ' != ' + cacheTotals.cacheObserved)
 
-// A metric event invalidates the cache and becomes visible on the next query.
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+// A metric event bumps the data version but must NOT cost a synchronous cold
+// recompute: the last good value is served immediately and the revalidate runs
+// in the background (stale-while-revalidate). Clearing the cache on every
+// streamed event used to make every dashboard request — range switching
+// included — pay a full cold recompute.
 eventHandler({ id: sessionId, header }, {
   type: 'assistant/message', time: now - 1000, seq: 8,
   data: { usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } }
 })
+const callsBeforeRevalidate = listCalls
+const stale = await request(queryPath)
+if (stale.totals.assistantMessages !== 2) throw new Error('stale-while-revalidate did not serve the last good value, got ' + stale.totals.assistantMessages)
+if (listCalls !== callsBeforeRevalidate) throw new Error('background revalidate re-listed sessions it had snapshotted')
+
+// Let the background revalidate settle, then the fresh total is visible.
+await flush()
 const fresh = await request(queryPath)
-if (fresh.totals.assistantMessages !== 3) throw new Error('metric event was not appended')
+if (fresh.totals.assistantMessages !== 3) throw new Error('metric event was not appended, got ' + fresh.totals.assistantMessages)
 const callsAfterMetric = listCalls
 
 // A non-finish chunk updates open generation state but must not flush the cache.
@@ -123,15 +136,29 @@ const cached = await request(queryPath)
 if (listCalls !== callsAfterMetric) throw new Error('non-metric chunk unexpectedly flushed the cache')
 if (cached.totals.assistantMessages !== 3) throw new Error('cached metric result changed unexpectedly')
 
-// A listed session survives an omission when the list snapshot lags a prior event.
-listVisible = false
-eventHandler({ id: sessionId, header }, {
-  type: 'assistant/message', time: now - 700, seq: 10,
-  data: { usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } }
-})
-const listedLag = await request(queryPath)
-if (listedLag.totals.sessions !== 1) throw new Error('listed session was dropped by a lagging list')
-listVisible = true
+// A listed session survives an omission when the list snapshot lags a prior
+// event. The clock is advanced past the rollup snapshot window so this
+// revalidate performs a real listSessions() instead of reusing the snapshot,
+// and flushed so the assertion reads the recomputed value rather than the SWR
+// one.
+{
+  const realDateNow = Date.now
+  Date.now = () => now + 15 * 1000
+  try {
+    listVisible = false
+    eventHandler({ id: sessionId, header }, {
+      type: 'assistant/message', time: now - 700, seq: 10,
+      data: { usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } }
+    })
+    await flush()
+    const listedLag = await request(queryPath)
+    if (listedLag.totals.sessions !== 1) throw new Error('listed session was dropped by a lagging list')
+    if (listCalls === callsAfterMetric) throw new Error('lagging-list revalidate did not re-list sessions')
+    listVisible = true
+  } finally {
+    Date.now = realDateNow
+  }
+}
 
 // An event-created session survives the first lagging list snapshot.
 const eventSessionId = 'event-created'
