@@ -164,7 +164,7 @@ node scripts/verify-pack.mjs <package-dir>
 
 ## 版本
 
-当前发布版本：`0.3.9`
+当前发布版本：`0.3.10`
 
 ## License
 

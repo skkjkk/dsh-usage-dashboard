@@ -166,7 +166,7 @@ The verifier checks that host / core / client bundles load, the bundle patch and
 
 ## Version
 
-Current release: `0.3.9`
+Current release: `0.3.10`
 
 ## License
 
