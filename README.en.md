@@ -20,6 +20,8 @@ A filter bar sits at the top: the time range switches among `today / 24H / 7D / 
 
 A row of metric cards covering: estimated cost, total / input / output / cached Tokens, active duration, total duration, session count, total message count and user message count. Each card shows a **percentage change versus the previous period** (a zero baseline is hidden rather than showing a fabricated `+100%`), with a smooth tween animation on value changes. Clicking the **cost card** toggles ¥ / $; clicking a **Token card** toggles international units (K/M/B) and Chinese units (万 / 亿). **When a model filter is active, the duration and session cards collapse, leaving only the cost and Token cards** for a more focused comparison.
 
+The ⓘ icon next to the **estimated cost**, **active duration** and **total duration** titles opens an explanatory popup — the first covers pricing-table coverage and peak/off-peak billing, the latter two clarify the difference between active and total duration. Clicking the icon and clicking the card body (unit toggle) are independent and don't interfere.
+
 ![KPI overview and hourly trend](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/Snipaste_2026-08-19_21-28-02.png)
 
 ### Trend chart
@@ -50,16 +52,16 @@ A table grouped by `time bucket × model × project`, with columns `time / proje
 
 ### Model performance radar
 
-A **six-axis radar chart** comparing the top **4** models by call volume in the selected window. The six axes and their relative scores (0–100, max per axis normalized to 100):
+A **six-axis radar chart** comparing the top **4** models by call volume in the selected window. Each axis is normalized to 0–1 against a **fixed cap** (derived from the real data distribution, roughly 1.2× the current best value), not against the window's Top-1 — so different time windows are directly comparable and models don't all hug the outer ring; the best model in a window typically lands at 75–85%. Response efficiency, response speed and cost efficiency use a logarithmic scale (large dynamic range), the rest are linear. The six axes:
 
 - **Response efficiency** = output Tokens / average response latency (ms)
 - **Response speed** = 1 / p50 response latency (ms)
 - **Consistency** = 1 / (1 + p95/p50), where p50/p95 are estimated from a logarithmic latency histogram in the rollup
-- **Cost efficiency** = output Tokens / cost; when cost is unavailable (model not found in `pricing/vibe-usage-model-pricing.csv`), this axis is omitted from normalization and the list/tooltips render "—".
+- **Cost efficiency** = output Tokens / cost; when cost is unavailable (model not found in `pricing/vibe-usage-model-pricing-extended.csv`), this axis is omitted from normalization and the list/tooltips render "—".
 - **Cache hit** = cache hit rate (%)
 - **Token output** = output Tokens / billed input Tokens (`billedInput`), expressed as a percentage
 
-Clicking a vertex or a right-side list item highlights that model (others dim). When a model filter is active, only models matching the filter compete for the Top-4 slots; an empty-state message shows when no model has usage data.
+Clicking a vertex or a right-side list item highlights that model (others dim). When a model filter is active, only models matching the filter compete for the Top-4 slots; an empty-state message shows when no model has usage data. The ⓘ icon next to the title opens a popup explaining each axis in plain language.
 
 ### Cache hit-rate trend
 
@@ -75,21 +77,21 @@ Where:
 - **`cacheRead`** = sum of event-level `usage.cacheReadTokens` reported by the provider.
 - **`cacheObserved`** = sum of `inputTokens + cacheRead + cacheWrite` over rows whose provider explicitly reported `cacheReadTokens` or `cacheWriteTokens`; i.e. the billed input of the telemetry-visible subset. Rows without cache telemetry are excluded from this denominator so the hit rate is not diluted by unknown providers.
 - **`cacheRead`** = sum of provider-reported `usage.cacheReadTokens` over those same rows.
-- **`billedInput`** = `inputTokens + cacheTokens` (= `inputTokens + cacheRead + cacheWrite`) summed across **all** rows in the window, including those without cache telemetry — the total charged-input口径.
+- **`billedInput`** = `inputTokens + cacheTokens` (= `inputTokens + cacheRead + cacheWrite`) summed across **all** rows in the window, including those without cache telemetry — the total charged-input definition.
 - **Coverage `cacheCoverage`** = `cacheObserved / billedInput × 100%`; when no provider reports cache info, coverage is 0% and the rate shows "—".
 
-The header shows the **current-window** hit rate, a **weighted-average** hit rate (per-bucket rate weighted by each bucket's `cacheObserved`), and the **period-over-period delta** in percentage points (current − previous window, hidden when the prior baseline is zero). Gaps in the line appear only between non-adjacent buckets.
+The header shows the **current-window** hit rate, the **cache-data coverage** and the **period-over-period delta** in percentage points (current − previous window, hidden when the prior baseline is zero). Gaps in the line appear only between non-adjacent buckets.
 
 ## Data semantics
 
 - **Tokens** = input + output + cache Tokens.
 - **Active duration** counts only actual AI generation time, from the first `assistant/chunk` event until the turn completes. Queueing, TTFT, idle thinking gaps and tool waits are excluded. Parallel sessions are summed independently, so active duration can exceed 24 hours.
 - **Total duration** is the span from the first message to the last message per session. Overlapping session spans are merged before summing and clipped to the selected window, so parallel work is not double-counted.
-- **Cost** is an estimate from this repo's pricing table `pricing/vibe-usage-model-pricing.csv` (204 models; built into `lib/core/pricing.js` by the build script), using USD × 7 for CNY. Unmatched models are not billed. DeepSeek V4 uses Beijing-time weekday peak / off-peak pricing from 2026-08-17 (Monday-Friday peak 9:00–12:00 and 14:00–18:00; weekends and other hours are off-peak at half price).
+- **Cost** is an estimate from this repo's pricing table `pricing/vibe-usage-model-pricing-extended.csv` (245 models; built into `lib/core/pricing.js` by the build script); unit prices in the table are already expressed in CNY per million tokens, so no currency conversion is applied. Unmatched models are not billed. DeepSeek V4 uses Beijing-time weekday peak / off-peak pricing from 2026-08-17 (Monday-Friday peak 9:00–12:00 and 14:00–18:00; weekends and other hours are off-peak at half price).
 - **Projects** use the canonical `cwd` from the session header when available, with DSH workspace membership as a fallback. Separators, case and trailing slashes are normalized before grouping.
 - **Cache hit rate** = `cacheRead / cacheObserved × 100%`: numerator is provider-reported `usage.cacheReadTokens`; denominator is the `inputTokens + cacheRead + cacheWrite` sum over rows that explicitly reported `cacheReadTokens` or `cacheWriteTokens` (the telemetry-visible billed input). Rows without cache telemetry are excluded from the denominator rather than treated as 0%.
-- **Billed input `billedInput`** = `inputTokens + cacheTokens` summed across all rows (including those without cache telemetry); this is the full charged-input口径.
-- **Cache-data coverage** = `cacheObserved / billedInput × 100%`; when all providers lack cache metadata the coverage is 0% and both current and weighted rates display "—".
+- **Billed input `billedInput`** = `inputTokens + cacheTokens` summed across all rows (including those without cache telemetry); this is the full charged-input definition.
+- **Cache-data coverage** = `cacheObserved / billedInput × 100%`; when all providers lack cache metadata the coverage is 0% and both the current and previous-window rates display "—".
 - A zero comparison baseline has no finite percentage; the UI hides that percentage instead of showing a fabricated `+100%`.
 
 ## Install
