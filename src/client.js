@@ -1,4 +1,4 @@
-const CSS = '.dd-bar-inner{position:relative;}.dd-seg-overlay{position:absolute;left:0;right:0;bottom:0;}.dd-root{min-height:100%;}.dd-dash{background:#f3f4f6;min-height:100%;padding:16px;box-sizing:border-box;font-family:"Century Gothic","Microsoft YaHei UI","PingFang SC","Microsoft YaHei",sans-serif;color:#09090b;}.dd-dash button{font-family:inherit;}.dd-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;}.dd-range{display:flex;align-items:center;border-radius:999px;background:#e2e3e7;padding:2px;gap:1px;flex-wrap:wrap;}.dd-pill{display:flex;align-items:center;height:24px;border-radius:999px;padding:0 9px;font-size:12px;border:none;cursor:pointer;background:transparent;color:#52525b;transition:background .12s ease,color .12s ease;}.dd-pill:hover{color:#09090b;}.dd-pill.on{background:#18181b;color:#fff;font-weight:600;}.dd-custom{display:flex;align-items:center;gap:8px;border-radius:6px;border:1px solid #d4d4d8;background:#fff;padding:6px 10px;flex-wrap:wrap;}.dd-custom input{background:#fff;border:1px solid #d4d4d8;border-radius:4px;color:#18181b;font-size:12px;padding:2px 6px;font-family:inherit;color-scheme:light;}.dd-custom input:focus{border-color:#18181b;outline:none;}.dd-custom .sep{font-size:12px;color:#a1a1aa;}.dd-custom .apply{display:flex;align-items:center;height:24px;border-radius:999px;background:#18181b;color:#fff;padding:0 10px;font-size:12px;font-weight:600;border:none;cursor:pointer;}.dd-custom .apply:hover{background:#27272a;}.dd-spacer{flex:1;}.dd-filter-row{display:flex;align-items:center;gap:8px;min-height:28px;flex-wrap:wrap;}.dd-drop{position:relative;}.dd-drop-btn{display:flex;align-items:center;gap:6px;min-height:28px;border-radius:999px;border:1px solid #d4d4d8;background:#fff;padding:0 9px;font-size:12px;cursor:pointer;font-family:inherit;color:#52525b;transition:background .12s ease,border-color .12s ease,color .12s ease;}.dd-drop-btn:hover{color:#18181b;border-color:#a1a1aa;}.dd-drop-btn.open{color:#09090b;border-color:#18181b;}.dd-drop-icon{display:inline-flex;color:#71717a;flex:none;}.dd-drop-btn.open .dd-drop-icon{color:#09090b;}.dd-drop-label{font-weight:500;flex:none;color:inherit;}.dd-drop-value{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#a1a1aa;}.dd-drop-btn.open .dd-drop-value{color:#52525b;}.dd-drop-arrow{display:inline-flex;color:#a1a1aa;flex:none;transition:transform .15s ease;}.dd-drop-btn.open .dd-drop-arrow{transform:rotate(180deg);}.dd-drop-menu{position:absolute;top:34px;left:0;z-index:50;min-width:220px;max-height:260px;overflow-y:auto;background:#fff;border:1px solid #e4e4e7;border-radius:8px;box-shadow:0 10px 15px -3px rgba(0,0,0,.08);padding:4px 0;scrollbar-width:none;}.dd-drop-menu::-webkit-scrollbar{display:none;}.dd-drop-item{display:flex;align-items:center;gap:7px;width:100%;text-align:left;border:none;background:none;height:28px;padding:0 10px;font-size:12px;color:#52525b;cursor:pointer;font-family:inherit;white-space:nowrap;}.dd-drop-item:hover{background:#f3f4f6;color:#18181b;}.dd-drop-item.on{background:#f3f4f6;color:#18181b;}.dd-check{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:4px;flex:none;background:transparent;border:1px solid #d4d4d8;color:#18181b;}.dd-drop-item.on .dd-check{background:#18181b;border:none;color:#fff;}.dd-drop-item .label{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.dd-drop-item .sub{color:#a1a1aa;font-size:11px;flex:none;font-family:"JetBrains Mono","SF Mono",Consolas,monospace;}.dd-clear{background:none;border:none;color:#dc2626;font-size:12px;font-weight:500;cursor:pointer;padding:0 6px;height:28px;}.dd-clear:hover{text-decoration:underline;}.dd-busy{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#52525b;}.dd-busy .spinner{width:12px;height:12px;border:1.5px solid #e2e3e7;border-top-color:#18181b;border-radius:50%;animation:ddspin .7s linear infinite;}.dd-rows{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px;}@media (min-width:768px){.dd-rows{grid-template-columns:repeat(5,1fr);gap:12px;}}.dd-kpi{min-width:0;border-radius:8px;border:1px solid #e4e4e7;background:#fff;padding:20px;text-align:left;position:relative;overflow:hidden;transition:border-color .12s ease,background .12s ease;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-kpi.clickable{cursor:pointer;}.dd-kpi.clickable:hover{border-color:#d4d4d8;}.dd-kpi.clickable:active{background:#fafafa;}.dd-kpi-label{display:flex;align-items:center;justify-content:space-between;font-size:13px;line-height:1.3;color:#52525b;margin-bottom:4px;min-height:19px;}.dd-kpi-label .lt{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden;white-space:nowrap;flex:1 1 auto;}.dd-kpi-label .pct{font-size:11px;white-space:nowrap;flex:none;font-family:"JetBrains Mono","SF Mono",Consolas,monospace;margin-left:4px;}.dd-pct-up{color:#71717a;}.dd-pct-down{color:#a1a1aa;}.dd-pct-flat{color:#a1a1aa;}.dd-info-wrap{position:relative;display:inline-flex;flex:none;}.dd-info{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:999px;border:1px solid #d4d4d8;color:#52525b;cursor:pointer;flex:none;background:#fff;padding:0;transition:border-color .12s ease,color .12s ease;}.dd-info:hover{border-color:#a1a1aa;color:#18181b;}.dd-info svg{display:block;}.dd-kpi-value{margin-top:0;height:30px;overflow:hidden;white-space:nowrap;font-size:24px;font-weight:700;line-height:30px;font-variant-numeric:tabular-nums;color:#09090b;}.dd-v-cost{color:#34d399;}.dd-v-dur{color:#60a5fa;}.dd-v-cache{color:#71717a;}.dd-pop{position:fixed;z-index:200;background:#fff;border:1px solid #e4e4e7;border-radius:8px;box-shadow:0 20px 25px -5px rgba(0,0,0,.15);padding:14px 16px;box-sizing:border-box;max-width:calc(100vw - 16px);white-space:normal;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;}.dd-pop .pop-title{font-size:13px;font-weight:700;color:#09090b;margin-bottom:8px;}.dd-pop .pop-body{font-size:12px;line-height:1.7;color:#52525b;overflow-wrap:break-word;word-break:break-word;}.dd-pop .pop-sec{margin-top:10px;}.dd-pop .pop-sec .sec-title{font-size:12px;font-weight:700;color:#09090b;margin-bottom:4px;}.dd-pop table{border-collapse:collapse;width:100%;margin-top:8px;table-layout:fixed;}.dd-pop th{font-size:10px;color:#a1a1aa;font-weight:500;text-align:left;padding:2px 6px 4px 0;border-bottom:1px solid #e4e4e7;font-family:"JetBrains Mono","SF Mono",Consolas,monospace;overflow-wrap:break-word;word-break:break-all;}.dd-pop td{font-size:11px;color:#52525b;padding:4px 6px 4px 0;border-bottom:1px solid #f3f4f6;font-family:"JetBrains Mono","SF Mono",Consolas,monospace;white-space:normal;overflow-wrap:break-word;word-break:break-all;}.dd-pop td.mdl{overflow:hidden;text-overflow:ellipsis;}.dd-pop td.unmatched{color:#a1a1aa;}.dd-charts{display:flex;flex-direction:column;gap:24px;}.dd-chart{min-width:0;border-radius:8px;border:1px solid #e4e4e7;background:#fff;padding:24px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-chart-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:24px;}.dd-chart-title{display:flex;align-items:center;gap:6px;min-width:0;font-size:15px;font-weight:500;color:#52525b;white-space:nowrap;overflow:hidden;}.dd-chart-title .icon{display:inline-flex;color:#71717a;flex:none;}.dd-chart-tools{display:flex;align-items:center;gap:12px;flex:none;flex-wrap:wrap;}.dd-legend{display:flex;align-items:center;gap:12px;font-size:14px;color:#71717a;}.dd-legend-btn{display:flex;align-items:center;gap:6px;border:none;background:none;padding:0;cursor:pointer;font-size:14px;color:inherit;font-family:inherit;transition:opacity .12s ease;}.dd-legend-btn.off{opacity:.3;}.dd-swatch{display:inline-block;width:13px;height:13px;border-radius:4px;flex:none;}.dd-seg-group{display:inline-flex;align-items:center;gap:2px;border-radius:999px;background:#e2e3e7;padding:4px;}.dd-seg-btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:3px 14px;border-radius:999px;font-size:14px;border:none;cursor:pointer;background:transparent;color:#52525b;transition:background .12s ease,color .12s ease;white-space:nowrap;}.dd-seg-btn:hover{color:#09090b;}.dd-seg-btn.on{background:#18181b;color:#fff;}.dd-plot-row{display:flex;width:100%;}.dd-y{display:flex;flex-direction:column;justify-content:space-between;width:58px;flex:0 0 58px;box-sizing:border-box;padding-right:8px;text-align:right;font-size:12px;white-space:nowrap;overflow:visible;color:#a1a1aa;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-y span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.dd-plot{position:relative;display:flex;align-items:flex-end;flex:1;min-width:0;height:220px;gap:1px;}.dd-col{position:relative;display:flex;flex-direction:column;justify-content:flex-end;flex:1 1 0;min-width:0;height:100%;cursor:pointer;}.dd-col.dim .dd-seg{opacity:.35;}.dd-bar-inner{width:100%;height:100%;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;}.dd-seg{width:100%;transition:height .3s ease,opacity .3s ease,background-color .3s ease;}.dd-tip{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:40;display:none;flex-direction:column;gap:3px;white-space:nowrap;border-radius:4px;background:#e2e3e7;border:1px solid #d4d4d8;box-shadow:0 20px 25px -5px rgba(0,0,0,.12);padding:8px 10px;font-size:14px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-col:hover .dd-tip{display:flex;}.dd-tip .tt-title{font-weight:700;margin-bottom:2px;color:#52525b;}.dd-tip .tt-row{color:#71717a;}.dd-tip .tt-cost{color:#34d399;}.dd-tip .tt-dur{color:#60a5fa;}.dd-tip .tt-dur2{color:#93c5fd;}.dd-x{display:flex;margin-left:58px;margin-top:8px;}.dd-x .labels{display:flex;flex:1;min-width:0;height:20px;position:relative;}.dd-x .labels .cell{flex:1;min-width:0;text-align:center;}.dd-x .labels .cell.abs{position:absolute;top:0;text-align:center;}.dd-x .labels .cell.abs span{transform:translateX(-50%);}.dd-x .labels .cell.abs.first{text-align:left;}.dd-x .labels .cell.abs.first span{transform:none;}.dd-x .labels .cell.abs.last{text-align:right;}.dd-x .labels .cell.abs.last span{transform:translateX(-100%);}.dd-x .labels span{display:inline-block;white-space:nowrap;font-size:14px;color:#71717a;}.dd-heat{display:flex;flex-direction:column;gap:12px;}.dd-heat-row{display:flex;align-items:center;gap:8px;}.dd-heat-day{width:40px;flex:none;font-size:13px;color:#71717a;text-align:left;}.dd-heat-cells{display:flex;flex:1;gap:6px;min-width:0;}.dd-heat-cell{position:relative;flex:1;aspect-ratio:1;min-width:0;}.dd-heat-cell .inner{width:100%;height:100%;border-radius:4px;transition:background-color .5s ease-out;}.dd-heat-cell .tip{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:40;display:none;flex-direction:column;gap:3px;white-space:normal;max-width:calc(100vw - 24px);box-sizing:border-box;border-radius:4px;background:#e2e3e7;border:1px solid #d4d4d8;box-shadow:0 20px 25px -5px rgba(0,0,0,.12);padding:8px 10px;font-size:14px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-heat-cell:hover .tip{display:flex;}.dd-heat-cell.edge-left .tip{left:0;transform:none;}.dd-heat-cell.edge-right .tip{left:100%;transform:translateX(-100%);}.dd-heat-cell .tip .tt-title{font-weight:700;margin-bottom:2px;color:#52525b;}.dd-heat-cell .tip .tt-token{color:#71717a;}.dd-heat-cell .tip .tt-cost{color:#34d399;}.dd-heat-cell .tip .tt-dur{color:#60a5fa;}.dd-heat-x{display:flex;margin-left:48px;margin-top:12px;}.dd-heat-x .labels{display:flex;flex:1;min-width:0;}.dd-heat-x .labels .cell{flex:1;text-align:center;}.dd-heat-x .labels span{font-size:14px;color:#71717a;}.dd-heat-legend{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:16px;}.dd-heat-legend .lbl{font-size:13px;color:#a1a1aa;line-height:1;}.dd-heat-legend .dots{display:flex;align-items:center;gap:4px;}.dd-dot{width:12px;height:12px;border-radius:4px;}.dd-cal{display:flex;flex-direction:column;gap:12px;width:100%;overflow:visible;}.dd-cal-body{display:flex;gap:8px;align-items:flex-start;overflow:visible;}.dd-cal-days{display:none;}.dd-cal-days span{font-size:10px;color:#a1a1aa;line-height:1;flex:1;display:flex;align-items:center;}.dd-cal-cols{display:grid;grid-template-columns:repeat(40,minmax(0,1fr));gap:6px;flex:1;min-width:0;align-items:start;}.dd-cal-col{display:flex;flex-direction:column;gap:6px;min-width:0;align-self:start;}.dd-cal-cell{position:relative;flex:0 0 auto;width:100%;aspect-ratio:1 / 1;min-width:0;border-radius:5px;}.dd-cal-floating-tip{position:fixed;z-index:1000;display:flex;flex-direction:column;gap:3px;transform:translate(-50%,-100%);pointer-events:none;white-space:normal;max-width:calc(100vw - 24px);box-sizing:border-box;border-radius:4px;background:#e2e3e7;border:1px solid #d4d4d8;box-shadow:0 20px 25px -5px rgba(0,0,0,.12);padding:6px 9px;font-size:12px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-cal-floating-tip.below{transform:translate(-50%,0);}.dd-cal-floating-tip .tt-token{color:#71717a;}.dd-cal-legend{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:10px;}.dd-cal-legend .lbl{font-size:11px;color:#a1a1aa;line-height:1;}.dd-cal-legend .dots{display:flex;gap:3px;}.dd-cal-dot{width:11px;height:11px;border-radius:3px;}.dd-records{margin-top:16px;border-radius:8px;border:1px solid #e4e4e7;background:#fff;padding:24px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-records-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px;}.dd-records-title{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:500;color:#52525b;white-space:nowrap;overflow:hidden;}.dd-records-title .icon{display:inline-flex;color:#71717a;flex:none;}.dd-records-count{font-size:12px;color:#a1a1aa;flex:none;}.dd-records-scroll{overflow-x:auto;max-height:420px;overflow-y:auto;border-bottom:1px solid #f3f4f6;}.dd-records table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:820px;}.dd-records th{font-size:11px;color:#a1a1aa;font-weight:500;text-align:left;padding:6px 10px;border-bottom:1px solid #e4e4e7;white-space:nowrap;}.dd-records th.num{text-align:right;}.dd-records td{font-size:12px;color:#52525b;padding:6px 10px;border-bottom:1px solid #f3f4f6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;}.dd-records td.num{text-align:right;}.dd-records td .sess{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;}.dd-records tbody tr:hover td{background:#fafafa;}.dd-records .more{display:flex;align-items:center;justify-content:center;margin-top:12px;}.dd-records .more button{display:flex;align-items:center;height:28px;border-radius:999px;border:1px solid #d4d4d8;background:#fff;padding:0 14px;font-size:12px;color:#52525b;cursor:pointer;font-family:inherit;transition:color .12s ease,border-color .12s ease;}.dd-records .more button:hover{color:#18181b;border-color:#a1a1aa;}.dd-records .more button:disabled{opacity:.5;cursor:default;}.dd-records .empty{padding:32px 0;text-align:center;color:#a1a1aa;font-size:13px;}.dd-dist-row{display:flex;flex-direction:column;gap:24px;margin-top:24px;margin-bottom:24px;}.dd-side-row{display:flex;flex-direction:row;gap:24px;margin-top:24px;margin-bottom:24px;}.dd-radar{flex:1 1 calc(50% - 12px);min-width:0;border-radius:8px;border:1px solid #e4e4e7;background:#fff;padding:20px 24px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-radar-body{display:flex;align-items:center;gap:16px;}.dd-radar-donut{position:relative;flex:none;width:280px;height:280px;}.dd-radar-donut svg{display:block;}.dd-radar-legend{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;}.dd-side-row .dd-chart{flex:1 1 calc(50% - 12px);min-width:0;}.dd-dist{flex:none;min-width:0;border-radius:8px;border:1px solid #e4e4e7;background:#fff;padding:20px 24px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-dist-body{display:flex;align-items:center;gap:24px;}.dd-dist-donut{position:relative;flex:none;width:120px;height:120px;}.dd-dist-donut svg{display:block;}.dd-dist-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;}.dd-dist-center .v{font-size:15px;font-weight:700;color:#18181b;white-space:nowrap;font-variant-numeric:tabular-nums;}.dd-dist-center .l{font-size:10px;color:#a1a1aa;}.dd-dist-legend{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;}.dd-dist-item{display:flex;align-items:center;gap:8px;min-width:0;}.dd-dist-item .dot{width:10px;height:10px;border-radius:50%;flex:none;align-self:center;position:relative;top:-1px;}.dd-dist-item .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#52525b;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;}.dd-dist-item .val{font-size:12px;color:#18181b;flex:none;font-variant-numeric:tabular-nums;}.dd-dist-item .pct{font-size:14px;line-height:20px;color:#a1a1aa;flex:none;width:56px;text-align:right;font-variant-numeric:tabular-nums;position:relative;top:-1px;}.dd-cache-tip{position:absolute;z-index:50;display:flex;flex-direction:column;align-items:flex-start;gap:2px;border:1px solid #d4d4d8;border-radius:6px;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.1);padding:7px 10px;pointer-events:none;}.dd-cache-tip-line{font-size:11px;color:#52525b;font-weight:500;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;}.dd-cache-tip-rate{font-size:14px;color:#18181b;white-space:nowrap;}.dd-cache-tip-pct{font-weight:700;color:#10b981;font-variant-numeric:tabular-nums;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,monospace;}.dd-empty{padding:64px 0;text-align:center;color:#71717a;font-size:14px;}.dd-loading{padding:64px 0;text-align:center;color:#71717a;font-size:14px;animation:ddpulse 2s cubic-bezier(.4,0,.6,1) infinite;}@keyframes ddpulse{50%{opacity:.5;}}@keyframes ddspin{to{transform:rotate(360deg);}}[role="dialog"]:has([data-slot="settings.header"]){width:1320px!important;max-width:calc(100vw - 32px)!important;}[role="dialog"] nav > div:nth-of-type(2) > button:nth-child(5) > svg{display:none;}[role="dialog"] nav > div:nth-of-type(2) > button:nth-child(5)::before{content:"";display:block;width:16px;height:16px;flex:none;background-image:linear-gradient(#71717a,#71717a),linear-gradient(#71717a,#71717a),linear-gradient(#71717a,#71717a);background-size:3px 7px,3px 11px,3px 9px;background-position:2px 9px,6.5px 5px,11px 7px;background-repeat:no-repeat;}.dd-title{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:700;color:#09090b;margin-bottom:14px;}.dd-title .icon{display:inline-flex;color:#3f3f46;}.dd-dist-item{padding:4px 8px;min-height:30px;box-sizing:border-box;border-radius:6px;transition:opacity .15s ease;}.dd-dist-item.dim{opacity:.22;}.dd-dist-item .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;font-weight:600;line-height:20px;color:#18181b;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;position:relative;top:-1px;}.dd-dist-item .val{font-size:14px;font-weight:600;line-height:20px;color:#18181b;flex:none;font-variant-numeric:tabular-nums;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;position:relative;top:-1px;}.dd-dist-item .pct{font-size:14px;line-height:20px;color:#a1a1aa;flex:none;width:56px;text-align:right;font-variant-numeric:tabular-nums;position:relative;top:-1px;}.dd-dist-center .v{font-size:18px;font-weight:700;color:#18181b;white-space:nowrap;font-variant-numeric:tabular-nums;}.dd-records{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;}.dd-records table td,.dd-records table th{font-variant-numeric:tabular-nums;}.dd-records-foot{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:12px;}.dd-records-foot .info{font-size:12px;color:#71717a;font-variant-numeric:tabular-nums;}.dd-records-foot .pg{display:inline-flex;align-items:center;gap:6px;}.dd-records-foot .pg button{display:inline-flex;align-items:center;height:24px;border-radius:999px;border:1px solid #d4d4d8;background:#fff;color:#18181b;font-size:12px;padding:0 10px;cursor:pointer;font-family:inherit;}.dd-records-foot .pg button:disabled{opacity:.4;cursor:default;}.dd-records-foot .pg .cur{font-size:12px;color:#52525b;font-variant-numeric:tabular-nums;}.dd-sec-head{margin-bottom:16px;}.dd-sec-heading{font-size:20px;font-weight:700;color:#09090b;margin:0 0 4px;line-height:1.3;}.dd-sec-intro{margin:0;font-size:13px;color:#71717a;line-height:1.5;}.dd-anim.on{animation:ddFade .35s ease;}@keyframes ddFade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}.dd-drop-count{color:#71717a;font-size:12px;font-variant-numeric:tabular-nums;}.dd-model-menu{position:absolute;right:0;top:calc(100% + 4px);width:300px;max-height:min(420px,70vh);display:flex;flex-direction:column;background:#fff;border:1px solid #e4e4e7;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.08);z-index:50;overflow:hidden;}.dd-model-actions{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid #f0f0f2;flex:none;}.dd-model-actions .link{background:none;border:none;color:#18181b;font-size:12px;cursor:pointer;padding:2px 6px;font-family:inherit;border-radius:6px;}.dd-model-actions .link:hover{background:#f4f4f5;}.dd-model-actions .spacer{flex:1;}.dd-model-actions .cnt{font-size:12px;color:#a1a1aa;font-variant-numeric:tabular-nums;}.dd-model-scroll{overflow-y:auto;padding:4px 6px 8px;}.dd-series{margin-top:2px;}.dd-series-head{display:flex;align-items:center;gap:6px;width:100%;background:none;border:none;padding:6px;cursor:pointer;border-radius:6px;font-family:inherit;text-align:left;}.dd-series-head:hover{background:#f4f4f5;}.dd-series-head .chev{display:inline-flex;transition:transform .15s ease;color:#71717a;flex:none;}.dd-series-head .chev.open{transform:rotate(180deg);}.dd-series-head .name{flex:1;font-size:13px;font-weight:600;color:#18181b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.dd-series-head .cnt{font-size:12px;color:#a1a1aa;font-variant-numeric:tabular-nums;}.dd-series-body{display:flex;flex-direction:column;gap:2px;padding:2px 0 4px 18px;}.dd-model-item{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:6px;cursor:pointer;font-size:12px;color:#52525b;min-width:0;}.dd-model-item:hover{background:#f4f4f5;}.dd-model-item .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.dd-model-item input{accent-color:#18181b;margin:0;flex:none;'
+const CSS = '.dd-bar-inner{position:relative;}.dd-seg-overlay{position:absolute;left:0;right:0;bottom:0;}.dd-root{min-height:100%;}.dd-dash{background:#f3f4f6;min-height:100%;padding:16px;box-sizing:border-box;font-family:"Century Gothic","Microsoft YaHei UI","PingFang SC","Microsoft YaHei",sans-serif;color:#09090b;}.dd-dash button{font-family:inherit;}.dd-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;}.dd-range{display:flex;align-items:center;border-radius:999px;background:#e2e3e7;padding:2px;gap:1px;flex-wrap:wrap;}.dd-pill{display:flex;align-items:center;height:24px;border-radius:999px;padding:0 9px;font-size:12px;border:none;cursor:pointer;background:transparent;color:#52525b;transition:background .12s ease,color .12s ease;}.dd-pill:hover{color:#09090b;}.dd-pill.on{background:#18181b;color:#fff;font-weight:600;}.dd-custom{display:flex;align-items:center;gap:8px;border-radius:6px;border:1px solid #d4d4d8;background:#fff;padding:6px 10px;flex-wrap:wrap;}.dd-custom input{background:#fff;border:1px solid #d4d4d8;border-radius:4px;color:#18181b;font-size:12px;padding:2px 6px;font-family:inherit;color-scheme:light;}.dd-custom input:focus{border-color:#18181b;outline:none;}.dd-custom .sep{font-size:12px;color:#a1a1aa;}.dd-custom .apply{display:flex;align-items:center;height:24px;border-radius:999px;background:#18181b;color:#fff;padding:0 10px;font-size:12px;font-weight:600;border:none;cursor:pointer;}.dd-custom .apply:hover{background:#27272a;}.dd-spacer{flex:1;}.dd-filter-row{display:flex;align-items:center;gap:8px;min-height:28px;flex-wrap:wrap;}.dd-drop{position:relative;}.dd-drop-btn{display:flex;align-items:center;gap:6px;min-height:28px;border-radius:999px;border:1px solid #d4d4d8;background:#fff;padding:0 9px;font-size:12px;cursor:pointer;font-family:inherit;color:#52525b;transition:background .12s ease,border-color .12s ease,color .12s ease;}.dd-drop-btn:hover{color:#18181b;border-color:#a1a1aa;}.dd-drop-btn.open{color:#09090b;border-color:#18181b;}.dd-drop-icon{display:inline-flex;color:#71717a;flex:none;}.dd-drop-btn.open .dd-drop-icon{color:#09090b;}.dd-drop-label{font-weight:500;flex:none;color:inherit;}.dd-drop-value{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#a1a1aa;}.dd-drop-btn.open .dd-drop-value{color:#52525b;}.dd-drop-arrow{display:inline-flex;color:#a1a1aa;flex:none;transition:transform .15s ease;}.dd-drop-btn.open .dd-drop-arrow{transform:rotate(180deg);}.dd-drop-menu{position:absolute;top:34px;left:0;z-index:50;min-width:220px;max-height:260px;overflow-y:auto;background:#fff;border:1px solid #e4e4e7;border-radius:8px;box-shadow:0 10px 15px -3px rgba(0,0,0,.08);padding:4px 0;scrollbar-width:none;}.dd-drop-menu::-webkit-scrollbar{display:none;}.dd-drop-item{display:flex;align-items:center;gap:7px;width:100%;text-align:left;border:none;background:none;height:28px;padding:0 10px;font-size:12px;color:#52525b;cursor:pointer;font-family:inherit;white-space:nowrap;}.dd-drop-item:hover{background:#f3f4f6;color:#18181b;}.dd-drop-item.on{background:#f3f4f6;color:#18181b;}.dd-check{display:flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:4px;flex:none;background:transparent;border:1px solid #d4d4d8;color:#18181b;}.dd-drop-item.on .dd-check{background:#18181b;border:none;color:#fff;}.dd-drop-item .label{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.dd-drop-item .sub{color:#a1a1aa;font-size:11px;flex:none;font-family:"JetBrains Mono","SF Mono",Consolas,monospace;}.dd-clear{background:none;border:none;color:#dc2626;font-size:12px;font-weight:500;cursor:pointer;padding:0 6px;height:28px;}.dd-clear:hover{text-decoration:underline;}.dd-busy{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#52525b;}.dd-busy .spinner{width:12px;height:12px;border:1.5px solid #e2e3e7;border-top-color:#18181b;border-radius:50%;animation:ddspin .7s linear infinite;}.dd-rows{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px;}@media (min-width:768px){.dd-rows{grid-template-columns:repeat(5,1fr);gap:12px;}}.dd-kpi{min-width:0;border-radius:8px;border:1px solid #e4e4e7;background:#fff;padding:20px;text-align:left;position:relative;overflow:hidden;transition:border-color .12s ease,background .12s ease;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-kpi.clickable{cursor:pointer;}.dd-kpi.clickable:hover{border-color:#d4d4d8;}.dd-kpi.clickable:active{background:#fafafa;}.dd-kpi-label{display:flex;align-items:center;justify-content:space-between;font-size:13px;line-height:1.3;color:#52525b;margin-bottom:4px;min-height:19px;}.dd-kpi-label .lt{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden;white-space:nowrap;flex:1 1 auto;}.dd-kpi-label .pct{font-size:11px;white-space:nowrap;flex:none;font-family:"JetBrains Mono","SF Mono",Consolas,monospace;margin-left:4px;}.dd-pct-up{color:#71717a;}.dd-pct-down{color:#a1a1aa;}.dd-pct-flat{color:#a1a1aa;}.dd-info-wrap{position:relative;display:inline-flex;flex:none;}.dd-info{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:999px;border:1px solid #d4d4d8;color:#52525b;cursor:pointer;flex:none;background:#fff;padding:0;transition:border-color .12s ease,color .12s ease;}.dd-info:hover{border-color:#a1a1aa;color:#18181b;}.dd-info svg{display:block;}.dd-kpi-value{margin-top:0;height:30px;overflow:hidden;white-space:nowrap;font-size:24px;font-weight:700;line-height:30px;font-variant-numeric:tabular-nums;color:#09090b;}.dd-v-cost{color:#34d399;}.dd-v-dur{color:#60a5fa;}.dd-v-cache{color:#71717a;}.dd-pop{position:fixed;z-index:200;background:#fff;border:1px solid #e4e4e7;border-radius:8px;box-shadow:0 20px 25px -5px rgba(0,0,0,.15);padding:14px 16px;box-sizing:border-box;max-width:calc(100vw - 16px);white-space:normal;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;}.dd-pop .pop-title{font-size:13px;font-weight:700;color:#09090b;margin-bottom:8px;}.dd-pop .pop-body{font-size:12px;line-height:1.7;color:#52525b;overflow-wrap:break-word;word-break:break-word;}.dd-pop .pop-sec{margin-top:10px;}.dd-pop .pop-sec .sec-title{font-size:12px;font-weight:700;color:#09090b;margin-bottom:4px;}.dd-pop table{border-collapse:collapse;width:100%;margin-top:8px;table-layout:fixed;}.dd-pop th{font-size:10px;color:#a1a1aa;font-weight:500;text-align:left;padding:2px 6px 4px 0;border-bottom:1px solid #e4e4e7;font-family:"JetBrains Mono","SF Mono",Consolas,monospace;overflow-wrap:break-word;word-break:break-all;}.dd-pop td{font-size:11px;color:#52525b;padding:4px 6px 4px 0;border-bottom:1px solid #f3f4f6;font-family:"JetBrains Mono","SF Mono",Consolas,monospace;white-space:normal;overflow-wrap:break-word;word-break:break-all;}.dd-pop td.mdl{overflow:hidden;text-overflow:ellipsis;}.dd-pop td.unmatched{color:#a1a1aa;}.dd-charts{display:flex;flex-direction:column;gap:24px;}.dd-chart{min-width:0;border-radius:8px;border:1px solid #e4e4e7;background:#fff;padding:24px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-chart-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:24px;}.dd-chart-title{display:flex;align-items:center;gap:6px;min-width:0;font-size:15px;font-weight:500;color:#52525b;white-space:nowrap;overflow:hidden;}.dd-chart-title .icon{display:inline-flex;color:#71717a;flex:none;}.dd-chart-tools{display:flex;align-items:center;gap:12px;flex:none;flex-wrap:wrap;}.dd-legend{display:flex;align-items:center;gap:12px;font-size:14px;color:#71717a;}.dd-legend-btn{display:flex;align-items:center;gap:6px;border:none;background:none;padding:0;cursor:pointer;font-size:14px;color:inherit;font-family:inherit;transition:opacity .12s ease;}.dd-legend-btn.off{opacity:.3;}.dd-swatch{display:inline-block;width:13px;height:13px;border-radius:4px;flex:none;}.dd-seg-group{display:inline-flex;align-items:center;gap:2px;border-radius:999px;background:#e2e3e7;padding:4px;}.dd-seg-btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:3px 14px;border-radius:999px;font-size:14px;border:none;cursor:pointer;background:transparent;color:#52525b;transition:background .12s ease,color .12s ease;white-space:nowrap;}.dd-seg-btn:hover{color:#09090b;}.dd-seg-btn.on{background:#18181b;color:#fff;}.dd-plot-row{display:flex;width:100%;}.dd-y{display:flex;flex-direction:column;justify-content:space-between;width:58px;flex:0 0 58px;box-sizing:border-box;padding-right:8px;text-align:right;font-size:12px;white-space:nowrap;overflow:visible;color:#a1a1aa;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-y span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.dd-plot{position:relative;display:flex;align-items:flex-end;flex:1;min-width:0;height:220px;gap:1px;}.dd-col{position:relative;display:flex;flex-direction:column;justify-content:flex-end;flex:1 1 0;min-width:0;height:100%;cursor:pointer;}.dd-col.dim .dd-seg{opacity:.35;}.dd-bar-inner{width:100%;height:100%;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;}.dd-seg{width:100%;transition:height .3s ease,opacity .3s ease,background-color .3s ease;}.dd-tip{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:40;display:none;flex-direction:column;gap:3px;white-space:nowrap;border-radius:4px;background:#e2e3e7;border:1px solid #d4d4d8;box-shadow:0 20px 25px -5px rgba(0,0,0,.12);padding:8px 10px;font-size:14px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-col:hover .dd-tip{display:flex;}.dd-tip .tt-title{font-weight:700;margin-bottom:2px;color:#52525b;}.dd-tip .tt-row{color:#71717a;}.dd-tip .tt-cost{color:#34d399;}.dd-tip .tt-dur{color:#60a5fa;}.dd-tip .tt-dur2{color:#93c5fd;}.dd-x{display:flex;margin-left:58px;margin-top:8px;}.dd-x .labels{display:flex;flex:1;min-width:0;height:20px;position:relative;}.dd-x .labels .cell{flex:1;min-width:0;text-align:center;}.dd-x .labels .cell.abs{position:absolute;top:0;text-align:center;}.dd-x .labels .cell.abs span{transform:translateX(-50%);}.dd-x .labels span{display:inline-block;white-space:nowrap;font-size:14px;color:#71717a;}.dd-heat{display:flex;flex-direction:column;gap:12px;}.dd-heat-row{display:flex;align-items:center;gap:8px;}.dd-heat-day{width:40px;flex:none;font-size:13px;color:#71717a;text-align:left;}.dd-heat-cells{display:flex;flex:1;gap:6px;min-width:0;}.dd-heat-cell{position:relative;flex:1;aspect-ratio:1;min-width:0;}.dd-heat-cell .inner{width:100%;height:100%;border-radius:4px;transition:background-color .5s ease-out;}.dd-heat-cell .tip{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:40;display:none;flex-direction:column;gap:3px;white-space:normal;max-width:calc(100vw - 24px);box-sizing:border-box;border-radius:4px;background:#e2e3e7;border:1px solid #d4d4d8;box-shadow:0 20px 25px -5px rgba(0,0,0,.12);padding:8px 10px;font-size:14px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-heat-cell:hover .tip{display:flex;}.dd-heat-cell.edge-left .tip{left:0;transform:none;}.dd-heat-cell.edge-right .tip{left:100%;transform:translateX(-100%);}.dd-heat-cell .tip .tt-title{font-weight:700;margin-bottom:2px;color:#52525b;}.dd-heat-cell .tip .tt-token{color:#71717a;}.dd-heat-cell .tip .tt-cost{color:#34d399;}.dd-heat-cell .tip .tt-dur{color:#60a5fa;}.dd-heat-x{display:flex;margin-left:48px;margin-top:12px;}.dd-heat-x .labels{display:flex;flex:1;min-width:0;}.dd-heat-x .labels .cell{flex:1;text-align:center;}.dd-heat-x .labels span{font-size:14px;color:#71717a;}.dd-heat-legend{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:16px;}.dd-heat-legend .lbl{font-size:13px;color:#a1a1aa;line-height:1;}.dd-heat-legend .dots{display:flex;align-items:center;gap:4px;}.dd-dot{width:12px;height:12px;border-radius:4px;}.dd-cal{display:flex;flex-direction:column;gap:12px;width:100%;overflow:visible;}.dd-cal-body{display:flex;gap:8px;align-items:flex-start;overflow:visible;}.dd-cal-days{display:none;}.dd-cal-days span{font-size:10px;color:#a1a1aa;line-height:1;flex:1;display:flex;align-items:center;}.dd-cal-cols{display:grid;grid-template-columns:repeat(40,minmax(0,1fr));gap:6px;flex:1;min-width:0;align-items:start;}.dd-cal-col{display:flex;flex-direction:column;gap:6px;min-width:0;align-self:start;}.dd-cal-cell{position:relative;flex:0 0 auto;width:100%;aspect-ratio:1 / 1;min-width:0;border-radius:5px;}.dd-cal-floating-tip{position:fixed;z-index:1000;display:flex;flex-direction:column;gap:3px;transform:translate(-50%,-100%);pointer-events:none;white-space:normal;max-width:calc(100vw - 24px);box-sizing:border-box;border-radius:4px;background:#e2e3e7;border:1px solid #d4d4d8;box-shadow:0 20px 25px -5px rgba(0,0,0,.12);padding:6px 9px;font-size:12px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-cal-floating-tip.below{transform:translate(-50%,0);}.dd-cal-floating-tip .tt-token{color:#71717a;}.dd-cal-legend{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:10px;}.dd-cal-legend .lbl{font-size:11px;color:#a1a1aa;line-height:1;}.dd-cal-legend .dots{display:flex;gap:3px;}.dd-cal-dot{width:11px;height:11px;border-radius:3px;}.dd-records{margin-top:16px;border-radius:8px;border:1px solid #e4e4e7;background:#fff;padding:24px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-records-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px;}.dd-records-title{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:500;color:#52525b;white-space:nowrap;overflow:hidden;}.dd-records-title .icon{display:inline-flex;color:#71717a;flex:none;}.dd-records-count{font-size:12px;color:#a1a1aa;flex:none;}.dd-records-scroll{overflow-x:auto;max-height:420px;overflow-y:auto;border-bottom:1px solid #f3f4f6;}.dd-records table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:820px;}.dd-records th{font-size:11px;color:#a1a1aa;font-weight:500;text-align:left;padding:6px 10px;border-bottom:1px solid #e4e4e7;white-space:nowrap;}.dd-records th.num{text-align:right;}.dd-records td{font-size:12px;color:#52525b;padding:6px 10px;border-bottom:1px solid #f3f4f6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;}.dd-records td.num{text-align:right;}.dd-records td .sess{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;}.dd-records tbody tr:hover td{background:#fafafa;}.dd-records .more{display:flex;align-items:center;justify-content:center;margin-top:12px;}.dd-records .more button{display:flex;align-items:center;height:28px;border-radius:999px;border:1px solid #d4d4d8;background:#fff;padding:0 14px;font-size:12px;color:#52525b;cursor:pointer;font-family:inherit;transition:color .12s ease,border-color .12s ease;}.dd-records .more button:hover{color:#18181b;border-color:#a1a1aa;}.dd-records .more button:disabled{opacity:.5;cursor:default;}.dd-records .empty{padding:32px 0;text-align:center;color:#a1a1aa;font-size:13px;}.dd-dist-row{display:flex;flex-direction:column;gap:24px;margin-top:24px;margin-bottom:24px;}.dd-side-row{display:flex;flex-direction:row;gap:24px;margin-top:24px;margin-bottom:24px;}.dd-radar{flex:1 1 calc(50% - 12px);min-width:0;border-radius:8px;border:1px solid #e4e4e7;background:#fff;padding:20px 24px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-radar-body{display:flex;align-items:center;gap:16px;}.dd-radar-donut{position:relative;flex:none;width:280px;height:280px;}.dd-radar-donut svg{display:block;}.dd-radar-legend{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;}.dd-side-row .dd-chart{flex:1 1 calc(50% - 12px);min-width:0;}.dd-dist{flex:none;min-width:0;border-radius:8px;border:1px solid #e4e4e7;background:#fff;padding:20px 24px;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New","PingFang SC","Microsoft YaHei",monospace;}.dd-dist-body{display:flex;align-items:center;gap:24px;}.dd-dist-donut{position:relative;flex:none;width:120px;height:120px;}.dd-dist-donut svg{display:block;}.dd-dist-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;}.dd-dist-center .v{font-size:15px;font-weight:700;color:#18181b;white-space:nowrap;font-variant-numeric:tabular-nums;}.dd-dist-center .l{font-size:10px;color:#a1a1aa;}.dd-dist-legend{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;}.dd-dist-item{display:flex;align-items:center;gap:8px;min-width:0;}.dd-dist-item .dot{width:10px;height:10px;border-radius:50%;flex:none;align-self:center;position:relative;top:-1px;}.dd-dist-item .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#52525b;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;}.dd-dist-item .val{font-size:12px;color:#18181b;flex:none;font-variant-numeric:tabular-nums;}.dd-dist-item .pct{font-size:14px;line-height:20px;color:#a1a1aa;flex:none;width:56px;text-align:right;font-variant-numeric:tabular-nums;position:relative;top:-1px;}.dd-cache-tip{position:absolute;z-index:50;display:flex;flex-direction:column;align-items:flex-start;gap:2px;border:1px solid #d4d4d8;border-radius:6px;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.1);padding:7px 10px;pointer-events:none;}.dd-cache-tip-line{font-size:11px;color:#52525b;font-weight:500;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;}.dd-cache-tip-rate{font-size:14px;color:#18181b;white-space:nowrap;}.dd-cache-tip-pct{font-weight:700;color:#10b981;font-variant-numeric:tabular-nums;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,monospace;}.ddc-layer{opacity:0;transition:opacity .26s ease;}.ddc-layer.on{opacity:1;}@keyframes ddcDraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}.ddc-layer.on .ddc-line{animation:ddcDraw .6s cubic-bezier(.4,0,.2,1) both;}@keyframes ddcFade{from{opacity:0}to{opacity:1}}.ddc-layer.on .ddc-area{animation:ddcFade .5s ease .12s both;}.ddc-layer.on .ddc-cov{animation:ddcFade .55s ease .3s both;}@keyframes ddcRise{from{transform:scaleY(0)}to{transform:scaleY(1)}}.ddc-layer.on .ddc-bar{transform-box:fill-box;transform-origin:50% 100%;animation:ddcRise .5s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--i,0) * 26ms);}@keyframes ddcIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}.ddc-in{animation:ddcIn .35s ease both;}.dd-cache-empty{padding:40px 0;text-align:center;color:#a1a1aa;font-size:12px;}.dd-cache-kpis{display:flex;gap:8px;margin-bottom:10px;}.dd-cache-kpi{flex:1;border:1px solid #ececf0;border-radius:8px;padding:6px 11px;background:#fafafa;min-width:0;box-sizing:border-box;}.dd-cache-kpi .lab{font-size:10px;color:#a1a1aa;letter-spacing:.4px;white-space:nowrap;}.dd-cache-kpi .val{font-size:18px;font-weight:700;color:#18181b;margin-top:1px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.dd-cache-kpi .val small{font-size:11px;color:#71717a;font-weight:500;}.dd-cache-kpi .delta{font-size:10px;font-weight:700;margin-left:5px;}.dd-cache-kpi .delta.up{color:#10b981;}.dd-cache-kpi .delta.down{color:#ef4444;}.dd-cache-kpi.hero{background:linear-gradient(135deg,#ecfdf5,#f6fefb 60%);border-color:#d1fae5;}.dd-cache-kpi.hero .val{color:#047857;}.dd-cache-legend{display:flex;gap:14px;font-size:10px;color:#71717a;margin:0 0 2px;flex-wrap:wrap;align-items:center;}.dd-cache-legend .lg{display:flex;align-items:center;gap:5px;}.dd-cache-legend .sw{width:14px;height:0;border-top:2px solid #999;display:inline-block;}.dd-cache-legend .sw.blk{height:8px;border:none;border-radius:2px;}.dd-cache-zoom{border:none;background:transparent;font-size:11px;color:#71717a;cursor:pointer;padding:2px 6px;font-family:inherit;border-radius:6px;white-space:nowrap;}.dd-cache-zoom:hover{color:#09090b;background:#f4f4f5;}.dd-cache-models{border-top:1px solid #f0f0f2;margin-top:8px;padding-top:4px;}.dd-cache-mtitle{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#a1a1aa;letter-spacing:.4px;padding:2px 0;}.dd-cache-mbody{max-height:150px;overflow-y:auto;overflow-x:hidden;}.dd-cache-mrow{display:flex;align-items:center;gap:8px;padding:2px 4px;border-radius:6px;cursor:pointer;}.dd-cache-mrow:hover{background:#fafafa;}.dd-cache-mrow.sel{background:#f0fdf4;}.dd-cache-mrow .dot{width:7px;height:7px;border-radius:99px;flex:none;}.dd-cache-mrow .mname{font-size:11px;color:#3f3f46;width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none;}.dd-cache-mrow .mtrack{flex:1;height:12px;position:relative;background:#f6f6f8;border-radius:3px;min-width:0;}.dd-cache-mrow .mfill{position:absolute;left:0;top:0;bottom:0;border-radius:3px;opacity:.85;}.dd-cache-mrow .mcov{position:absolute;top:2px;bottom:2px;width:2px;background:#f59e0b;border-radius:2px;}.dd-cache-mrow .mval{font-size:11px;font-weight:700;color:#18181b;width:46px;text-align:right;flex:none;font-variant-numeric:tabular-nums;}.dd-cache-mrow .msave{font-size:10px;color:#059669;width:72px;text-align:right;flex:none;font-variant-numeric:tabular-nums;white-space:nowrap;}.dd-empty{padding:64px 0;text-align:center;color:#71717a;font-size:14px;}.dd-loading{padding:64px 0;text-align:center;color:#71717a;font-size:14px;animation:ddpulse 2s cubic-bezier(.4,0,.6,1) infinite;}@keyframes ddpulse{50%{opacity:.5;}}@keyframes ddspin{to{transform:rotate(360deg);}}[role="dialog"]:has([data-slot="settings.header"]){width:1320px!important;max-width:calc(100vw - 32px)!important;}[role="dialog"] nav > div:nth-of-type(2) > button:nth-child(5) > svg{display:none;}[role="dialog"] nav > div:nth-of-type(2) > button:nth-child(5)::before{content:"";display:block;width:16px;height:16px;flex:none;background-image:linear-gradient(#71717a,#71717a),linear-gradient(#71717a,#71717a),linear-gradient(#71717a,#71717a);background-size:3px 7px,3px 11px,3px 9px;background-position:2px 9px,6.5px 5px,11px 7px;background-repeat:no-repeat;}.dd-title{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:700;color:#09090b;margin-bottom:14px;}.dd-title .icon{display:inline-flex;color:#3f3f46;}.dd-dist-item{padding:4px 8px;min-height:30px;box-sizing:border-box;border-radius:6px;transition:opacity .15s ease;}.dd-dist-item.dim{opacity:.22;}.dd-dist-item .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;font-weight:600;line-height:20px;color:#18181b;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;position:relative;top:-1px;}.dd-dist-item .val{font-size:14px;font-weight:600;line-height:20px;color:#18181b;flex:none;font-variant-numeric:tabular-nums;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;position:relative;top:-1px;}.dd-dist-item .pct{font-size:14px;line-height:20px;color:#a1a1aa;flex:none;width:56px;text-align:right;font-variant-numeric:tabular-nums;position:relative;top:-1px;}.dd-dist-center .v{font-size:18px;font-weight:700;color:#18181b;white-space:nowrap;font-variant-numeric:tabular-nums;}.dd-records{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;}.dd-records table td,.dd-records table th{font-variant-numeric:tabular-nums;}.dd-records-foot{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:12px;}.dd-records-foot .info{font-size:12px;color:#71717a;font-variant-numeric:tabular-nums;}.dd-records-foot .pg{display:inline-flex;align-items:center;gap:6px;}.dd-records-foot .pg button{display:inline-flex;align-items:center;height:24px;border-radius:999px;border:1px solid #d4d4d8;background:#fff;color:#18181b;font-size:12px;padding:0 10px;cursor:pointer;font-family:inherit;}.dd-records-foot .pg button:disabled{opacity:.4;cursor:default;}.dd-records-foot .pg .cur{font-size:12px;color:#52525b;font-variant-numeric:tabular-nums;}.dd-sec-head{margin-bottom:16px;}.dd-sec-heading{font-size:20px;font-weight:700;color:#09090b;margin:0 0 4px;line-height:1.3;}.dd-sec-intro{margin:0;font-size:13px;color:#71717a;line-height:1.5;}.dd-anim.on{animation:ddFade .35s ease;}@keyframes ddFade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}.dd-drop-count{color:#71717a;font-size:12px;font-variant-numeric:tabular-nums;}.dd-model-menu{position:absolute;right:0;top:calc(100% + 4px);width:300px;max-height:min(420px,70vh);display:flex;flex-direction:column;background:#fff;border:1px solid #e4e4e7;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.08);z-index:50;overflow:hidden;}.dd-model-actions{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid #f0f0f2;flex:none;}.dd-model-actions .link{background:none;border:none;color:#18181b;font-size:12px;cursor:pointer;padding:2px 6px;font-family:inherit;border-radius:6px;}.dd-model-actions .link:hover{background:#f4f4f5;}.dd-model-actions .spacer{flex:1;}.dd-model-actions .cnt{font-size:12px;color:#a1a1aa;font-variant-numeric:tabular-nums;}.dd-model-scroll{overflow-y:auto;padding:4px 6px 8px;}.dd-series{margin-top:2px;}.dd-series-head{display:flex;align-items:center;gap:6px;width:100%;background:none;border:none;padding:6px;cursor:pointer;border-radius:6px;font-family:inherit;text-align:left;}.dd-series-head:hover{background:#f4f4f5;}.dd-series-head .chev{display:inline-flex;transition:transform .15s ease;color:#71717a;flex:none;}.dd-series-head .chev.open{transform:rotate(180deg);}.dd-series-head .name{flex:1;font-size:13px;font-weight:600;color:#18181b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.dd-series-head .cnt{font-size:12px;color:#a1a1aa;font-variant-numeric:tabular-nums;}.dd-series-body{display:flex;flex-direction:column;gap:2px;padding:2px 0 4px 18px;}.dd-model-item{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:6px;cursor:pointer;font-size:12px;color:#52525b;min-width:0;}.dd-model-item:hover{background:#f4f4f5;}.dd-model-item .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.dd-model-item input{accent-color:#18181b;margin:0;flex:none;'
 
 return {
   inject: ['slots', 'timer'],
@@ -11,8 +11,8 @@ return {
     const BJ_OFFSET = 8 * 3600000
 
     // ===== Dashboard tooltips & icons =====
-    const COST_TIP = '费用按 vibe-usage-model-pricing-extended.csv 定价表估算（CNY 直接定价），覆盖 245 个模型；DeepSeek V4 自 2026-08-17 起按峰谷计费（工作日高峰 9:00-12:00、14:00-18:00，北京时间，周末及其余时段为空闲（高峰一半））；未匹配模型暂不计费。点击卡片切换 ¥/＄。'
-    const DUR_TIP = '会话时长说明：活跃时长 = 所有 turn 的累计时长（AI 实际生成内容时间，不含排队与首 Token 延迟）；并行会话的生成时间会分别累加，因此可能超过 24H。总时长 = 各会话首条到末条消息的时间跨度，重叠（并行）会话只计一次后相加（含思考、看代码等空闲）。'
+    const COST_TIP = '费用按 vibe-usage-model-pricing-extended.csv 定价表估算（CNY 直接定价）；DeepSeek V4 自 2026-08-17 起按峰谷计费（工作日高峰 9:00-12:00、14:00-18:00，北京时间，周末及其余时段为空闲（高峰一半））；未匹配模型暂不计费。点击卡片切换 ¥/＄。'
+    const DUR_TIP = '会话时长说明：活跃时长 = 模型生成区间（请求发出 → 回复完成）的累计时长，不含工具执行时间；旧版日志带输出分块时从首个分块起算（不含排队与首 Token 延迟）。并行会话的生成时间会分别累加，因此可能超过 24H。总时长 = 各会话首条到末条消息的时间跨度，重叠（并行）会话只计一次后相加（含思考、看代码等空闲）。'
     const TOTAL_TIP = '会话时长说明：总时长 = 每个会话从首条消息到末条消息的时间跨度，先合并重叠区间（并行会话只计一次）再相加；包含中间思考、看代码等空闲时间，但不包含会话之间的间隔，不会超过所选时间范围。'
     const ICON_ECG = h('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, h('polyline', { points: '22 12 18 12 15 21 9 3 6 12 2 12' }))
     const ICON_CAL = h('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, h('rect', { x: 3, y: 4, width: 18, height: 18, rx: 2, ry: 2 }), h('line', { x1: 16, y1: 2, x2: 16, y2: 6 }), h('line', { x1: 8, y1: 2, x2: 8, y2: 6 }), h('line', { x1: 3, y1: 10, x2: 21, y2: 10 }))
@@ -76,10 +76,18 @@ return {
         }
       }
       patch()
-      const observer = new MutationObserver(patch)
+      // The observer fires for every DOM mutation while ANY chat streams.
+      // Coalesce bursts into one scan per frame so patch() can never run
+      // dozens of times per paint.
+      let queued = 0
+      const observer = new MutationObserver(() => {
+        if (queued) return
+        queued = requestAnimationFrame(() => { queued = 0; patch() })
+      })
       observer.observe(document.body, { childList: true, subtree: true })
       return () => {
         observer.disconnect()
+        if (queued) cancelAnimationFrame(queued)
         for (const item of patched) if (item.svg.isConnected && item.button.contains(item.svg)) item.svg.replaceWith(item.old)
       }
     }
@@ -323,7 +331,8 @@ return {
         open ? h('div', { className: 'dd-model-menu' },
           h('div', { className: 'dd-model-actions' },
             h('button', { type: 'button', className: 'link', onClick: () => props.onSelect(null) }, '全部'),
-            h('button', { type: 'button', className: 'link', onClick: () => props.onSelect(models.map((m) => m.id)) }, '全选'),
+            // 全选 == 不过滤：置空而非把全部模型 id 塞进查询串（245+ id 会逼近 URL/头部上限）
+            h('button', { type: 'button', className: 'link', onClick: () => props.onSelect(null) }, '全选'),
             h('span', { className: 'spacer' }),
             h('span', { className: 'cnt' }, '已选 ' + selected.length + ' 项')),
           h('div', { className: 'dd-model-scroll' },
@@ -427,6 +436,7 @@ return {
           type: 'button',
           className: 'dd-info',
           'aria-label': '详情',
+          title: props.tip,
           onClick: (e) => { e.stopPropagation(); props.onToggle() }
         }, ICON_INFO),
         props.open && pos ? h('div', { className: 'dd-pop', style: { left: pos.left, top: pos.top, width: props.width || 320 } }, props.children) : null)
@@ -438,7 +448,7 @@ return {
         h('div', { className: 'pop-body' },
           h('div', { className: 'pop-sec', style: { marginTop: 0 } },
             h('div', { className: 'sec-title' }, '活跃时长'),
-            h('div', null, '从 AI 开始输出到回复完毕算一个 turn，活跃时长 = 所有 turn 的累计时长。不包含排队等待和首 Token 延迟（TTFT），只计算 AI 实际生成内容的时间。两次 prompt 之间的空闲不计入；并行会话分别累加，所以活跃时长可能超过 24H。')),
+            h('div', null, '模型每完成一次回复（step）记一段生成时间：从请求发出到回复完毕，之后的工具执行不计入。旧版日志保留了输出分块事件时，从 AI 开始输出算起，不含排队等待与首 Token 延迟（TTFT）。两次 prompt 之间的空闲不计入；并行会话分别累加，所以活跃时长可能超过 24H。')),
           h('div', { className: 'pop-sec' },
             h('div', { className: 'sec-title' }, '总时长'),
             h('div', null, '总时长 = 各会话从首条消息到末条消息的时间跨度，先合并重叠区间（并行会话只计一次）再相加。包含中间思考、看代码等空闲时间，但不包含会话之间的间隔，不会超过所选时间范围。'))))
@@ -485,6 +495,7 @@ return {
         onToggle: () => setOpen(!open),
         onClose: () => setOpen(false),
         width: props.popupWidth || 320,
+        tip: props.tip,
         children: props.popup
       }) : null
       return h('div', {
@@ -531,8 +542,11 @@ return {
       }
       const n = buckets.length
       // 今天/24H 底部均匀 8 个时间点；7D/30D/90D 均匀 7 个
+      // 今天/24H 底部按固定步长标注（24 小时 → 每 3 小时一格），7D/30D/90D 同理；
+      // 旧的「均匀取点再舍入」会让时间跳距忽大忽小（03→07→10），看起来像漏标。
       const labelCount = gran === 'hour' ? 8 : 7
-      const labelIdx = n <= labelCount ? null : Array.from({ length: labelCount }, (_, k) => Math.round(k * (n - 1) / (labelCount - 1)))
+      const labelStep = Math.max(1, Math.ceil(n / labelCount))
+      const labelIdx = n <= labelCount ? null : Array.from({ length: Math.ceil(n / labelStep) }, (_, k) => k * labelStep)
 
       const head = h('div', { className: 'dd-chart-head' },
         h('div', { className: 'dd-chart-title' },
@@ -572,27 +586,27 @@ return {
       const yBot = isCost ? '¥0' : '0'
 
       const cols = buckets.map((w, i) => {
-        let segArr
+        // 三种模式共用固定三个段槽（key a/b/c）：切换模式时 React 复用同一批 DOM 节点，
+        // .dd-seg 的 height/backgroundColor 过渡才能真正生效。此前各模式 key 不同
+        // （token=0/1/2、cost=0、dur=total/active），跨模式切换整列重建，动画丢失。
+        const segStyle = (hFrac, bg, rad) => ({
+          height: Math.max(0, hFrac * 100) + '%',
+          backgroundColor: bg,
+          borderRadius: hFrac > 0 && rad > 0 ? rad + 'px ' + rad + 'px 0 0' : '0'
+        })
         let segsEl
         if (isDur) {
           // 总时长是背景，活跃时长是其子集，使用底部叠覆而不是相加堆叠。
           const totalH = durSegs.total ? w.totalMs / M : 0
           const activeH = durSegs.active ? (w.activeMs != null ? w.activeMs : w.durMs) / M : 0
-          const mkDur = (height, bg, key) => h('div', {
-            key,
-            className: 'dd-seg' + (key === 'active' ? ' dd-seg-overlay' : ''),
-            style: {
-              height: Math.max(0, height * 100) + '%',
-              backgroundColor: bg,
-              borderRadius: height > 0 ? Math.min(4, height * 220 / 2) + 'px ' + Math.min(4, height * 220 / 2) + 'px 0 0' : '0'
-            }
-          })
           segsEl = h('div', { className: 'dd-bar-inner' },
-            durSegs.total ? mkDur(totalH, TREND_SEG_COLORS.durTotal, 'total') : null,
-            durSegs.active ? mkDur(activeH, TREND_SEG_COLORS.durActive, 'active') : null)
+            h('div', { key: 'a', className: 'dd-seg', style: segStyle(totalH, TREND_SEG_COLORS.durTotal, Math.min(4, totalH * 220 / 2)) }),
+            h('div', { key: 'b', className: 'dd-seg dd-seg-overlay', style: segStyle(activeH, TREND_SEG_COLORS.durActive, Math.min(4, activeH * 220 / 2)) }),
+            h('div', { key: 'c', className: 'dd-seg', style: segStyle(0, TREND_SEG_COLORS.cache, 0) }))
         } else {
+          let segArr
           if (isCost) {
-            segArr = [{ h: (w.costIn + w.costOut + w.costCache) / M, bg: TREND_SEG_COLORS.cost }]
+            segArr = [{ h: (w.costIn + w.costOut + w.costCache) / M, bg: TREND_SEG_COLORS.cost }, { h: 0, bg: TREND_SEG_COLORS.input }, { h: 0, bg: TREND_SEG_COLORS.cache }]
           } else {
             segArr = [
               { h: segs.output ? w.output / M : 0, bg: TREND_SEG_COLORS.output },
@@ -608,13 +622,9 @@ return {
           const rad = topIdx >= 0 ? Math.min(4, segArr[topIdx].h * 220 / 2) : 0
           segsEl = h('div', { className: 'dd-bar-inner' },
             segArr.map((s, j) => h('div', {
-              key: j,
+              key: j === 0 ? 'a' : j === 1 ? 'b' : 'c',
               className: 'dd-seg',
-              style: {
-                height: Math.max(0, s.h * 100) + '%',
-                backgroundColor: s.bg,
-                borderRadius: j === topIdx ? rad + 'px ' + rad + 'px 0 0' : '0'
-              }
+              style: segStyle(s.h, s.bg, j === topIdx ? rad : 0)
             })))
         }
         let tipRows = null
@@ -648,13 +658,12 @@ return {
 
       const xrow = h('div', { className: 'dd-x' },
         h('div', { className: 'labels' },
-          labelIdx ? labelIdx.map((idx, k) => {
-            const first = k === 0
-            const last = k === labelCount - 1
+          labelIdx ? labelIdx.map((idx) => {
+            // 标签居中对齐所属列的列心（列是等宽 flex，列心 = (idx+0.5)/n）
             return h('div', {
               key: idx,
-              className: 'cell abs' + (first ? ' first' : last ? ' last' : ''),
-              style: { left: (k * 100 / (labelCount - 1)) + '%' }
+              className: 'cell abs',
+              style: { left: ((idx + 0.5) * 100 / n).toFixed(2) + '%' }
             }, h('span', null, axisLabel(buckets[idx].label, gran)))
           }) : buckets.map((w, i) => h('div', { key: i, className: 'cell' },
             h('span', null, axisLabel(w.label, gran))))))
@@ -832,21 +841,52 @@ return {
       return h('div', { className: 'dd-dist' }, head, body)
     }
 
-    // Radar card — optimized v2
+    // Radar card v3 — six honest axes, real-value vertex chips, numeric card.
+    // 每轴：score（0–1，双端固定标定的对数带宽归一）+ fmt（顶点真值标签）。
+    // 对数带宽 score = log(v/floor)/log(ceil/floor)：两端都定标（外圈=快/多/省，
+    // 中心=floor），比值类轴（如 1/P50 跨两个数量级）不再全员贴中心。
+    // 标定基准（2026-09-12，90d + 当日窗口实测分布）：
+    //   响应速度 外圈 P50=1s / 中心 120s；输出速度 1–166 t/s；平均输出量 50–1645 tok；
+    //   平均输入量 5k–29.4万 tok；稳定性 慢125倍–慢8.3倍；实际单价 ¥2/M–¥0.10/M。
+    // 方向统一：越靠外圈越好。平均输出/输入量是使用画像而非强弱（弹窗注明）。
     const RADAR_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444']
-    const RADAR_FILL_OPS = [0.42, 0.42, 0.38, 0.38]
     const RADAR_AXES = 6
     const RADAR_ANGLE_STEP = (2 * Math.PI) / RADAR_AXES
     const RADAR_ANGLE_OFF = -Math.PI / 2
-    const RADAR_AXIS_NAMES = ['响应效率', '响应速度', '一致性', '成本效率', '缓存命中', 'Token产出']
     const RADAR_PLOT = 420
     const RADAR_CX = RADAR_PLOT / 2, RADAR_CY = RADAR_PLOT / 2, RADAR_R = 165
     const RADAR_LABEL_R = RADAR_R + 42
-    const RADAR_FIXED_MAX = [35, 6e-5, 0.4, 120000, 100, 4]
-    const RADAR_LOG_NORM = (v, max, scale) => v == null ? null : Math.min(1, Math.log(1 + v * scale) / Math.log(1 + max * scale))
-    const RADAR_LIN_NORM = (v, max) => v == null ? null : Math.min(1, v / max)
+    const RADAR_BAND = (v, floor, ceil) => (v == null || !(v > 0)) ? null
+      : Math.max(0, Math.min(1, Math.log(v / floor) / Math.log(ceil / floor)))
+    const RADAR_DEFS = [
+      { name: '响应速度',
+        score: m => m.p50ResponseMs > 0 ? Math.max(0, Math.min(1, Math.log(120000 / m.p50ResponseMs) / Math.log(120))) : null,
+        fmt: m => m.p50ResponseMs > 0 ? (m.p50ResponseMs / 1000).toFixed(1) + 's' : null },
+      { name: '输出速度',
+        score: m => m.responseMsSum > 0 ? RADAR_BAND(m.output * 1000 / m.responseMsSum, 1, 166) : null,
+        fmt: m => m.responseMsSum > 0 ? Math.round(m.output * 1000 / m.responseMsSum) + ' t/s' : null },
+      { name: '平均输出量',
+        score: m => m.calls > 0 ? RADAR_BAND(m.output / m.calls, 50, 1645) : null,
+        fmt: m => { if (!(m.calls > 0)) return null; const v = m.output / m.calls
+          return (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : String(Math.round(v))) + ' tok' } },
+      { name: '平均输入量',
+        score: m => m.calls > 0 ? RADAR_BAND(m.billedInput / m.calls, 5000, 293667) : null,
+        fmt: m => m.calls > 0 ? (m.billedInput / m.calls / 10000).toFixed(1) + '万' : null },
+      { name: '稳定性',
+        score: m => m.p50ResponseMs > 0 && m.p95ResponseMs > m.p50ResponseMs
+          ? RADAR_BAND(m.p50ResponseMs / m.p95ResponseMs, 0.008, 0.12) : null,
+        fmt: m => m.p50ResponseMs > 0 && m.p95ResponseMs ? '慢' + Math.round(m.p95ResponseMs / m.p50ResponseMs) + '倍' : null },
+      { name: '实际单价',
+        score: m => { const tot = m.input + m.output + m.cache
+          return m.cost > 0 && tot > 0 ? RADAR_BAND(1 / (m.cost / (tot / 1e6)), 0.5, 10) : null },
+        fmt: m => { const tot = m.input + m.output + m.cache
+          return m.cost > 0 && tot > 0 ? '¥' + (m.cost / (tot / 1e6)).toFixed(2) + '/M' : '未定价' } }
+    ]
     function RadarCard(props) {
       const [hoverId, setHoverId] = React.useState(null)
+      // 图例 hover 是「粘性聚焦」：移开鼠标仍保持高亮（否则用户把指针移向
+      // 图形查看时高亮瞬间消失，看起来像 hover 失效）。点击 = 显式锁定。
+      const [legendId, setLegendId] = React.useState(null)
       const [selectedId, setSelectedId] = React.useState(null)
       const [radarInfoOpen, setRadarInfoOpen] = React.useState(false)
       const toggleSelected = (id) => setSelectedId((prev) => (prev === id ? null : id))
@@ -864,44 +904,18 @@ return {
         if (selectedId && !top.some((m) => m.id === selectedId)) setSelectedId(null)
       }, [selectedId, top])
       const COLORS = RADAR_COLORS
-      const FILL_OPS = RADAR_FILL_OPS
       const STROKE_COLORS = RADAR_COLORS
       const AXES = RADAR_AXES
       const ANGLE_STEP = RADAR_ANGLE_STEP
       const ANGLE_OFF = RADAR_ANGLE_OFF
-      const AXIS_NAMES = RADAR_AXIS_NAMES
+      const DEFS = RADAR_DEFS
       const PLOT = RADAR_PLOT
       const CX = RADAR_CX, CY = RADAR_CY, R = RADAR_R
       const LABEL_R = RADAR_LABEL_R
       function axisAngle(i) { return ANGLE_OFF + i * ANGLE_STEP }
       function polar(r, a) { return { x: CX + r * Math.cos(a), y: CY + r * Math.sin(a) } }
-      const scoreData = top.map((m) => {
-        const re = (m.avgResponseMs && m.avgResponseMs > 0 && m.calls > 0) ? m.output * 1000 / (m.avgResponseMs * m.calls) : null
-        const p50 = m.p50ResponseMs || null
-        const speed = (p50 != null && p50 > 0) ? 1 / p50 : null
-        const p95 = m.p95ResponseMs || null
-        const consist = (p50 != null && p50 > 0 && p95 != null) ? Math.max(1, p95 / p50) : null
-        const consNorm = (consist != null) ? 1 / (1 + consist) : null
-        const ce = (m.cost && m.cost > 0) ? m.output / m.cost : null
-        const ch = (m.cacheHitRate != null) ? m.cacheHitRate : null
-        const to = (m.billedInput && m.billedInput > 0) ? m.output / m.billedInput * 100 : null
-        return { re, speed, consNorm, ce, ch, to }
-      })
-      // 固定上限：基于实际数据设定，取当前最佳值 × ~1.2 留出余量
-      // 最佳模型约在 75-85% 位置，不触圈但饱满
-      const FIXED_MAX = RADAR_FIXED_MAX
-      // 对数刻度 + 缩放因子：响应效率和响应速度数据跨度大，线性会全挤中心
-      // scale 让小数值（如 speed=3e-6）经 log(1+x) 后仍有有效区分度
-      const logNorm = RADAR_LOG_NORM
-      const linNorm = RADAR_LIN_NORM
-      const norms = scoreData.map((s) => [
-        logNorm(s.re, FIXED_MAX[0], 1),
-        logNorm(s.speed, FIXED_MAX[1], 1e6),
-        linNorm(s.consNorm, FIXED_MAX[2]),
-        logNorm(s.ce, FIXED_MAX[3], 1),
-        linNorm(s.ch, FIXED_MAX[4]),
-        linNorm(s.to, FIXED_MAX[5])
-      ])
+      const norms = top.map((m) => DEFS.map((d) => d.score(m)))
+      const chipText = top.map((m) => DEFS.map((d) => d.fmt(m)))
       function makePoly(pts) {
         let d = ''
         let firstValid = true
@@ -920,45 +934,38 @@ return {
           const d = polar(R * f, axisAngle(i))
           return d.x.toFixed(2) + ',' + d.y.toFixed(2)
         }).join(' ')
-        return h('polygon', { key: f, points: pts, style: { fill: 'none', stroke: '#9ca3af', strokeWidth: 1.2 } })
+        return h('polygon', { key: f, points: pts, style: { fill: 'none', stroke: f === 1 ? '#d4d4d8' : '#e9e9ec', strokeWidth: 1 } })
       })
       const axes = Array.from({ length: AXES }, (_, i) => {
         const end = polar(R, axisAngle(i))
-        return h('line', { key: i, x1: CX, y1: CY, x2: end.x.toFixed(2), y2: end.y.toFixed(2), style: { stroke: '#9ca3af', strokeWidth: 1.2 } })
+        return h('line', { key: i, x1: CX, y1: CY, x2: end.x.toFixed(2), y2: end.y.toFixed(2), style: { stroke: '#e9e9ec', strokeWidth: 1 } })
       })
-      // 当前展示模型（hover > selected > 第一个）
-      const activeIdx = hoverId ? top.findIndex((m) => m.id === hoverId) : (selectedId ? top.findIndex((m) => m.id === selectedId) : 0)
+      // 当前展示模型（chart hover > 图例 hover > 点击锁定 > 第一个）
+      const focusId = hoverId || legendId || selectedId
+      const activeIdx = focusId ? top.findIndex((m) => m.id === focusId) : 0
       const activeModel = top[activeIdx] || null
-      const labelEls = AXIS_NAMES.map((label, i) => {
+      const labelEls = DEFS.map((d, i) => {
         const lp = polar(LABEL_R, axisAngle(i))
         const anchor = Math.abs(lp.x - CX) < 1 ? 'middle' : (lp.x > CX ? 'start' : 'end')
-        const score = activeModel && norms[activeIdx] && norms[activeIdx][i] != null ? Math.round(norms[activeIdx][i] * 100) : null
-        const scoreColor = activeModel ? '#18181b' : '#a1a1aa'
-        return h('g', { key: i },
-          h('text', {
-            x: lp.x.toFixed(2), y: (lp.y - 9).toFixed(2),
-            'text-anchor': anchor, 'dominant-baseline': 'middle',
-            style: { fontSize: '19px', fill: '#52525b', fontWeight: 600 }
-          }, label),
-          score != null ? h('text', {
-            x: lp.x.toFixed(2), y: (lp.y + 20).toFixed(2),
-            'text-anchor': anchor, 'dominant-baseline': 'middle',
-            style: { fontSize: '28px', fill: scoreColor, fontWeight: 700, fontFamily: '"JetBrains Mono",ui-monospace,monospace' }
-          }, score) : null)
+        return h('text', {
+          key: i, x: lp.x.toFixed(2), y: (lp.y + 6).toFixed(2),
+          'text-anchor': anchor, 'dominant-baseline': 'middle',
+          style: { fontSize: '22px', fill: '#52525b', fontWeight: 600 }
+        }, d.name)
       })
+      // 外圈基准值不再画在图上（太杂乱），完整标定说明在 ⓘ 弹窗里
       const polys = top.map((m, idx) => {
         const d = makePoly(norms[idx])
-        const isHover = hoverId === m.id
-        const isSelected = selectedId === m.id
-        const isDim = (hoverId !== null && hoverId !== m.id) || (selectedId !== null && selectedId !== m.id)
+        const isFocus = focusId != null && m.id === focusId
+        const isDim = focusId !== null && m.id !== focusId
         if (!d) return null
         return h('path', {
           key: m.id, d,
           fill: COLORS[idx],
-          fillOpacity: isDim ? 0.05 : FILL_OPS[idx],
+          fillOpacity: isDim ? 0.03 : (isFocus ? 0.20 : 0.13),
           stroke: STROKE_COLORS[idx],
-          strokeOpacity: isDim ? 0.15 : 1,
-          strokeWidth: (isHover || isSelected) ? 2.5 : (isDim ? 1 : 1.5),
+          strokeOpacity: isDim ? 0.12 : 0.85,
+          strokeWidth: isFocus ? 2 : 1.4,
           onMouseEnter: () => setHoverId(m.id),
           onMouseLeave: () => setHoverId(null)
         })
@@ -966,66 +973,117 @@ return {
       const dots = top.map((m, idx) => norms[idx].map((v, ai) => {
         if (v == null) return null
         const p = polar(R * v, axisAngle(ai))
-        const isH = hoverId === m.id || selectedId === m.id
-        const isDim = (hoverId !== null && hoverId !== m.id) || (selectedId !== null && selectedId !== m.id)
+        const isH = focusId != null && m.id === focusId
+        const isDim = focusId !== null && m.id !== focusId
         return h('circle', {
-          key: m.id + '-' + ai, cx: p.x.toFixed(2), cy: p.y.toFixed(2), r: isH ? 5 : 3,
+          key: m.id + '-' + ai, cx: p.x.toFixed(2), cy: p.y.toFixed(2), r: isH ? 3.5 : 2.5,
           fill: STROKE_COLORS[idx],
-          fillOpacity: isDim ? 0.15 : 1,
+          fillOpacity: isDim ? 0.12 : 0.85,
           stroke: '#fff',
           strokeOpacity: isDim ? 0.15 : 1,
-          strokeWidth: 1.5,
+          strokeWidth: 1.2,
           style: { transition: 'fill-opacity .15s ease, stroke-opacity .15s ease' },
           onMouseEnter: () => setHoverId(m.id),
           onMouseLeave: () => setHoverId(null)
         })
       })).flat().filter(Boolean)
-      const plotEl = h('svg', { viewBox: '-80 -80 ' + (PLOT + 160) + ' ' + (PLOT + 160), style: { display: 'block', width: '100%', height: '100%' } },
-        h('rect', { x: 0, y: 0, width: PLOT, height: PLOT, style: { fill: '#ffffff' } }),
-        h('rect', { x: 0, y: 0, width: PLOT, height: PLOT, style: { fill: 'transparent' } }),
-        rings, axes, polys, dots, labelEls)
-      const legendEl = h('div', { className: 'dd-radar-legend' },
+      // 顶点真值标签：安静风——白底细灰描边、墨色文字，无投影（最后绘制防遮挡）
+      const chipEls = []
+      if (activeModel && norms[activeIdx]) {
+        norms[activeIdx].forEach((f, i) => {
+          const text = chipText[activeIdx][i]
+          if (f == null || text == null) return
+          const p = polar(Math.min(Math.max(R * f, R * 0.32) + 20, R - 6), axisAngle(i))
+          const w = Math.max(64, text.length * 12 + 26)
+          chipEls.push(h('g', { key: i },
+            h('rect', {
+              x: (p.x - w / 2).toFixed(1), y: (p.y - 16).toFixed(1), width: w, height: 32, rx: 16,
+              fill: '#ffffff', stroke: '#dcdce1', strokeWidth: 1
+            }),
+            h('text', {
+              x: p.x.toFixed(1), y: (p.y + 5.8).toFixed(1), 'text-anchor': 'middle',
+              style: { fontSize: '20px', fontWeight: 600, fill: '#3f3f46', fontFamily: '"JetBrains Mono",ui-monospace,monospace' }
+            }, text)))
+        })
+      }
+      const plotEl = h('svg', { viewBox: '-78 -25 583 470', style: { display: 'block', width: '100%', height: '100%' } },
+        rings, axes, polys, dots, labelEls, chipEls)
+      const legendEl = h('div', { className: 'dd-radar-legend', style: { display: 'flex', flexDirection: 'column', gap: 1 } },
         top.map((m, idx) => {
-          const isHover = hoverId === m.id
-          const isSelected = selectedId === m.id
-          const isDim = (hoverId !== null && hoverId !== m.id) || (selectedId !== null && selectedId !== m.id)
+          const isDim = focusId !== null && m.id !== focusId
           return h('div', {
             key: m.id,
             className: 'dd-dist-item' + (isDim ? ' dim' : ''),
-            onMouseEnter: () => setHoverId(m.id),
-            onMouseLeave: () => setHoverId(null),
+            style: { display: 'block', padding: '3px 8px', cursor: 'pointer' },
+            onMouseEnter: () => setLegendId(m.id),
+            onMouseLeave: () => setLegendId(null),
             onClick: () => toggleSelected(m.id),
-            title: m.id
+            title: m.id + '\n' + DEFS.map((d, i) => d.name + ': ' + (chipText[idx][i] == null ? '—' : chipText[idx][i])).join('\n')
           },
-            h('span', { className: 'dot', style: { backgroundColor: STROKE_COLORS[idx] } }),
-            h('span', { className: 'name' }, m.id))
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 } },
+              h('span', { className: 'dot', style: { backgroundColor: STROKE_COLORS[idx], width: 8, height: 8, borderRadius: 99, flex: 'none' } }),
+              h('span', { style: { fontSize: 11.5, fontWeight: 600, color: '#3f3f46', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, m.id)),
+            h('div', { style: { fontSize: 10.5, color: '#a1a1aa', paddingLeft: 14 } }, m.calls.toLocaleString() + ' 次'))
         }))
+      // 数值卡：每轴一行「标尺」——真值 + 轨道上全部模型的落点（当前模型放大带
+      // 白圈光晕，其余半透明），主色淡填充到当前落点。比纯文字多了对比与量感。
+      const numsEl = (activeModel && norms[activeIdx]) ? h('div', {
+        style: { display: 'flex', flexDirection: 'column', fontSize: '11px', padding: '6px 10px 4px', border: '1px solid #ececee', borderRadius: 8, marginTop: 4, gap: 2 }
+      },
+        DEFS.map((d, i) => {
+          const f = norms[activeIdx][i]
+          const text = chipText[activeIdx][i]
+          const dots = []
+          for (let mi = 0; mi < top.length; mi++) {
+            const v = norms[mi] ? norms[mi][i] : null
+            if (v == null) continue
+            const cur = mi === activeIdx
+            dots.push(h('span', {
+              key: mi,
+              title: top[mi].id + ' · ' + d.name + ': ' + (chipText[mi][i] == null ? '—' : chipText[mi][i]),
+              style: { position: 'absolute', top: '50%', left: (Math.max(0.015, Math.min(1, v)) * 100).toFixed(1) + '%', transform: 'translate(-50%,-50%)',
+                width: cur ? 7 : 5, height: cur ? 7 : 5, borderRadius: 99, background: STROKE_COLORS[mi],
+                opacity: cur ? 0.9 : 0.35, boxSizing: 'border-box',
+                border: cur ? '1.5px solid #fff' : 'none',
+                boxShadow: cur ? '0 0 0 1px ' + STROKE_COLORS[mi] + '66' : 'none', zIndex: cur ? 2 : 1 }
+            }))
+          }
+          return h('div', { key: d.name, style: { padding: '2px 0 1px' } },
+            h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' } },
+              h('span', { style: { color: '#71717a' } }, d.name),
+              h('span', { style: { fontWeight: 700, fontFamily: '"JetBrains Mono",ui-monospace,monospace', color: f == null ? '#a1a1aa' : '#3f3f46', fontVariantNumeric: 'tabular-nums' } }, text == null ? '—' : text)),
+            h('div', { style: { padding: '0 5px' } },
+              h('div', { style: { position: 'relative', height: 11 } },
+                h('span', { style: { position: 'absolute', left: 0, right: 0, top: '50%', height: 2, marginTop: -1, background: '#f0f0f2', borderRadius: 99 } }),
+                f != null ? h('span', { style: { position: 'absolute', left: 0, top: '50%', height: 2, marginTop: -1, width: (Math.max(0.015, Math.min(1, f)) * 100).toFixed(1) + '%', background: STROKE_COLORS[activeIdx], opacity: 0.18, borderRadius: 99 } }) : null,
+                dots)))
+        })) : null
       const radarPopup = h('div', null,
         h('div', { className: 'pop-title' }, '雷达图六维度说明'),
         h('div', { className: 'pop-body' },
           h('div', { className: 'pop-sec', style: { marginTop: 0 } },
-            h('div', { className: 'sec-title' }, '响应效率'),
-            h('div', null, '模型每秒能生成多少 tokens，综合衡量生成速度与产出量。')),
-          h('div', { className: 'pop-sec' },
             h('div', { className: 'sec-title' }, '响应速度'),
-            h('div', null, '大多数请求的实际响应快慢，取中位数（P50），不受极端慢请求影响。')),
+            h('div', null, '一次请求通常要等多久（中位数）。外圈 = 1 秒')),
           h('div', { className: 'pop-sec' },
-            h('div', { className: 'sec-title' }, '一致性'),
-            h('div', null, '响应时间的波动程度。P95 与 P50 的比值越小，说明慢请求与快请求的差距越小。')),
+            h('div', { className: 'sec-title' }, '输出速度'),
+            h('div', null, '模型每秒吐出多少 tokens。外圈 = 166 tok/s')),
           h('div', { className: 'pop-sec' },
-            h('div', { className: 'sec-title' }, '成本效率'),
-            h('div', null, '每一元钱能生成多少输出 tokens，衡量实际使用中的性价比。')),
+            h('div', { className: 'sec-title' }, '平均输出量'),
+            h('div', null, '平均每次回复写多少 tokens。外圈 = 1,645 tok/次')),
           h('div', { className: 'pop-sec' },
-            h('div', { className: 'sec-title' }, '缓存命中'),
-            h('div', null, '重复利用缓存的比例。越高代表越多内容从缓存直接读取而非重新计算，能显著降低成本和延迟。')),
+            h('div', { className: 'sec-title' }, '平均输入量'),
+            h('div', null, '平均每次读入多少 tokens。外圈 = 29.4 万 tok/次')),
           h('div', { className: 'pop-sec' },
-            h('div', { className: 'sec-title' }, 'Token产出'),
-            h('div', null, '输入转化为输出的比例，衡量模型将输入信息转化为有效输出的能力。'))))
+            h('div', { className: 'sec-title' }, '稳定性'),
+            h('div', null, '最慢的 5% 请求比典型请求慢几倍。外圈 = 慢 ≤8.3 倍')),
+          h('div', { className: 'pop-sec' },
+            h('div', { className: 'sec-title' }, '实际单价'),
+            h('div', null, '每百万 tokens 实际花多少钱。外圈 = ¥0.10/M'))))
       const radarInfo = h(Popup, {
         open: radarInfoOpen,
         onToggle: () => setRadarInfoOpen(!radarInfoOpen),
         onClose: () => setRadarInfoOpen(false),
-        width: 360,
+        width: 300,
         children: radarPopup
       })
       const head = h('div', { className: 'dd-chart-head' },
@@ -1038,42 +1096,49 @@ return {
           head,
           h('div', { className: 'dd-empty' }, '暂无可用模型数据'))
       }
-      return h('div', { className: 'dd-radar' },
+      return h('div', {
+        className: 'dd-radar',
+        // 图例悬停是即时的：放上高亮该模型，移开即恢复全览（item 级 mouseleave）。
+        // 卡级 leave 只作兜底（指针从图例直接飞出窗口等场景）。点击 = 显式锁定。
+        onMouseLeave: () => setLegendId(null)
+      },
         head,
-        h('div', { className: 'dd-radar-body' },
-          h('div', { className: 'dd-radar-donut' }, plotEl),
-          legendEl))
+        h('div', { className: 'dd-radar-body', style: { display: 'flex', alignItems: 'center', gap: 12 } },
+          h('div', { className: 'dd-radar-donut', style: { width: 250, height: 250, flex: 'none' } }, plotEl),
+          h('div', { style: { flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column' } },
+            legendEl,
+            numsEl)))
     }
 
-    // Cache hit-rate trend
+    // 缓存洞察：KPI 条 + 双视图（命中率/用量）+ 自适应 Y 轴 + 模型缓存排行（点击筛选）
     function CacheTrendCard(props) {
       const buckets = props.buckets || []
       const granularity = props.granularity || 'week'
+      const totals = props.totals || {}
+      const usd = !!props.usd
+      const CACHE_DOT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#d946ef', '#64748b']
+      const fmtCostShort = (v) => {
+        const r = Math.round(usd ? v / 7 : v)
+        return (usd ? '$' : '¥') + r.toLocaleString('en-US')
+      }
+      // 预计节省：缓存读取 token × (输入价 − 缓存价)；未定价模型 null（显示 —），免费模型如实 0
+      const savedOf = (m) => m.p ? Math.max(0, (m.cacheRead || 0) * (m.p[0] - m.p[2]) / 1e6) : null
+      const cacheModels = (props.models || [])
+        .filter((m) => (m.cacheRead || 0) > 0)
+        .sort((a, b) => b.cacheRead - a.cacheRead)
+      const totalSaved = cacheModels.reduce((s, m) => { const v = savedOf(m); return v ? s + v : s }, 0)
+
+      const [view, setView] = React.useState('hit')   // 'hit' | 'vol'
+      const [switchSeq, setSwitchSeq] = React.useState(0) // 视图切换计数：作为动画层的 remount key，让入场动画每次切换都重播
       const [hoverIdx, setHoverIdx] = React.useState(null)
-      const W = 360, H = 200, PAD = { top: 14, right: 14, bottom: 30, left: 40 }
+      const [expanded, setExpanded] = React.useState(false)
+      const [infoOpen, setInfoOpen] = React.useState(false)
+
+      const W = 460, H = 152, PAD = { top: 12, right: 14, bottom: 22, left: 38 }
       const PW = W - PAD.left - PAD.right
       const PH = H - PAD.top - PAD.bottom
-      const displayBuckets = buckets.map((b) => ({
-        ...b,
-        hasCacheData: b.cacheHitRate != null && b.cacheObserved > 0
-      }))
-      if (buckets.length === 0) {
-        return h('div', { className: 'dd-chart' },
-          h('div', { className: 'dd-chart-head' },
-            h('div', { className: 'dd-chart-title' },
-              h('span', { className: 'icon' }, ICON_ECG),
-              h('span', null, '缓存命中率趋势'))),
-          h('div', { className: 'dd-cache-empty' }, '暂无数据'))
-      }
-      const toY = (v) => v == null ? null : PAD.top + PH * (1 - Math.max(0, Math.min(100, v)) / 100)
-      const toX = (i) => PAD.left + (i / Math.max(1, displayBuckets.length - 1)) * PW
-      function fmtH9(e) {
-        e = Number(e) || 0
-        if (e >= 1e9) return (e / 1e9).toFixed(1) + 'B'
-        if (e >= 1e6) return (e / 1e6).toFixed(1) + 'M'
-        if (e >= 1e3) return (e / 1e3).toFixed(1) + 'K'
-        return String(e)
-      }
+      const n = buckets.length
+      const toX = (i) => PAD.left + (i / Math.max(1, n - 1)) * PW
       function axisLabel(label, gran) {
         if (gran === 'hour') return pad2(Number(label)) + ':00'
         if (gran === 'week') {
@@ -1083,134 +1148,318 @@ return {
         }
         return label
       }
-      // 自适应采样：根据可用宽度和标签平均宽度计算最多显示几个
-      const MIN_LABEL_GAP = 38  // 每个标签最小间距（像素）
-      const maxLabels = Math.max(3, Math.floor(PW / MIN_LABEL_GAP))
-      const labelIdx = displayBuckets.length > maxLabels
-        ? Array.from({ length: maxLabels }, (_, k) => Math.round(k * (displayBuckets.length - 1) / (maxLabels - 1))).filter((v, i, a) => i === 0 || v !== a[i - 1])
-        : null
-      const xLabels = labelIdx
-        ? labelIdx.map((i) => axisLabel(displayBuckets[i].label, granularity))
-        : displayBuckets.map((b) => axisLabel(b.label, granularity))
-      const gridLines = [0, 25, 50, 75, 100].map((v) =>
-        h('line', { key: v, x1: PAD.left, y1: toY(v), x2: W - PAD.right, y2: toY(v), style: { stroke: '#f0f0f2', strokeWidth: 1 } }))
-      const yAxis = h('line', { x1: PAD.left, y1: PAD.top, x2: PAD.left, y2: PAD.top + PH, style: { stroke: '#e4e4e7', strokeWidth: 1 } })
-      const xAxis = h('line', { x1: PAD.left, y1: PAD.top + PH, x2: W - PAD.right, y2: PAD.top + PH, style: { stroke: '#e4e4e7', strokeWidth: 1 } })
-      const yLabelEls = [0, 25, 50, 75, 100].map((v, i) =>
-        h('text', { key: 'y' + i, x: PAD.left - 6, y: toY(v) + 4, 'text-anchor': 'end', style: { fontSize: '11px', fill: '#9ca3af' } }, v + '%'))
-      const xLabelEls = xLabels.map((lbl, i) => {
-        const idx = labelIdx ? labelIdx[i] : i
-        const x = idx !== undefined ? toX(idx) : PAD.left + (i / Math.max(1, displayBuckets.length - 1)) * PW
-        return h('text', { key: 'x' + i, x, y: PAD.top + PH + 18, 'text-anchor': 'middle', style: { fontSize: '11px', fill: '#6b7280' } }, lbl)
-      })
-      const n = displayBuckets.length
-      function lineD() {
-        if (n < 2) return ''
-        let d = '', segOpen = false
-        for (let i = 0; i < n; i++) {
-          const y = toY(displayBuckets[i].cacheHitRate)
-          if (y == null) { segOpen = false; continue }
-          d += (segOpen ? ' L' : ' M') + toX(i).toFixed(2) + ' ' + y.toFixed(2)
-          segOpen = true
-        }
-        return d
+
+      // 有遥测的桶（命中率 + 覆盖率共同决定自适应域）
+      const hitVals = []
+      for (let i = 0; i < n; i++) {
+        const b = buckets[i]
+        if (b.cacheHitRate != null && b.cacheObserved > 0) { hitVals.push(b.cacheHitRate); hitVals.push(b.cacheCoverage || 0) }
       }
-      // 灰色虚线：连接所有点，无数据点位于 y 轴中点
-      function grayLineD() {
-        if (n < 2) return ''
-        const midY = PAD.top + PH / 2
-        let d = 'M' + toX(0).toFixed(2) + ' ' + (toY(displayBuckets[0].cacheHitRate) ?? midY).toFixed(2)
-        for (let i = 1; i < n; i++) {
-          d += ' L' + toX(i).toFixed(2) + ' ' + (toY(displayBuckets[i].cacheHitRate) ?? midY).toFixed(2)
-        }
-        return d
-      }
-      function areaD() {
-        if (n < 2) return ''
-        const base = PAD.top + PH
-        let d = ''
-        // 按连续有数据段分别填充
-        let i = 0
-        while (i < n) {
-          if (toY(displayBuckets[i].cacheHitRate) == null) { i++; continue }
-          const start = i
-          let seg = 'M' + toX(start).toFixed(2) + ' ' + base.toFixed(2)
-          seg += ' L' + toX(start).toFixed(2) + ' ' + toY(displayBuckets[start].cacheHitRate).toFixed(2)
-          for (i = start + 1; i < n && toY(displayBuckets[i].cacheHitRate) != null; i++)
-            seg += ' L' + toX(i).toFixed(2) + ' ' + toY(displayBuckets[i].cacheHitRate).toFixed(2)
-          seg += ' L' + toX(i - 1).toFixed(2) + ' ' + base.toFixed(2) + ' Z'
-          d += seg
-        }
-        return d
-      }
-      const dotEls = displayBuckets.map((b, i) => {
-        const y = toY(b.cacheHitRate)
-        if (y == null) {
-          // 无数据点：灰色空心圆，标记位置但不参与折线
-          return h('circle', {
-            key: i,
-            cx: toX(i).toFixed(2), cy: (PAD.top + PH / 2).toFixed(2), r: 3,
-            style: { fill: '#fff', stroke: '#d4d4d8', strokeWidth: 1.5, cursor: 'pointer' },
-            onMouseEnter: (e) => { e.stopPropagation(); setHoverIdx(i) },
-            onMouseLeave: () => setHoverIdx(null)
-          })
-        }
-        const isHover = hoverIdx === i
-        return h('circle', {
-          key: i,
-          cx: toX(i).toFixed(2), cy: y.toFixed(2), r: isHover ? 5 : 3,
-          style: { fill: '#10b981', stroke: '#fff', strokeWidth: 1.5, cursor: 'pointer' },
-          onMouseEnter: (e) => { e.stopPropagation(); setHoverIdx(i) },
-          onMouseLeave: () => setHoverIdx(null)
-        })
-      })
-      const guideLine = hoverIdx !== null ? h('line', {
-        key: 'guide', x1: toX(hoverIdx), y1: PAD.top, x2: toX(hoverIdx), y2: PAD.top + PH,
-        style: { stroke: '#a1a1aa', strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.6 }
-      }) : null
-      let tipContent = null
-      if (hoverIdx !== null) {
-        const b = displayBuckets[hoverIdx]
-        const tipTime = granularity === 'hour' ? pad2(Number(b.label)) + ':00' : b.label
-        const noData = !b.hasCacheData
-        tipContent = h('div', {
-          className: 'dd-cache-tip',
-          style: { position: 'absolute', left: Math.min(W - 130, Math.max(PAD.left, toX(hoverIdx) - 65)), top: Math.max(0, (toY(b.cacheHitRate) ?? PAD.top + PH / 2) - 70), pointerEvents: 'none' }
-        },
-          h('div', { className: 'dd-cache-tip-line' }, tipTime),
-          h('div', { style: { fontSize: '11px', color: noData ? '#a1a1aa' : '#18181b', whiteSpace: 'nowrap', fontWeight: noData ? '400' : '600' } }, '命中率: ' + (noData ? '无遥测' : b.cacheHitRate.toFixed(1) + '%')),
-          h('div', { style: { fontSize: '11px', color: '#71717a', whiteSpace: 'nowrap' } }, '缓存读取: ' + fmtH9(b.cacheRead)),
-          h('div', { style: { fontSize: '11px', color: '#71717a', whiteSpace: 'nowrap' } }, '覆盖率: ' + (b.cacheCoverage != null ? b.cacheCoverage.toFixed(1) : '—') + '%'))
-      }
-      const head = h('div', { className: 'dd-chart-head' },
+      const cacheInfo = h('div', null,
+        h('div', { className: 'pop-title' }, '缓存指标说明'),
+        h('div', { className: 'pop-body' },
+          h('div', { className: 'pop-sec', style: { marginTop: 0 } },
+            h('div', { className: 'sec-title' }, '命中率'),
+            h('div', null, '能走缓存的输入 tokens 里，直接由缓存供上的比例。越高说明同样的上下文没有重复花钱。')),
+          h('div', { className: 'pop-sec' },
+            h('div', { className: 'sec-title' }, '覆盖率'),
+            h('div', null, '计费输入中，模型上报了缓存遥测的比例。没上报的部分不计入命中率，避免把未知当成未命中。')),
+          h('div', { className: 'pop-sec' },
+            h('div', { className: 'sec-title' }, '预计节省'),
+            h('div', null, '若缓存未命中，这些 tokens 要按各模型输入价付费，差额即节省。免费/开源模型输入本就不计费，节省为 ¥0。')),
+          h('div', { className: 'pop-sec' },
+            h('div', { className: 'sec-title' }, '模型排行条'),
+            h('div', null, '条长 = 该模型缓存读取量的相对大小；琥珀色刻度 = 它的覆盖率；点击行可按该模型筛选全看板。'))))
+      const mkHead = () => h('div', { className: 'dd-chart-head', style: { marginBottom: 12 } },
         h('div', { className: 'dd-chart-title' },
           h('span', { className: 'icon' }, ICON_ECG),
-          h('span', null, '缓存命中率趋势')))
+          h('span', null, '缓存洞察'),
+          h(Popup, {
+            open: infoOpen,
+            onToggle: () => setInfoOpen(!infoOpen),
+            onClose: () => setInfoOpen(false),
+            width: 320,
+            tip: '缓存指标说明',
+            children: cacheInfo
+          })),
+        h('div', { className: 'dd-chart-tools' },
+          h(Segmented, {
+            ariaLabel: '缓存视图',
+            options: [{ key: 'hit', label: '命中率' }, { key: 'vol', label: '用量' }],
+            active: view,
+            onSelect: (k) => { if (k === view) return; setView(k); setSwitchSeq((v) => v + 1); setHoverIdx(null) }
+          })))
+      if (n === 0) {
+        return h('div', { className: 'dd-chart' }, mkHead(), h('div', { className: 'dd-cache-empty' }, '暂无数据'))
+      }
+
+      function niceDomain(vals) {
+        let lo = 100, hi = 0
+        for (const v of vals) { if (v < lo) lo = v; if (v > hi) hi = v }
+        const span = Math.max(4, hi - lo)
+        const step = span <= 6 ? 2 : span <= 15 ? 5 : 10
+        const dLo = Math.max(0, Math.floor((lo - span * 0.15) / step) * step)
+        let dHi = Math.min(100, Math.ceil((hi + span * 0.15) / step) * step)
+        if (dHi <= dLo) dHi = Math.min(100, dLo + step * 2)
+        return [dLo, dHi]
+      }
+      const domain = (view === 'hit' && hitVals.length) ? niceDomain(hitVals) : [0, 100]
+      const toY = (v) => v == null ? null : PAD.top + PH * (1 - (Math.max(domain[0], Math.min(domain[1], v)) - domain[0]) / (domain[1] - domain[0]))
+      const tickVals = []
+      for (let k = 0; k <= 4; k++) tickVals.push(Math.round(domain[0] + (domain[1] - domain[0]) * k / 4))
+
+      // monotone cubic（Fritsch–Carlson）：平滑但不越过数据点
+      function smooth(pts) {
+        const m = pts.length
+        if (m < 2) return ''
+        const dx = [], sl = []
+        for (let i = 0; i < m - 1; i++) { dx[i] = pts[i + 1][0] - pts[i][0]; sl[i] = (pts[i + 1][1] - pts[i][1]) / dx[i] }
+        const t = [sl[0]]
+        for (let i = 1; i < m - 1; i++) t[i] = (sl[i - 1] * sl[i] <= 0) ? 0 : (sl[i - 1] + sl[i]) / 2
+        t[m - 1] = sl[m - 2]
+        for (let i = 0; i < m - 1; i++) if (sl[i] === 0) { t[i] = 0; t[i + 1] = 0 }
+        let d = 'M' + pts[0][0].toFixed(1) + ' ' + pts[0][1].toFixed(1)
+        for (let i = 0; i < m - 1; i++) {
+          const h3 = dx[i] / 3
+          d += ' C' + (pts[i][0] + h3).toFixed(1) + ' ' + (pts[i][1] + t[i] * h3).toFixed(1) +
+            ' ' + (pts[i + 1][0] - h3).toFixed(1) + ' ' + (pts[i + 1][1] - t[i + 1] * h3).toFixed(1) +
+            ' ' + pts[i + 1][0].toFixed(1) + ' ' + pts[i + 1][1].toFixed(1)
+        }
+        return d
+      }
+      function segsOf(get) {
+        const out = []
+        for (let i = 0; i < n; i++) {
+          const b = buckets[i]
+          if (b.cacheHitRate == null) continue
+          const p = [toX(i), toY(get(b))]
+          const last = out[out.length - 1]
+          if (last && last.end === i - 1) { last.end = i; last.pts.push(p) }
+          else out.push({ start: i, end: i, pts: [p] })
+        }
+        return out
+      }
+      const hitSegs = segsOf((b) => b.cacheHitRate)
+      const covSegs = segsOf((b) => b.cacheCoverage)
+      const base = PAD.top + PH
+      const hitPaths = hitSegs.map((s) => smooth(s.pts))
+      const covPaths = covSegs.map((s) => smooth(s.pts))
+      const areaDs = hitSegs.filter((s) => s.pts.length >= 2).map((s) =>
+        smooth(s.pts) + ' L' + s.pts[s.pts.length - 1][0].toFixed(1) + ' ' + base + ' L' + s.pts[0][0].toFixed(1) + ' ' + base + ' Z')
+      const hitBuckets = buckets.filter((b) => b.cacheHitRate != null)
+      const hitAvg = hitBuckets.length ? hitBuckets.reduce((s, b) => s + b.cacheHitRate, 0) / hitBuckets.length : null
+
+      // 无遥测区间的浅灰带
+      const gapBands = []
+      {
+        let i = 0
+        while (i < n) {
+          if (buckets[i].cacheHitRate != null) { i++; continue }
+          const st = i
+          while (i < n && buckets[i].cacheHitRate == null) i++
+          const x1 = st === 0 ? PAD.left : (toX(st - 1) + toX(st)) / 2
+          const x2 = i >= n ? W - PAD.right : (toX(i - 1) + toX(i)) / 2
+          gapBands.push([x1, x2])
+        }
+      }
+      const lastSeg = hitSegs[hitSegs.length - 1]
+      const lastIdx = lastSeg ? lastSeg.end : null
+
+      // ---- 用量视图几何 ----
+      const vol = buckets.map((b) => {
+        const read = b.cacheRead || 0
+        return { read, miss: Math.max(0, (b.billedInput || 0) - read) }
+      })
+      let volMax = 0
+      for (const v of vol) if (v.read + v.miss > volMax) volMax = v.read + v.miss
+      volMax = Math.max(1, volMax)
+      const toYV = (v) => PAD.top + PH * (1 - Math.min(1, v / volMax))
+      // 用量视图用分带（band）刻度：柱心在等宽槽位中央，首柱不会像点刻度那样半截越出
+      // 绘图区压住 Y 轴刻度标签（桶少柱宽时尤其明显）；宽度上限防止单桶时柱占满全图。
+      const toXB = (i) => PAD.left + (i + 0.5) * PW / n
+      const BW = Math.min(26, Math.max(3, PW / n * 0.62))
+      const volTick = [0, 0.25, 0.5, 0.75, 1].map((f) => ({ y: PAD.top + PH * (1 - f), v: volMax * f }))
+
+      // ---- 轴与标签 ----
+      const MIN_LABEL_GAP = 44
+      const maxLabels = Math.max(3, Math.floor(PW / MIN_LABEL_GAP))
+      // 固定步长抽样：每隔 labelStep 个桶标一个刻度（今天 24 小时 → 每 3 小时一格）。
+      // 此前「均匀取 maxLabels 个点再四舍五入」会产生 1/2/3 混合间隔，轴上看起来有的显示有的突然不显示。
+      const labelStep = Math.max(1, Math.ceil(n / maxLabels))
+      const labelIdx = n > maxLabels
+        ? Array.from({ length: Math.ceil(n / labelStep) }, (_, k) => k * labelStep)
+        : null
+      const mkXLabels = (toFn) => (labelIdx || Array.from({ length: n }, (_, i) => i)).map((idx) =>
+        h('text', { key: 'x' + idx, x: toFn(idx), y: PAD.top + PH + 15, 'text-anchor': 'middle', style: { fontSize: '10px', fill: '#9ca3af' } }, axisLabel(buckets[idx].label, granularity)))
+      const hitGridEls = tickVals.map((v, i) => h('g', { key: 'y' + i },
+        h('line', { x1: PAD.left, y1: toY(v), x2: W - PAD.right, y2: toY(v), style: { stroke: '#f0f0f2', strokeWidth: 1 } }),
+        h('text', { x: PAD.left - 5, y: toY(v) + 3, 'text-anchor': 'end', style: { fontSize: '9px', fill: '#9ca3af' } }, v + '%')))
+      const volGridEls = volTick.map((t, i) => h('g', { key: 'y' + i },
+        h('line', { x1: PAD.left, y1: t.y, x2: W - PAD.right, y2: t.y, style: { stroke: '#f0f0f2', strokeWidth: 1 } }),
+        h('text', { x: PAD.left - 5, y: t.y + 3, 'text-anchor': 'end', style: { fontSize: '9px', fill: '#9ca3af' } }, fmtH9(t.v))))
+
+      // ---- hover ----
+      const hoverB = hoverIdx != null ? buckets[hoverIdx] : null
+      let tipEl = null
+      if (hoverB) {
+        const tipTime = granularity === 'hour' ? pad2(Number(hoverB.label)) + ':00' : hoverB.label
+        const noData = hoverB.cacheHitRate == null
+        const pct = (view === 'hit' ? toX(hoverIdx) : toXB(hoverIdx)) / W * 100
+        const tx = pct < 30 ? 'translateX(-12%)' : pct > 70 ? 'translateX(-88%)' : 'translateX(-50%)'
+        tipEl = h('div', {
+          className: 'dd-cache-tip',
+          style: { position: 'absolute', left: pct.toFixed(1) + '%', top: 6, transform: tx, pointerEvents: 'none' }
+        },
+          h('div', { className: 'dd-cache-tip-line' }, tipTime),
+          view === 'hit'
+            ? h('div', { key: 'r1', style: { fontSize: '11px', color: noData ? '#a1a1aa' : '#18181b', whiteSpace: 'nowrap', fontWeight: noData ? '400' : '600' } }, '命中率: ' + (noData ? '无遥测' : hoverB.cacheHitRate.toFixed(1) + '%'))
+            : h('div', { key: 'r1', style: { fontSize: '11px', color: '#047857', whiteSpace: 'nowrap', fontWeight: '600' } }, '缓存读取: ' + fmtH9(hoverB.cacheRead || 0)),
+          view === 'hit'
+            ? h('div', { key: 'r2', style: { fontSize: '11px', color: '#71717a', whiteSpace: 'nowrap' } }, '缓存读取: ' + fmtH9(hoverB.cacheRead || 0))
+            : h('div', { key: 'r2', style: { fontSize: '11px', color: '#71717a', whiteSpace: 'nowrap' } }, '未命中输入: ' + fmtH9(Math.max(0, (hoverB.billedInput || 0) - (hoverB.cacheRead || 0)))),
+          view === 'hit'
+            ? h('div', { key: 'r3', style: { fontSize: '11px', color: '#71717a', whiteSpace: 'nowrap' } }, '覆盖率: ' + (!noData && hoverB.cacheCoverage != null ? hoverB.cacheCoverage.toFixed(1) + '%' : '—'))
+            : h('div', { key: 'r3', style: { fontSize: '11px', color: '#71717a', whiteSpace: 'nowrap' } }, '命中率: ' + (noData ? '无遥测' : hoverB.cacheHitRate.toFixed(1) + '%')))
+      }
+      const guideX = hoverIdx != null ? (view === 'hit' ? toX(hoverIdx) : toXB(hoverIdx)) : 0
+      const guideLine = hoverIdx != null ? h('line', {
+        key: 'guide', x1: guideX, y1: PAD.top, x2: guideX, y2: base,
+        style: { stroke: '#a1a1aa', strokeWidth: 1, strokeDasharray: '3 3', opacity: 0.6 }
+      }) : null
+      const hoverRect = h('rect', {
+        key: 'hit-area',
+        x: PAD.left, y: PAD.top, width: PW, height: PH,
+        style: { fill: 'transparent', cursor: 'crosshair' },
+        onMouseMove: (e) => {
+          const svgEl = e.currentTarget.closest('svg')
+          if (!svgEl) return
+          const rect = svgEl.getBoundingClientRect()
+          const mx = (e.clientX - rect.left) / rect.width * W
+          // 命中率视图是点刻度（round 最近点）；用量视图是分带刻度（floor 落在哪个槽位）
+          const idx = view === 'hit'
+            ? Math.round(((mx - PAD.left) / PW) * (n - 1))
+            : Math.floor(((mx - PAD.left) / PW) * n)
+          setHoverIdx(Math.max(0, Math.min(n - 1, idx)))
+        },
+        onMouseLeave: () => setHoverIdx(null)
+      })
+
+      // ---- SVG 内容：两个视图层常驻，交叉淡入淡出；激活层通过 CSS 动画重播入场效果 ----
+      // 折线用 pathLength=1 归一化后动画 stroke-dashoffset（描边生长）；柱子 scaleY 从基线弹起并按索引错峰。
+      // 基态样式 = 动画终态，所以淡出的旧层立即呈现完整图形、只走 opacity 过渡。
+      const hitLayer = h('g', { key: 'Lhit', className: 'ddc-layer' + (view === 'hit' ? ' on' : '') }, [
+        gapBands.map(([x1, x2], i) => h('rect', { key: 'gap' + i, x: x1, y: PAD.top, width: Math.max(0, x2 - x1), height: PH, style: { fill: '#fafafa' } })),
+        h('g', { key: 'grid' }, hitGridEls),
+        h('g', { key: 'area' }, areaDs.map((d, i) => h('path', { key: 'ar' + i, className: 'ddc-area', d, style: { fill: 'url(#ddCacheGrad)' } }))),
+        h('g', { key: 'cov', className: 'ddc-cov' }, covPaths.map((d, i) => h('path', { key: 'cov' + i, d, style: { stroke: '#f59e0b', strokeWidth: 1.4, fill: 'none', strokeDasharray: '4 3', opacity: 0.8 } }))),
+        hitAvg != null && hitAvg > domain[0] && hitAvg < domain[1] ? h('g', { key: 'avg', className: 'ddc-area' },
+          h('line', { x1: PAD.left, x2: W - PAD.right, y1: toY(hitAvg), y2: toY(hitAvg), style: { stroke: '#a1a1aa', strokeWidth: 1, strokeDasharray: '2 3', opacity: 0.55 } }),
+          h('text', { x: PAD.left + 4, y: toY(hitAvg) - 3, 'text-anchor': 'start', style: { fontSize: '9px', fill: '#a1a1aa' } }, '均值 ' + hitAvg.toFixed(1) + '%')) : null,
+        h('g', { key: 'lines' }, hitPaths.map((d, i) => h('path', {
+          key: 'ln' + i, className: 'ddc-line', d, pathLength: 1,
+          style: { stroke: '#10b981', strokeWidth: 2.2, fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round', strokeDasharray: 1, strokeDashoffset: 0 }
+        }))),
+        h('g', { key: 'dots', className: 'ddc-area' }, buckets.map((b, i) => b.cacheHitRate == null
+          ? h('circle', { key: 'd' + i, cx: toX(i), cy: base, r: 2, style: { fill: 'none', stroke: '#d4d4d8', strokeWidth: 1.5 } })
+          : i === lastIdx ? null : h('circle', { key: 'd' + i, cx: toX(i), cy: toY(b.cacheHitRate), r: hoverIdx === i ? 4 : 2.4, style: { fill: '#10b981', stroke: '#fff', strokeWidth: 1.2 } }))),
+        lastIdx != null ? h('g', { key: 'ld', className: 'ddc-area' }, hoverIdx === lastIdx
+          ? h('circle', { cx: toX(lastIdx), cy: toY(buckets[lastIdx].cacheHitRate), r: 4, style: { fill: '#10b981', stroke: '#fff', strokeWidth: 1.8 } })
+          : [h('circle', { key: 'c', cx: toX(lastIdx), cy: toY(buckets[lastIdx].cacheHitRate), r: 4, style: { fill: '#10b981', stroke: '#fff', strokeWidth: 1.8 } }),
+            (() => {
+              const cw = 46
+              const cx = Math.max(PAD.left, Math.min(W - PAD.right - cw, toX(lastIdx) - cw - 10))
+              const cy = Math.max(1, toY(buckets[lastIdx].cacheHitRate) - 24)
+              return [h('rect', { key: 'r', x: cx, y: cy, width: cw, height: 17, rx: 8.5, style: { fill: '#10b981' } }),
+                h('text', { key: 't', x: cx + cw / 2, y: cy + 12, 'text-anchor': 'middle', style: { fontSize: '10px', fontWeight: '700', fill: '#fff' } }, buckets[lastIdx].cacheHitRate.toFixed(1) + '%')]
+            })()]) : null,
+        mkXLabels(toX)
+      ])
+      const volLayer = h('g', { key: 'Lvol', className: 'ddc-layer' + (view === 'vol' ? ' on' : '') }, [
+        h('g', { key: 'grid' }, volGridEls),
+        h('g', { key: 'bars' }, vol.map((v, i) => {
+          const tot = v.read + v.miss
+          if (!tot) return h('rect', { key: 'b' + i, x: toXB(i) - BW / 2, y: base - 2, width: BW, height: 2, rx: 1, style: { fill: '#f0f0f2' } })
+          const yTot = toYV(tot), yRead = toYV(v.read)
+          const dim = hoverIdx != null && hoverIdx !== i
+          return h('g', { key: 'b' + i, className: 'ddc-bar', style: { opacity: dim ? 0.45 : 1, '--i': i } },
+            h('rect', { x: toXB(i) - BW / 2, y: yTot, width: BW, height: Math.max(1, yRead - yTot), rx: 2, style: { fill: '#e4e4e7' } }),
+            v.read > 0 ? h('rect', { x: toXB(i) - BW / 2, y: yRead, width: BW, height: Math.max(1, base - yRead), rx: 2, style: { fill: '#10b981', opacity: 0.85 } }) : null)
+        })),
+        mkXLabels(toXB)
+      ])
+      const svgKids = [
+        h('defs', { key: 'defs' }, h('linearGradient', { id: 'ddCacheGrad', x1: '0', y1: '0', x2: '0', y2: '1' },
+          h('stop', { offset: '0', 'stop-color': '#10b981', 'stop-opacity': '0.14' }),
+          h('stop', { offset: '1', 'stop-color': '#10b981', 'stop-opacity': '0' }))),
+        hitLayer,
+        volLayer,
+        guideLine,
+        hoverRect
+      ]
+
+      // ---- KPI 条 ----
+      const deltaPp = totals.cacheHitRateDeltaPp
+      const kpi = (lab, valEl, hero) => h('div', { key: lab, className: 'dd-cache-kpi' + (hero ? ' hero' : '') },
+        h('div', { className: 'lab' }, lab), h('div', { className: 'val' }, valEl))
+      const kpis = view === 'hit'
+        ? h('div', { key: 'k' + switchSeq, className: 'dd-cache-kpis ddc-in' },
+            kpi('窗口命中率', totals.cacheHitRate != null
+              ? [String(totals.cacheHitRate.toFixed(1)) + '%', deltaPp != null ? h('span', { key: 'd', className: 'delta ' + (deltaPp >= 0 ? 'up' : 'down') }, (deltaPp >= 0 ? '▲' : '▼') + Math.abs(deltaPp).toFixed(1) + 'pp') : null]
+              : '—'),
+            kpi('遥测覆盖率', totals.cacheCoverage > 0 ? totals.cacheCoverage.toFixed(1) + '%' : '—'),
+            kpi('预计节省', cacheModels.length ? fmtCostShort(totalSaved) : '—', true))
+        : h('div', { key: 'k' + switchSeq, className: 'dd-cache-kpis ddc-in' },
+            kpi('缓存读取', (totals.cacheRead || totals.cacheReadTokens) ? fmtH9(totals.cacheRead || totals.cacheReadTokens) : '—'),
+            kpi('计费输入', (totals.billedInput || totals.billedInputTokens) ? fmtH9(totals.billedInput || totals.billedInputTokens) : '—'),
+            kpi('读取占比', totals.billedInput > 0 ? [String((100 * (totals.cacheRead || 0) / totals.billedInput).toFixed(1)), h('small', { key: 'u' }, '%')] : '—', true))
+
+      const legend = view === 'hit'
+        ? h('div', { key: 'g' + switchSeq, className: 'dd-cache-legend ddc-in' },
+            h('span', { className: 'lg' }, h('i', { className: 'sw', style: { borderTopColor: '#10b981' } }), '命中率'),
+            h('span', { className: 'lg' }, h('i', { className: 'sw', style: { borderTopColor: '#f59e0b', borderTopStyle: 'dashed' } }), '覆盖率'),
+            h('span', { className: 'lg' }, h('i', { className: 'sw', style: { borderTopColor: '#a1a1aa', borderTopStyle: 'dotted' } }), '均值'))
+        : h('div', { key: 'g' + switchSeq, className: 'dd-cache-legend ddc-in' },
+            h('span', { className: 'lg' }, h('i', { className: 'sw blk', style: { background: '#10b981' } }), '缓存读取'),
+            h('span', { className: 'lg' }, h('i', { className: 'sw blk', style: { background: '#e4e4e7' } }), '未命中计费输入'))
+
+      // ---- 模型排行 ----
+      let modelsEl = null
+      if (cacheModels.length) {
+        const sel = props.modelSel
+        const shown = expanded ? cacheModels : cacheModels.slice(0, 5)
+        const maxRead = cacheModels[0].cacheRead || 1
+        modelsEl = h('div', { className: 'dd-cache-models' },
+          h('div', { className: 'dd-cache-mtitle' },
+            h('span', null, '模型缓存排行 · 按读取量'),
+            cacheModels.length > 5 ? h('button', { type: 'button', className: 'dd-cache-zoom', onClick: () => setExpanded(!expanded) }, expanded ? '▴ 收起' : '▾ 全部 ' + cacheModels.length) : null),
+          h('div', { className: 'dd-cache-mbody' + (expanded ? ' open' : '') }, shown.map((m, i) => {
+            const isSel = Array.isArray(sel) && sel.length === 1 && sel[0] === m.id
+            const sv = savedOf(m)
+            const name = m.id.length > 16 ? m.id.slice(0, 15) + '…' : m.id
+            const color = CACHE_DOT_COLORS[i % CACHE_DOT_COLORS.length]
+            return h('div', {
+              key: m.id, className: 'dd-cache-mrow' + (isSel ? ' sel' : ''),
+              title: m.id + ' · 点击' + (isSel ? '取消筛选' : '按此模型筛选'),
+              onClick: () => props.onPickModel && props.onPickModel(m.id)
+            },
+              h('span', { className: 'dot', style: { background: color } }),
+              h('span', { className: 'mname' }, name),
+              h('div', { className: 'mtrack' },
+                h('div', { className: 'mfill', style: { width: Math.max(1.5, m.cacheRead / maxRead * 100).toFixed(1) + '%', background: color } }),
+                m.cacheCoverage != null ? h('div', { className: 'mcov', style: { left: Math.min(98.5, Math.max(0.5, m.cacheCoverage)).toFixed(1) + '%' } }) : null),
+              h('span', { className: 'mval' }, m.cacheHitRate != null ? m.cacheHitRate.toFixed(1) + '%' : '—'),
+              h('span', { className: 'msave' }, sv == null ? '—' : '省 ' + fmtCostShort(sv)))
+          })))
+      }
+
       return h('div', { className: 'dd-chart' },
-        head,
-        h('div', { className: 'dd-cache-chart', style: { height: '280px', position: 'relative', width: '100%' } },
-          h('svg', { viewBox: '0 0 ' + W + ' ' + H, style: { display: 'block', width: '100%', height: '100%' } },
-            h('g', null,
-              gridLines, yAxis, xAxis, yLabelEls, xLabelEls,
-              grayLineD() ? h('path', { d: grayLineD(), style: { stroke: '#d4d4d8', strokeWidth: 1.5, fill: 'none', strokeDasharray: '4 3', strokeLinecap: 'round' } }) : null,
-              areaD() ? h('path', { d: areaD(), style: { fill: '#10b981', fillOpacity: 0.08 } }) : null,
-              lineD() ? h('path', { d: lineD(), style: { stroke: '#10b981', strokeWidth: 2, fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' } }) : null,
-              guideLine, dotEls,
-              h('rect', {
-                x: PAD.left, y: PAD.top, width: PW, height: PH,
-                style: { fill: 'transparent', cursor: 'crosshair' },
-                onMouseMove: (e) => {
-                  const svgEl = e.currentTarget.closest('svg')
-                  if (!svgEl) return
-                  const rect = svgEl.getBoundingClientRect()
-                  const mx = (e.clientX - rect.left) / rect.width * W
-                  const idx = Math.round(((mx - PAD.left) / PW) * (n - 1))
-                  setHoverIdx(Math.max(0, Math.min(n - 1, idx)))
-                },
-                onMouseLeave: () => setHoverIdx(null)
-              })
-            )),
-          tipContent))
+        mkHead(),
+        kpis,
+        legend,
+        h('div', { className: 'dd-cache-chart', style: { position: 'relative', width: '100%' } },
+          h('svg', { viewBox: '0 0 ' + W + ' ' + H, style: { display: 'block', width: '100%', height: 'auto' } }, svgKids),
+          tipEl),
+        modelsEl)
     }
 
     // 活跃热力图：最近 40 周的 7 行 × 40 列网格，周日起始，固定正方形单元格。
@@ -1522,7 +1771,12 @@ return {
               h(HeatChart, { heat: state.data.heat || null })),
             h('div', { className: 'dd-side-row' },
               h(RadarCard, { models: meta.models || [], modelSel: modelSel }),
-              h(CacheTrendCard, { buckets: state.data.buckets || [], granularity: state.data.granularity || 'week' })),
+              h(CacheTrendCard, {
+                buckets: state.data.buckets || [], granularity: state.data.granularity || 'week',
+                totals: t, models: meta.models || [], modelSel: modelSel,
+                usd: costMode === 'usd',
+                onPickModel: (id) => setModelSel(modelSel && modelSel.length === 1 && modelSel[0] === id ? null : [id])
+              })),
             h('div', { className: 'dd-dist-row' },
               h(DistributionCard, { icon: ICON_MODEL, title: '模型分布', items: (meta.dist && meta.dist.models) || [] }),
               h(DistributionCard, { icon: ICON_PROJECT, title: '项目分布', items: (meta.dist && meta.dist.projects) || [] })),
