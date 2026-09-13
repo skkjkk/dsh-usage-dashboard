@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { apply } from '../lib/index.js'
 
 const now = Date.now()
@@ -34,17 +35,42 @@ const services = {
     async listSessions() {
       listCalls += 1
       return listVisible ? [{ header, live: false, persisted: true }] : [{ header: lagHeader, live: false, persisted: true }]
+    },
+    async readSession(sid) {
+      if (sid !== sessionId) throw new Error('unknown session')
+      return { session: header, events, inheritedEventCount: 0 }
     }
   },
   sessionPersistence: {
-    async readFrom(id) {
-      return { meta: id === sessionId ? header : { id }, events: id === sessionId ? events : [] }
+    async open(id, access) {
+      if (access !== 'read') throw new Error('write not supported in smoke')
+      if (id !== sessionId) throw new Error('unknown session')
+      return {
+        id,
+        header,
+        read: async () => ({ eventState: 'shared-frozen', events }),
+        close: async () => {}
+      }
+    },
+    async requireStoredLog(id) {
+      return id === sessionId
+        ? { meta: header, events, inheritedEventCount: 0, status: 'current' }
+        : { meta: { id }, events: [], inheritedEventCount: 0, status: 'current' }
     }
   },
   workspaceRegistry: {
     list() { return [{ path: cwd, title: 'Smoke Project', sessionIds: [sessionId] }] }
   },
-  sessions: { get() { return null } },
+  sessions: {
+    get(id) {
+      if (id !== sessionId) return null
+      return {
+        header,
+        inheritedEventCount: 0,
+        snapshotEvents: () => events
+      }
+    }
+  },
   // no-op timer: apply() registers its reconcile/pre-warm effects through
   // ctx.effect and must NOT skip the route registrations when it fires them.
   // The callbacks never run — the test drives events explicitly and asserts
@@ -136,14 +162,33 @@ const cached = await request(queryPath)
 if (listCalls !== callsAfterMetric) throw new Error('non-metric chunk unexpectedly flushed the cache')
 if (cached.totals.assistantMessages !== 3) throw new Error('cached metric result changed unexpectedly')
 
+// A malformed live event must be absorbed by the listener, never thrown out
+// of the event dispatch (which would poison other listeners / crash the
+// stream), and the NEXT event must still fold into the same rollup.
+{
+  eventHandler({ id: sessionId, header }, {
+    type: 'assistant/message', time: now - 900, seq: 12
+    // no data at all: pre-guard code threw a TypeError here
+  })
+  eventHandler({ id: sessionId, header }, {
+    type: 'assistant/message', time: now - 850, seq: 13,
+    data: { usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } }
+  })
+  await flush()
+  const afterPoison = await request(queryPath + '&poison=1')
+  if (afterPoison.totals.assistantMessages !== 5) {
+    throw new Error('poison event or listener death: expected assistantMessages 5 (3 + dropped-but-counted + folded), got ' + afterPoison.totals.assistantMessages)
+  }
+}
+
 // A listed session survives an omission when the list snapshot lags a prior
-// event. The clock is advanced past the rollup snapshot window so this
-// revalidate performs a real listSessions() instead of reusing the snapshot,
-// and flushed so the assertion reads the recomputed value rather than the SWR
-// one.
+// event. The clock is advanced past BOTH the rollup snapshot window (5 s) and
+// the corpus-list throttle (20 s) so this revalidate performs a real
+// listSessions() instead of reusing the snapshot, and flushed so the assertion
+// reads the recomputed value rather than the SWR one.
 {
   const realDateNow = Date.now
-  Date.now = () => now + 15 * 1000
+  Date.now = () => now + 25 * 1000
   try {
     listVisible = false
     eventHandler({ id: sessionId, header }, {
@@ -160,22 +205,51 @@ if (cached.totals.assistantMessages !== 3) throw new Error('cached metric result
   }
 }
 
-// An event-created session survives the first lagging list snapshot.
+// An event-created session must be visible to a freshly computed query even
+// while the persisted list still lags behind.
+//
+// Two things have to be forced for this to be deterministic rather than a
+// scheduling coincidence:
+//   1. a distinct cache key, so the request computes fresh instead of being
+//      served the stale-while-revalidate value of the shared key;
+//   2. a clock past the rollup snapshot window, so the compute rebuilds from
+//      live state rather than reusing the pre-event snapshot.
 const eventSessionId = 'event-created'
 const eventHeader = { id: eventSessionId, cwd: 'D:/event-project' }
 eventHandler({ id: eventSessionId, header: eventHeader }, {
   type: 'user/message', time: now - 500, seq: 1, data: { source: { kind: 'user' } }
 })
 await new Promise((resolve) => setTimeout(resolve, 0))
-const withEventSession = await request(queryPath)
-if (withEventSession.totals.sessions !== 2) throw new Error('event-created session was dropped by a lagging list')
+{
+  const realDateNow = Date.now
+  Date.now = () => now + 60 * 1000
+  try {
+    const withEventSession = await request(queryPath + '&freshkey=1')
+    if (withEventSession.totals.sessions !== 2) {
+      throw new Error('event-created session was dropped by a lagging list, got ' + withEventSession.totals.sessions)
+    }
+  } finally {
+    Date.now = realDateNow
+  }
+}
 
 // Once a later list still omits it and the recent-event grace has elapsed, it is collectable.
+//
+// The listing pass is no longer awaited by a request (that await is exactly the
+// cold-start hang this suite guards against), so the drop happens during the
+// background pass. Trigger it, let it land, then step past the snapshot window
+// and assert on a freshly computed key.
 const realDateNow = Date.now
 Date.now = () => now + 3 * 60000
 try {
-  const afterMissingSession = await request(queryPath + '&cleanup=1')
-  if (afterMissingSession.totals.sessions !== 1) throw new Error('deleted session state was retained forever')
+  await request(queryPath + '&cleanup=1')
+  await flush()
+  await flush()
+  Date.now = () => now + 4 * 60000
+  const afterMissingSession = await request(queryPath + '&cleanup=1&settled=1')
+  if (afterMissingSession.totals.sessions !== 1) {
+    throw new Error('deleted session state was retained forever, got ' + afterMissingSession.totals.sessions)
+  }
 } finally {
   Date.now = realDateNow
 }
@@ -199,6 +273,43 @@ try {
   }
 }
 
+// Client bundle contract smoke:
+// The real DSH client API is `slots.inject('<slot>', () => slots.register(
+//   { name: '<slot>', ... }, render))`. Assert both halves and that every slot
+// the bundle injects is a known slot AND is paired with a matching register.
+{
+  const clientCode = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
+  const hasSlotsService = /['"]slots['"]/.test(clientCode) && /ctx\.get\(\s*['"]slots['"]\s*\)/.test(clientCode)
+  if (!hasSlotsService) throw new Error('client bundle does not resolve the "slots" service')
+
+  const KNOWN_SLOTS = new Set([
+    'conversation.view',
+    'settings.plugin.item',
+    'settings.plugins.tab',
+    'settings.section',
+    'settings.general.item',
+    'conversation.session.header.actions',
+    'conversation.session.header.utilities',
+    'conversation.input.dock',
+    'conversation.composer.dock',
+    'sidebar.footer.action',
+    'shell.overlay'
+  ])
+
+  const injected = [...clientCode.matchAll(/slots\.inject\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
+  if (injected.length === 0) throw new Error('client bundle never calls slots.inject(...)')
+
+  const registered = new Set(
+    [...clientCode.matchAll(/register\(\s*\{[^}]*?name:\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
+  )
+
+  for (const slot of injected) {
+    if (!KNOWN_SLOTS.has(slot)) throw new Error('client injects unknown slot: ' + slot)
+    if (!registered.has(slot)) throw new Error('client injects ' + slot + ' but never registers it')
+  }
+}
+
 console.log('host smoke passed')
 console.log('  cache/event regressions     OK')
 console.log('  routes survive no timer     OK')
+console.log('  client contract check       OK')

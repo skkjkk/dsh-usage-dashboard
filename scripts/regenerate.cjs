@@ -283,6 +283,8 @@ function parseQueryArgs(url) {
   const u = new URL(url, 'http://dsh.local')
   const args = {}
   for (const [k, v] of u.searchParams) {
+    // never let a query key shadow prototype members onto the args object
+    if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue
     if (k === 'models' || k === 'projects') {
       args[k] = v ? v.split(',').filter(Boolean) : null
     } else if (v === '') {

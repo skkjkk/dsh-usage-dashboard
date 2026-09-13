@@ -6,7 +6,7 @@
 //
 // Usage: npm run bench   (node scripts/bench.js)
 import { execFileSync } from 'node:child_process'
-import { foldSession, foldAppend, queryUsage, queryDetail, queryCalendar, priceFor, priceForAt, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, presetBucketCount, cellOf } from '../src/core/rollup.js'
+import { foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, priceFor, priceForAt, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, presetBucketCount, cellOf } from '../src/core/rollup.js'
 
 const HOUR = 3600000
 const DAY = 86400000
@@ -650,6 +650,80 @@ console.log('\n[0a] activeMs generation semantics (TTFT/tool wait excluded)')
   console.log('  activeMs generation   OK (TTFT and 10s tool wait excluded)')
 }
 
+console.log('\n[0a2] activeMs step-interval fallback (chunkless DSH v2+ logs)')
+{
+  const t0 = fixedNow - 1200000
+  const asst = (time, turn, step) => ({
+    type: 'assistant/message', time,
+    data: { turn, step, usage: { inputTokens: 10, outputTokens: 5 }, message: { source: { model: 'qwen3.8-flash' } } }
+  })
+  const events = [
+    { type: 'user/message', time: t0, data: { source: { kind: 'user' } } },
+    // step 0: DSH v2+ persistence (no chunks) → interval [step/start, assistant/message]
+    { type: 'step/start', time: t0 + 100, data: { turn: 0, step: 0 } },
+    asst(t0 + 5100, 0, 0),
+    { type: 'tool/call', time: t0 + 5200, data: { callId: 'c0' } },
+    { type: 'tool/result', time: t0 + 15200, data: { message: { source: { callId: 'c0' } } } },
+    { type: 'step/end', time: t0 + 15300, data: { turn: 0, step: 0 } },
+    // step 1: interrupted without any message → contributes nothing
+    { type: 'step/start', time: t0 + 16000, data: { turn: 1, step: 0 } },
+    { type: 'step/end', time: t0 + 40000, data: { turn: 1, step: 0 } },
+    // step 2: legacy chunked log → chunk interval wins; the message close is a no-op
+    { type: 'step/start', time: t0 + 50000, data: { turn: 2, step: 0 } },
+    { type: 'assistant/chunk', time: t0 + 52000, data: { turn: 2, step: 0, chunk: { type: 'reasoning-delta', index: 0 } } },
+    { type: 'assistant/chunk', time: t0 + 55000, data: { turn: 2, step: 0, chunk: { type: 'finish', reason: 'stop' } } },
+    asst(t0 + 55001, 2, 0)
+  ]
+  const r = foldSession(events)
+  r.id = 'active-step-fallback'
+  r.cwd = 'D:/u'
+  r.projectTitle = 'u'
+  const q = queryUsage([r], { range: 'custom', from: t0 - 1, to: t0 + 60000 }, {})
+  // step0: 5000ms + step1: 0 + step2: 3000ms (chunk) — no double-count at the message close
+  assertEq('activeMs.stepFallback', q.totals.activeMs, 8000)
+  // the live event stream (foldAppend per event) must produce the identical result
+  const r2 = emptyRollup()
+  for (const ev of events) foldAppend(r2, ev)
+  r2.id = r.id; r2.cwd = r.cwd; r2.projectTitle = r.projectTitle
+  const q2 = queryUsage([r2], { range: 'custom', from: t0 - 1, to: t0 + 60000 }, {})
+  assertEq('activeMs.stepFallback.append', q2.totals.activeMs, q.totals.activeMs)
+  // qwen3.8-flash must be priced (CSV row 127; cost 0 regression guard)
+  const pr = priceFor('qwen3.8-flash')
+  if (!pr) throw new Error('qwen3.8-flash missing from the generated PRICES table')
+  assertEq('pricing.qwen38flash.in', pr.p[0], 0.8)
+  assertEq('pricing.qwen38flash.out', pr.p[1], 2.7)
+  assertEq('pricing.qwen38flash.cache', pr.p[2], 0.1)
+  console.log('  activeMs step fallback OK (message close 5s + chunk 3s, abort excluded; qwen3.8-flash priced)')
+}
+
+console.log('\n[0a3] proximity join: interval credited to a keyless (migrated) message')
+{
+  const t0 = fixedNow - 3 * HOUR
+  const mkMsg = (time) => ({
+    type: 'assistant/message', time,
+    data: { usage: { inputTokens: 10, outputTokens: 5 }, message: { source: { model: 'deepseek-chat' } } }
+  })
+  const events = [
+    { type: 'user/message', time: t0, data: { source: { kind: 'user' } } },
+    { type: 'step/start', time: t0 + 50, data: { turn: 1, step: 1 } },
+    { type: 'assistant/chunk', time: t0 + 1500, data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'x' } } },
+    { type: 'assistant/chunk', time: t0 + 4200, data: { turn: 1, step: 1, chunk: { type: 'finish', reason: 'stop' } } },
+    // message envelope lost turn/step in migration — key pairing impossible
+    mkMsg(t0 + 4205),
+    // no new finish before this one → must NOT be timed (no double-credit)
+    mkMsg(t0 + 5000)
+  ]
+  const r = foldSession(events)
+  r.id = 'join'; r.cwd = 'D:/u'; r.projectTitle = 'u'
+  const q = queryUsage([r], { range: 'custom', from: t0 - 1, to: t0 + 60000 }, {})
+  const m = q.meta.models.find((x) => x.id === 'deepseek-chat')
+  assertEq('join.activeMs', q.totals.activeMs, 2700)
+  assertEq('join.avg', m.avgResponseMs, 2700)
+  assertEq('join.timedCalls', m.timedCalls, 1)
+  assertEq('join.calls', m.calls, 2)
+  console.log('  proximity join       OK (adjacent interval credited once; keyless strays stay un-timed)')
+}
+
 console.log('\n[0b] range and percentage boundaries')
 {
   const bounds = rangeBounds({ range: 'custom', now: 1000, from: 0, to: 100 })
@@ -946,13 +1020,81 @@ console.log('\n[0e] deterministic cache-metric regression assertions')
   if (flash.p50ResponseMs == null) throw new Error('model p50ResponseMs missing')
   if (flash.p95ResponseMs == null) throw new Error('model p95ResponseMs missing')
   assertEq('cache.meta.cacheHitRate', flash.cacheHitRate, 80)
-  // avgResponseMs = mean of [701, 1701, 3201] (t - _lastUserT fallback) ≈ 1867.67
-  assertEq('cache.meta.avgResponseMs', flash.avgResponseMs, 5603 / 3, 1)
-  // p50 of 3 samples: target=ceil(0.5*3)=2 → 2nd sorted value (1500) falls in bin upper=2000
-  assertEq('cache.meta.p50ResponseMs', flash.p50ResponseMs, 2000, 1)
-  // p95 of 3 samples: target=ceil(0.95*3)=3 → 3rd sorted value (3000) falls in bin upper=5000
-  assertEq('cache.meta.p95ResponseMs', flash.p95ResponseMs, 5000, 1)
+  // avgResponseMs = mean of the MEASURED chunk spans [500, 1500, 3000] — the
+  // finish-recorded span is reused by the message (the old user→assistant
+  // fallback span is gone), so the mean is exactly 5000/3.
+  assertEq('cache.meta.avgResponseMs', flash.avgResponseMs, 5000 / 3, 1e-6)
+  // bins: 500→upper500, 1500→upper2000, 3000→upper3000.
+  // p50: target=ceil(0.5*3)=2 → 2nd sample (1500) → bin upper 2000
+  assertEq('cache.meta.p50ResponseMs', flash.p50ResponseMs, 2000, 1e-6)
+  // p95: target=ceil(0.95*3)=3 → 3rd sample (3000) → bin upper 3000
+  assertEq('cache.meta.p95ResponseMs', flash.p95ResponseMs, 3000, 1e-6)
+  assertEq('cache.meta.timedCalls', flash.timedCalls, 3)
   console.log('  cache meta row fields      OK (cacheHitRate=' + flash.cacheHitRate + ', calls=' + flash.calls + ', avgResponseMs=' + flash.avgResponseMs.toFixed(2) + ', p50=' + flash.p50ResponseMs + ', p95=' + flash.p95ResponseMs + ')')
+}
+
+console.log('\n[0f] malformed events fold without throwing')
+{
+  // The live event stream feeds foldAppend directly; a single malformed event
+  // must never crash the host process or poison the whole session.
+  const junk = [
+    { type: 'user/message', time: fixedNow }, // no data
+    { type: 'assistant/message', time: fixedNow + 1000 }, // no data at all
+    { type: 'assistant/message', time: fixedNow + 2000, data: {} }, // no usage/turn/step
+    { type: 'tool/call', time: fixedNow + 3000 },
+    { type: 'tool/result', time: fixedNow + 4000 },
+    { type: 'step/start', time: fixedNow + 4500 }, // no data
+    { type: 'step/end', time: fixedNow + 5000 },
+    { type: 'assistant/chunk', time: fixedNow + 5500 }, // no data
+    { type: 'assistant/chunk', time: fixedNow + 6000, data: { turn: 9, step: 9, chunk: { type: 'finish' } } }, // never opened
+    { type: 'assistant/message', time: fixedNow + 7000, data: { turn: 0, step: 0, usage: null, message: null } },
+    { type: 'unknown/event', time: fixedNow + 8000, data: { x: 1 } }
+  ]
+  const r = foldSession(junk) // must not throw
+  r.id = 'junk'
+  r.cwd = 'D:/u'
+  r.projectTitle = 'u'
+  const q = queryUsage([r], { range: 'custom', from: fixedNow - 1, to: fixedNow + 9000 }, {})
+  assertEq('junk.injected', q.totals.injectedMessages, 1) // user/message without data reads as injected (existing semantics)
+  assertEq('junk.assistant', q.totals.assistantMessages, 3)
+  assertEq('junk.toolCalls', q.totals.toolCalls, 1)
+  assertEq('junk.activeMs', q.totals.activeMs, 0)
+  assertEq('junk.cost', q.totals.cost, 0)
+  console.log('  malformed events       OK (no throw, sane totals)')
+}
+
+console.log('\n[0g] edge-bucket latency stats match the aggregate path')
+{
+  // actMs is carried on type-2 detail events so a window that cuts through
+  // the hour (edge path) reports the same per-model response stats as an
+  // hour-aligned window reading the aggregates.
+  const H = 3600000
+  const hour = fixedNow - (fixedNow % H)
+  const stepMsg = (turn, step, start, dur) => ([
+    { type: 'step/start', time: start, data: { turn, step } },
+    { type: 'assistant/message', time: start + dur, data: { turn, step, usage: { inputTokens: 10, outputTokens: 5 }, message: { source: { model: 'deepseek-chat' } } } }
+  ])
+  const events = [
+    { type: 'user/message', time: hour + 60000, data: { source: { kind: 'user' } } },
+    ...stepMsg(0, 0, hour + 61000, 5000),
+    ...stepMsg(0, 1, hour + 70000, 6000),
+    ...stepMsg(0, 2, hour + 80000, 9000)
+  ]
+  const r = foldSession(events)
+  r.id = 'latency-consistency'
+  r.cwd = 'D:/u'
+  r.projectTitle = 'u'
+  const agg = queryUsage([r], { range: 'custom', from: hour, to: hour + 2 * H }, {})
+  const edge = queryUsage([r], { range: 'custom', from: hour, to: hour + 30 * 60000 }, {})
+  const am = agg.meta.models.find((m) => m.id === 'deepseek-chat')
+  const em = edge.meta.models.find((m) => m.id === 'deepseek-chat')
+  if (!am || !em) throw new Error('latency model row missing')
+  assertEq('latency.calls.agree', em.calls, am.calls)
+  assertEq('latency.avg.agree', em.avgResponseMs, am.avgResponseMs, 1e-6)
+  assertEq('latency.p50.agree', em.p50ResponseMs, am.p50ResponseMs)
+  assertEq('latency.p95.agree', em.p95ResponseMs, am.p95ResponseMs)
+  assertEq('latency.avg.value', am.avgResponseMs, 20000 / 3, 1e-6)
+  console.log('  latency edge/aggregate OK (avg=' + am.avgResponseMs.toFixed(1) + 'ms on both paths)')
 }
 
 console.log('\n[0] totalMs union semantics (parallel sessions counted once)')
