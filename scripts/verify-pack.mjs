@@ -44,12 +44,46 @@ try {
   fail('core engine failed to load: ' + e.message)
 }
 
-// 4) client bundle 语法
+// 4) client bundle 语法与 slot 注册契约校验（DSH client-modules 规范）
 try {
-  new Function(readFileSync(join(dir, 'lib/client.js'), 'utf8'))
+  const clientCode = readFileSync(join(dir, 'lib/client.js'), 'utf8')
+  new Function(clientCode)
   ok('client bundle syntax valid')
+
+  const hasSlotsService = /['"]slots['"]/.test(clientCode) && /ctx\.get\(\s*['"]slots['"]\s*\)/.test(clientCode)
+  if (!hasSlotsService) fail('lib/client.js does not resolve the "slots" service')
+  else ok('client resolves the slots service')
+
+  const KNOWN_SLOTS = new Set([
+    'conversation.view',
+    'settings.plugin.item',
+    'settings.plugins.tab',
+    'settings.section',
+    'settings.general.item',
+    'conversation.session.header.actions',
+    'conversation.session.header.utilities',
+    'conversation.input.dock',
+    'conversation.composer.dock',
+    'sidebar.footer.action',
+    'shell.overlay'
+  ])
+
+  // Real API shape: slots.inject('<slot>', () => slots.register({ name: '<slot>', ... }, render))
+  const injected = [...clientCode.matchAll(/slots\.inject\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
+  const registered = new Set(
+    [...clientCode.matchAll(/register\(\s*\{[^}]*?name:\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
+  )
+
+  if (injected.length === 0) fail('lib/client.js never calls slots.inject(...)')
+  else ok('client calls slots.inject for: ' + injected.join(', '))
+
+  for (const slot of injected) {
+    if (!KNOWN_SLOTS.has(slot)) fail('client injects unknown slot: ' + slot)
+    else if (!registered.has(slot)) fail('client injects ' + slot + ' but never registers it')
+    else ok('client slot contract satisfied for ' + slot)
+  }
 } catch (e) {
-  fail('client bundle syntax error: ' + e.message)
+  fail('client bundle error: ' + e.message)
 }
 
 // 5) package.json files 字段覆盖全部必要产物

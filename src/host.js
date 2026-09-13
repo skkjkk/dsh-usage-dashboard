@@ -5,23 +5,29 @@
 //     queryUsage / queryDetail / queryCalendar) — no ctx, no IO.
 //   * This layer keeps per-session ROLLUPS fresh in memory and NEVER
 //     re-parses full session logs on refresh:
-//       - init(): lists sessions once; live sessions load their events
-//         directly from the in-memory Session object (zero parse); persisted
-//         sessions are read via persistence.readFrom once.
+//       - the corpus is discovered by walking the session store directly
+//         (session-<id> directories only) instead of q.listSessions(), so the
+//         listing costs a stat per session instead of a stat + header decode;
+//       - folded rollups are cached on disk keyed by (file, mtime, size), so
+//         after the first build a restart adopts every unchanged session with
+//         ZERO log decoding and the dashboard is complete within seconds of
+//         boot;
+//       - unchanged-but-uncached sessions load once via
+//         sessionPersistence.requireStoredLog (single session read, no corpus
+//         re-list) inside a bounded background pass; the first dashboard
+//         request waits for that pass so the first paint is complete data;
+//       - legacy-layout session directories (bare <uuid>, the old subagent
+//         logs) are never queued, and any session whose stored log cannot be
+//         read is skipped silently and permanently — per product decision the
+//         dashboard counts normal sessions only;
 //       - ctx.on('session/event') streams every new event into the matching
 //         rollup via foldAppend (µs per event) — no disk reads at all while
 //         DSH runs.
-//       - a 60s reconcile timer loads newly created sessions and drops
-//         removed ones.
 //   * Request-level cache (CACHE_TTL_MS = 30s, aligned with the client poll;
 //     stale-while-revalidate + single-flight guards repeated identical queries)
-//     still guards repeated identical queries.
-//   * Result: after boot, every dashboard view (any range / filter) is served
-//     from memory in milliseconds; the only slow phase is the one-time cold
-//     load, warmed right after startup.
+//     keeps every range/filter switch at millisecond latency after warm-up.
 
 import { foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, sessionTitle } from './core/rollup.js'
-import { BusinessException } from './core/errors.js'
 
 export function apply(ctx, config) {
   // ---- named constants (replace scattered magic numbers) ----
@@ -34,27 +40,206 @@ export function apply(ctx, config) {
   const RECONCILE_INTERVAL_MS = 60000
   const CACHE_MAX_FAILURES = 3
   const CACHE_STALE_MULTIPLIER = 2
-  const PREWARM_DELAY_MS = 500
+  const PREWARM_DELAY_MS = 150
   // How long a settled rollup list stays authoritative before getRollups()
   // re-lists sessions. Re-listing 100+ sessions is the dominant cost of a
   // dashboard recompute, so background revalidates must not re-list on every
   // key miss.
   const ROLLUP_SNAPSHOT_MS = 5000
+  // Minimum spacing between corpus listings. The store walk is cheap
+  // (readdir + stat per session), but there is no reason to run it more often
+  // than the reconcile cadence.
+  const LIST_MIN_INTERVAL_MS = 20000
+  // Cold-read workers. Each worker materializes one stored session at a time;
+  // the store walk is ordered newest-first, so the ranges users actually look
+  // at (today / 24H) become correct long before the whole corpus is done.
+  const LOAD_WORKERS = 4
+  // The very first dashboard request waits for the background pass so the
+  // first paint shows COMPLETE data. The cap only ever bites on the one-time
+  // cold build of a huge store; afterwards the pass is already settled.
+  const FIRST_LOAD_WAIT_MS = 90000
+  const WAIT_POLL_MS = 50
+  // Disk cache format version — bump to invalidate every cached rollup.
+  // v2: step-interval fallback + qwen3.8-flash. v3: bucket shape / edge-align.
+  // v4: honest response times (fallback removed, timedCalls denominator).
+  // v5: proximity join for migrated logs whose message envelope lost turn/step.
+  const CACHE_FORMAT_VERSION = 5
+  // Optional diagnostics for the disk rollup cache (set debugCache: true in
+  // the plugin config to trace cache writes).
+  const debugCache = !!(config && config.debugCache)
 
   // request-level response cache: key → { at, data, failCount, version }
   const cache = new Map()
   let dataVersion = 0
-  // session rollup state: session id → { rollup, cwd, title, at, pending[], needsReload }
+  // session rollup state: session id → { rollup, cwd, title, at, pending[], ... }
   const states = new Map()
   let ready = false
-  let initPromise = null
+  let initPromise = null // single-flight listing pass (not the session loads)
+  let lastListAt = 0 // throttle for corpus listings
+  let backgroundLoad = null // current background materialization pass
+  let backgroundQueue = [] // sessions waiting for the next pass
   let rollupSnapshot = null
   let rollupSnapshotAt = 0
+  let initialLoadDone = false // true once the very first full load completes
   const inflight = new Map() // cache key → { version, promise }
+  let eventEpoch = 0
+
+  // ---- node builtins (dynamic import: module scope never reaches the bundle) ----
+  let nodeModsPromise = null
+  function nodeMods() {
+    if (!nodeModsPromise) {
+      nodeModsPromise = Promise.all([
+        import('node:fs/promises'),
+        import('node:path'),
+        import('node:os')
+      ]).then(([fsp, pathMod, osMod]) => ({ fsp, path: pathMod, os: osMod })).catch(() => null)
+    }
+    return nodeModsPromise
+  }
+
+  // ---- store walk + disk rollup cache ----
+  let storeRoot = null // e.g. ~/.dsh/sessions
+  let cacheDir = null // e.g. ~/.dsh/usage-dashboard-cache
+  let storeReady = false
+  const cacheIndex = new Map() // id → { file, mtimeMs, size, header, rollup, seq }
+  const cacheDirty = new Set()
+
+  async function initStore() {
+    if (storeReady) return
+    storeReady = true
+    const mods = await nodeMods()
+    if (!mods) return
+    // Only trust a root advertised by the persistence service itself. When the
+    // service is absent entirely (embedding tests) fall back to the standard
+    // location; a present-but-rootless service (smoke stubs) disables the walk
+    // so tests exercise the q.listSessions() fallback path instead.
+    const persist = getCtxService('sessionPersistence')
+    let root = persist && typeof persist.root === 'string' ? persist.root : ''
+    if (!root && !persist) {
+      try { root = mods.path.join(mods.os.homedir(), '.dsh', 'sessions') } catch (e) { root = '' }
+    }
+    if (!root) return
+    storeRoot = root
+    cacheDir = mods.path.join(mods.path.dirname(root), 'usage-dashboard-cache')
+    try {
+      const names = await mods.fsp.readdir(cacheDir)
+      for (const name of names) {
+        if (!name.endsWith('.json')) continue
+        try {
+          const raw = JSON.parse(await mods.fsp.readFile(mods.path.join(cacheDir, name), 'utf8'))
+          if (!raw || raw.v !== CACHE_FORMAT_VERSION || !raw.id || !raw.rollup) continue
+          cacheIndex.set(raw.id, {
+            file: raw.file,
+            mtimeMs: raw.mtimeMs,
+            size: raw.size,
+            header: raw.header || { id: raw.id },
+            rollup: deserializeRollup(raw.rollup),
+            seq: typeof raw.seq === 'number' ? raw.seq : -Infinity
+          })
+        } catch (e) { /* corrupt entry: it will be rewritten on next load */ }
+      }
+    } catch (e) { /* no cache dir yet */ }
+  }
+
+  function pickLogFile(files) {
+    for (const f of files) if (/^session\.v\d+\.jsonl\.zstd$/.test(f)) return f
+    for (const f of files) if (/^session\.v\d+\.jsonl$/.test(f)) return f
+    if (files.includes('session.jsonl.zstd')) return 'session.jsonl.zstd'
+    if (files.includes('session.jsonl')) return 'session.jsonl'
+    return null
+  }
+
+  async function walkStore() {
+    const mods = await nodeMods()
+    if (!mods || !storeRoot) return null
+    let projects = []
+    try { projects = await mods.fsp.readdir(storeRoot, { withFileTypes: true }) } catch (e) { return null }
+    const out = []
+    for (const proj of projects) {
+      if (!proj.isDirectory()) continue
+      const projPath = mods.path.join(storeRoot, proj.name)
+      let sessions = []
+      try { sessions = await mods.fsp.readdir(projPath, { withFileTypes: true }) } catch (e) { continue }
+      for (const sd of sessions) {
+        // Only the current session-<id> layout. Legacy bare <uuid> directories
+        // (old subagent logs) are outside the dashboard's scope by decision:
+        // they are never queued, never read, never retried.
+        if (!sd.isDirectory() || !/^session-/.test(sd.name)) continue
+        const dir = mods.path.join(projPath, sd.name)
+        let files = []
+        try { files = await mods.fsp.readdir(dir) } catch (e) { continue }
+        const file = pickLogFile(files)
+        if (!file) continue
+        let stat = null
+        try { stat = await mods.fsp.stat(mods.path.join(dir, file)) } catch (e) { continue }
+        out.push({ id: sd.name, header: { id: sd.name }, file, mtimeMs: stat.mtimeMs, size: stat.size })
+      }
+    }
+    return out
+  }
+
+  function serializeRollup(r) {
+    const buckets = []
+    for (const [hk, b] of r.buckets) {
+      const per = []
+      for (const [model, arr] of b.per) per.push([model, arr])
+      buckets.push([hk, [per, b.msg, b.durGap, b.first, b.last, b.hasMsg ? 1 : 0, b.evts]])
+    }
+    return { first: r.first, last: r.last, buckets, modelMeta: Array.from(r.modelMeta || []) }
+  }
+
+  function deserializeRollup(o) {
+    const r = emptyRollup()
+    r.first = o.first === null || typeof o.first === 'number' ? o.first : null
+    r.last = o.last === null || typeof o.last === 'number' ? o.last : null
+    for (const entry of o.buckets || []) {
+      const hk = entry[0]
+      const arr = entry[1]
+      const per = new Map(arr[0])
+      r.buckets.set(hk, { per, msg: arr[1], durGap: arr[2], first: arr[3], last: arr[4], hasMsg: !!arr[5], evts: arr[6] })
+    }
+    r.modelMeta = new Map(o.modelMeta || [])
+    return r
+  }
+
+  async function flushCache() {
+    if (debugCache) console.error('[dash-cache] flush: dir=', cacheDir, 'dirty=', cacheDirty.size)
+    if (!cacheDir || cacheDirty.size === 0) return
+    const mods = await nodeMods()
+    if (!mods) { return }
+    try { await mods.fsp.mkdir(cacheDir, { recursive: true }) } catch (e) { /* exists */ }
+    const ids = Array.from(cacheDirty)
+    for (const id of ids) {
+      const entry = cacheIndex.get(id)
+      if (!entry) { cacheDirty.delete(id); continue }
+      try {
+        const tmp = mods.path.join(cacheDir, '.' + id + '.tmp')
+        const payload = JSON.stringify({
+          v: CACHE_FORMAT_VERSION,
+          id,
+          file: entry.file,
+          mtimeMs: entry.mtimeMs,
+          size: entry.size,
+          header: entry.header,
+          seq: entry.seq,
+          rollup: serializeRollup(entry.rollup)
+        })
+        await mods.fsp.writeFile(tmp, payload, 'utf8')
+        await mods.fsp.rename(tmp, mods.path.join(cacheDir, id + '.json'))
+        cacheDirty.delete(id)
+      } catch (e) {
+        if (debugCache) console.error('[dash-cache] write failed', id, e && e.message)
+        cacheDirty.delete(id)
+      }
+    }
+  }
+
+  // ---------- helpers ----------
 
   function getCtxService(key) {
     try { return ctx.get(key) } catch (e) { return null }
   }
+
   function startInflight(key, compute) {
     const version = dataVersion
     const active = inflight.get(key)
@@ -86,9 +271,6 @@ export function apply(ctx, config) {
     inflight.set(key, { version, promise })
     return promise
   }
-  let eventEpoch = 0
-
-  // ---------- helpers ----------
 
   function normalizePath(value) {
     let s = String(value || '').trim().replace(/\\/g, '/')
@@ -123,7 +305,7 @@ export function apply(ctx, config) {
     let st = states.get(id)
     if (st) st.lastEventAt = Date.now()
     if (!st) {
-      st = { rollup: emptyRollup(), cwd: (header && header.cwd) || '', title: null, at: Date.now(), lastEventAt: 0, pending: [], needsReload: false, loading: false, loadingPromise: null, listed: false, lastEventEpoch: 0, lastListedEventEpoch: 0, missingListEpoch: null }
+      st = { rollup: emptyRollup(), cwd: (header && header.cwd) || '', title: null, at: Date.now(), lastEventAt: 0, pending: [], needsReload: false, loading: false, loadingPromise: null, listed: false, lastEventEpoch: 0, lastListedEventEpoch: 0, missingListEpoch: null, droppedEvents: 0, dead: false, sub: false, isLive: false, loadedRev: null, loadedEventEpoch: 0 }
       states.set(id, st)
     } else {
       if (st.needsReload === undefined) st.needsReload = false
@@ -132,6 +314,12 @@ export function apply(ctx, config) {
       if (st.lastEventEpoch === undefined) st.lastEventEpoch = 0
       if (st.lastListedEventEpoch === undefined) st.lastListedEventEpoch = 0
       if (st.missingListEpoch === undefined) st.missingListEpoch = null
+      if (st.droppedEvents === undefined) st.droppedEvents = 0
+      if (st.dead === undefined) st.dead = false
+      if (st.sub === undefined) st.sub = false
+      if (st.isLive === undefined) st.isLive = false
+      if (st.loadedRev === undefined) st.loadedRev = null
+      if (st.loadedEventEpoch === undefined) st.loadedEventEpoch = 0
     }
     return st
   }
@@ -161,6 +349,15 @@ export function apply(ctx, config) {
     return false
   }
 
+  // Subagent sessions are outside the dashboard's scope by product decision:
+  // delegation sessions (delegationDepth > 0 / parentSession) are excluded
+  // wherever a header is known, and legacy-layout directories never queue.
+  function isSubHeader(header) {
+    if (!header) return false
+    if ((header.delegationDepth || 0) > 0) return true
+    return header.parentSession !== undefined && header.parentSession !== null && header.parentSession !== ''
+  }
+
   function annotate(st, rec, info) {
     const header = rec.header || {}
     const membership = info.sessionProject.get(String(header.id))
@@ -174,8 +371,28 @@ export function apply(ctx, config) {
     st.rollup.projectTitle = info.pathTitle.get(st.cwd) || (membership && membership.title) || base || '未分组'
   }
 
+  // Apply buffered stream events to a freshly (re)built rollup, deduplicated
+  // by history seq against the events the fold already consumed. A poison
+  // event is dropped (and counted) instead of poisoning the whole load — a
+  // throw here used to make the loader re-queue the session on every reconcile.
+  function drainPending(st, maxSeq) {
+    if (st.pending && st.pending.length) {
+      for (const ev of st.pending) {
+        if (typeof ev.seq === 'number' && typeof maxSeq === 'number' && ev.seq <= maxSeq) continue
+        try {
+          foldAppend(st.rollup, ev)
+        } catch (e) {
+          st.droppedEvents = (st.droppedEvents || 0) + 1
+          if (debugCache) console.error('[dash-pending] dropped event', st.rollup.id, ev && ev.type, e && e.message)
+        }
+      }
+      st.pending = []
+    }
+  }
+
   // Load one session's FULL history once: live sessions come from the
-  // in-memory Session object (no parse); others via persistence.readFrom.
+  // in-memory Session object (no parse); others via the persistence reader
+  // chain or the disk rollup cache.
   async function loadSession(rec) {
     const id = rec.header.id
     const st = ensureState(id, rec.header)
@@ -196,6 +413,7 @@ export function apply(ctx, config) {
     let events = null
     let loaded = false
     let attempted = false
+    let meta = rec.header || { id }
 
     // A live session is authoritative even when its log is currently empty.
     // Falling through to persistence here can turn a valid new session into a
@@ -203,98 +421,174 @@ export function apply(ctx, config) {
     try {
       const sessions = ctx.get('sessions')
       const live = sessions && sessions.get(id)
-      if (live && Array.isArray(live.events)) {
-        events = live.events
-        loaded = true
+      if (live) {
+        st.isLive = true
+        // Try multiple ways to get events — different DSH versions expose
+        // different APIs. snapshotEvents() is the v0.1.5-rc.1 public API.
+        if (typeof live.snapshotEvents === 'function') {
+          const snap = live.snapshotEvents()
+          if (Array.isArray(snap)) { events = snap; loaded = true }
+        }
+        if (!loaded && Array.isArray(live.events)) { events = live.events; loaded = true }
       }
     } catch (e) { /* fall through to persistence */ }
 
-    async function readFrom(reader) {
-      attempted = true
-      const result = await reader()
-      if (!result || !Array.isArray(result.events)) throw new Error('session read returned no event list')
-      events = result.events
-      loaded = true
+    // Disk rollup cache: an unchanged stored file adopts its cached fold with
+    // zero log decoding — this is what makes a DSH restart effectively instant.
+    if (!loaded && rec.file && rec.mtimeMs !== undefined) {
+      const hit = cacheIndex.get(id)
+      if (hit && hit.file === rec.file && hit.mtimeMs === rec.mtimeMs && hit.size === rec.size && hit.rollup) {
+        if (isSubHeader(hit.header)) st.sub = true
+        st.rollup = hit.rollup
+        annotate(st, { header: hit.header }, workspaceInfo())
+        drainPending(st, hit.seq)
+        st.at = Date.now()
+        st.needsReload = false
+        st.dead = false
+        st.loadedRev = { file: hit.file, mtimeMs: hit.mtimeMs, size: hit.size }
+        st.loadedEventEpoch = eventEpoch
+        invalidate()
+        return
+      }
     }
 
-    if (!loaded) {
-      try {
-        const persist = ctx.get('sessionPersistence')
-        if (persist && typeof persist.readFrom === 'function') {
-          await readFrom(() => persist.readFrom(id, 0))
-        }
-      } catch (e) { /* try the query service below */ }
+    const persist = ctx.get('sessionPersistence')
+    if (!loaded && persist) {
+      // requireStoredLog: one direct stored-log read (format migration for
+      // old generations included), no corpus re-list.
+      if (typeof persist.requireStoredLog === 'function') {
+        try {
+          attempted = true
+          const stored = await persist.requireStoredLog(id)
+          if (stored && Array.isArray(stored.events)) {
+            events = stored.events
+            loaded = true
+            if (stored.meta) meta = stored.meta
+          } else if (stored) {
+            throw new Error('session read returned no event list')
+          }
+        } catch { /* try the next reader, then skip permanently */ }
+      }
+      // open/read/close: only when the faster reader does not exist in this
+      // DSH build. Chaining on API availability (not on per-session failure)
+      // avoids paying a second full decode for every unreadable session.
+      if (!loaded && typeof persist.requireStoredLog !== 'function' && typeof persist.open === 'function') {
+        try {
+          attempted = true
+          const handle = await persist.open(id, 'read')
+          try {
+            const result = await handle.read()
+            if (result && Array.isArray(result.events)) { events = result.events; loaded = true }
+            else throw new Error('empty events from handle.read()')
+          } finally { handle.close().catch(() => {}) }
+        } catch { /* try the next reader, then skip permanently */ }
+      }
     }
-    if (!loaded) {
+    // query service: last resort when no persistence service is mounted at all.
+    if (!loaded && !persist) {
       try {
         const q = ctx.get('sessionQuery')
         if (q && typeof q.readSession === 'function') {
-          await readFrom(() => q.readSession(id))
+          attempted = true
+          const result = await q.readSession(id)
+          if (result && Array.isArray(result.events)) {
+            events = result.events
+            loaded = true
+            if (result.session) meta = result.session
+          }
         }
-      } catch (e) { /* preserve the existing rollup and retry later */ }
+      } catch { /* fall through to the permanent-skip below */ }
     }
 
+    // Unreadable stored log (old subagent artifacts a harness upgrade cannot
+    // migrate, corrupt files): skip silently and permanently. Retrying would
+    // re-pay a full format migration decode on every listing forever.
     if (!loaded && attempted) {
-      // Keep the last known rollup usable while the backend is unavailable.
-      // Events observed during the failed read are still incorporated once.
-      if (st.pending && st.pending.length) {
-        for (const ev of st.pending) foldAppend(st.rollup, ev)
-        st.pending = []
-      }
-      st.needsReload = true
-      invalidate()
-      return
-    }
-
-    // No reader is available: treat this as an empty, successfully loaded
-    // session rather than manufacturing a retry storm.
-    if (!loaded) {
-      events = []
-      loaded = true
-    }
-
-    const rollup = st.rollup || emptyRollup()
-    st.rollup = rollup
-    annotate(st, rec, workspaceInfo())
-
-    if (events.length === 0) {
-      if (st.pending && st.pending.length) {
-        for (const ev of st.pending) foldAppend(st.rollup, ev)
-      }
-      st.pending = []
+      drainPending(st, -Infinity)
+      st.dead = true
       st.needsReload = false
       st.at = Date.now()
       invalidate()
       return
     }
 
-    const folded = foldSession(events)
+    // No reader available at all (persistence not mounted): treat as empty
+    if (!loaded) {
+      events = []
+      loaded = true
+    }
+
+    // Subagent session read through the official path (new-format delegation
+    // sessions): folded but excluded from every query.
+    if (isSubHeader(meta)) st.sub = true
+
+    const rollup = st.rollup || emptyRollup()
+    st.rollup = rollup
+    annotate(st, { header: meta }, workspaceInfo())
+
+    if (events.length === 0) {
+      drainPending(st, -Infinity)
+      st.needsReload = false
+      st.dead = false
+      st.at = Date.now()
+      invalidate()
+      return
+    }
+
+    let folded
+    try {
+      folded = foldSession(events)
+    } catch (e) {
+      // Poison history: an event the engine itself cannot fold. Skip the
+      // session permanently — re-queuing would re-pay a full decode on every
+      // reconcile forever (the death-storm pattern the cold-load fix killed).
+      st.dead = true
+      st.needsReload = false
+      st.pending = []
+      st.at = Date.now()
+      if (debugCache) console.error('[dash-load] poison history', id, e && e.message)
+      invalidate()
+      return
+    }
     st.rollup = folded
-    annotate(st, rec, workspaceInfo())
+    annotate(st, { header: meta }, workspaceInfo())
     st.at = Date.now()
 
     // Merge events streamed during the catch-up read, deduplicated by history seq.
-    const maxSeq = events.reduce((max, ev) => {
-      if (typeof ev.seq === 'number') return Math.max(max, ev.seq)
-      return max
-    }, -Infinity)
-    if (st.pending && st.pending.length) {
-      for (const ev of st.pending) {
-        if (typeof ev.seq === 'number' && ev.seq <= maxSeq) continue
-        foldAppend(st.rollup, ev)
-      }
-      st.pending = []
+    let maxSeq = -Infinity
+    for (const ev of events) {
+      if (typeof ev.seq === 'number' && ev.seq > maxSeq) maxSeq = ev.seq
     }
+    drainPending(st, maxSeq)
 
     st.needsReload = false
+    st.dead = false
+    st.loadedEventEpoch = eventEpoch
+    // Cache only non-live sessions (a live session's rollup is rebuilt from
+    // memory on the next boot anyway) and never subagent rollups.
+    if (!st.sub && !st.isLive && rec.file && rec.mtimeMs !== undefined) {
+      st.loadedRev = { file: rec.file, mtimeMs: rec.mtimeMs, size: rec.size }
+      cacheIndex.set(id, {
+        file: rec.file,
+        mtimeMs: rec.mtimeMs,
+        size: rec.size,
+        header: { id: meta.id || id, cwd: meta.cwd || '', createdAt: meta.createdAt },
+        rollup: folded,
+        seq: maxSeq
+      })
+      cacheDirty.add(id)
+    }
     invalidate()
   }
 
   function currentRollups() {
-    return Array.from(states.values())
-      .map((st) => st.rollup)
-      .filter((r) => r && r.last !== null)
-      .sort((a, b) => (b.last || 0) - (a.last || 0))
+    const out = []
+    for (const st of states.values()) {
+      if (st.dead || st.sub) continue
+      const r = st.rollup
+      if (r && r.last !== null) out.push(r)
+    }
+    return out.sort((a, b) => (b.last || 0) - (a.last || 0))
   }
 
   function invalidate() {
@@ -318,66 +612,150 @@ export function apply(ctx, config) {
   // Materialize every known session once, then serve all queries from the
   // event-driven in-memory states. A request can still trigger loading for a
   // session created before the plugin's event listener was attached.
+  //
+  // The materialisation itself is NOT awaited by a request beyond the first
+  // one: a cold store needs a one-time pass (seconds with a warm disk cache),
+  // and the first request waits for it so the user sees complete data instead
+  // of a partial "still counting" view.
   async function getRollups() {
-    if (initPromise) return initPromise
-    const snapNow = Date.now()
-    if (rollupSnapshot && snapNow - rollupSnapshotAt < ROLLUP_SNAPSHOT_MS) {
+    const now = Date.now()
+    if (rollupSnapshot && now - rollupSnapshotAt < ROLLUP_SNAPSHOT_MS) {
       return rollupSnapshot
     }
-    initPromise = (async () => {
-      const q = ctx.get('sessionQuery')
-      if (!q) {
-        ready = true
-        return snapshotRollups(currentRollups())
-      }
-      // Capture before the async list call so events arriving while the
-      // persistence snapshot is being assembled are treated as newer.
+    if (!initPromise && now - lastListAt >= LIST_MIN_INTERVAL_MS) {
+      lastListAt = now
+      initPromise = refreshCorpus().catch(() => {}).finally(() => { initPromise = null })
+    }
+    if (!rollupSnapshot && initPromise) await initPromise
 
-      const listEpoch = eventEpoch
-      let records = []
-      try { records = await q.listSessions() } catch (e) {
-        return snapshotRollups(currentRollups())
+    // First call: wait for the materialization pass to settle so the user sees
+    // complete data on first open instead of partial.
+    if (!initialLoadDone) {
+      await waitForFullLoad()
+      initialLoadDone = true
+    }
+    return snapshotRollups(currentRollups())
+  }
+
+  // Wait until the background pass has settled: every known session is either
+  // materialized, excluded (subagent), or permanently skipped (unreadable).
+  async function waitForFullLoad() {
+    const deadline = Date.now() + FIRST_LOAD_WAIT_MS
+    for (;;) {
+      if (!backgroundLoad && backgroundQueue.length === 0) return
+      let allSettled = true
+      for (const st of states.values()) {
+        if (st.dead || st.sub) continue
+        if (st.rollup.last === null) { allSettled = false; break }
       }
-      if (records.length === 0 && states.size > 0) {
-        ready = true
-        return snapshotRollups(currentRollups())
-      }
-      const seen = new Set()
-      const toLoad = []
-      for (const rec of records) {
-        const header = rec && rec.header
-        const id = header && header.id
-        if (!id || seen.has(id)) continue
-        seen.add(id)
-        const st = states.get(id)
-        if (st) {
-          st.listed = true
-          st.lastListedEventEpoch = st.lastEventEpoch
-          st.missingListEpoch = null
-        }
-        if (!st || st.needsReload || st.rollup.last === null) toLoad.push({ header })
-      }
-      let cursor = 0
-      async function worker() {
-        while (cursor < toLoad.length) {
-          const rec = toLoad[cursor++]
-          try { await loadSession(rec) } catch (e) { /* isolate one bad session */ }
-        }
-      }
-      await Promise.all(Array.from({ length: 4 }, () => worker()))
-      for (const id of Array.from(states.keys())) {
-        const st = states.get(id)
-        if (!seen.has(id)) {
-          const now = Date.now()
-          if (keepMissingState(st, listEpoch)) continue
-          if (st.lastEventAt && now - st.lastEventAt < RECONCILE_INTERVAL_MS * 2) continue
-          states.delete(id)
-        }
-      }
+      if (allSettled) return
+      if (Date.now() > deadline) return
+      await new Promise((r) => setTimeout(r, WAIT_POLL_MS))
+    }
+  }
+
+  async function fallbackListSessions() {
+    const q = getCtxService('sessionQuery')
+    if (!q || typeof q.listSessions !== 'function') return []
+    try {
+      const recs = await q.listSessions()
+      return (recs || []).map((r) => ({ id: r.header.id, header: r.header, file: null, mtimeMs: undefined, size: undefined }))
+    } catch (e) { return [] }
+  }
+
+  // One corpus pass: refresh `states` from the store walk (or the query
+  // service when the store layout is unavailable), drop removed sessions, and
+  // hand everything still missing to the background loader.
+  async function refreshCorpus() {
+    await initStore()
+    const listEpoch = eventEpoch
+    let records = null
+    if (storeRoot) {
+      try { records = await walkStore() } catch (e) { records = null }
+    }
+    if (!records || records.length === 0) records = await fallbackListSessions()
+    if (!records || records.length === 0) {
       ready = true
-      return snapshotRollups(currentRollups())
-    })().finally(() => { initPromise = null })
-    return initPromise
+      return
+    }
+    const seen = new Set()
+    const toLoad = []
+    for (const rec of records) {
+      const header = rec.header || {}
+      const id = rec.id || header.id
+      if (!id || seen.has(id)) continue
+      seen.add(id)
+      const st = states.get(id)
+      if (st) {
+        st.listed = true
+        st.lastListedEventEpoch = st.lastEventEpoch
+        st.missingListEpoch = null
+      }
+      if (!st) {
+        // Subagent sessions are skipped before anything is read.
+        if (isSubHeader(header)) continue
+        toLoad.push(rec)
+        continue
+      }
+      if (st.dead || st.sub) continue
+      if (st.needsReload || st.rollup.last === null) { toLoad.push(rec); continue }
+      // A closed session whose stored file changed (resumed by a later DSH
+      // run) reloads — but only when no live event has arrived since the load,
+      // otherwise the event stream is already ahead of the file.
+      if (rec.file && rec.mtimeMs !== undefined && st.loadedRev &&
+        (st.loadedRev.file !== rec.file || st.loadedRev.mtimeMs !== rec.mtimeMs || st.loadedRev.size !== rec.size) &&
+        st.lastEventEpoch <= st.loadedEventEpoch) {
+        toLoad.push(rec)
+      }
+    }
+    for (const id of Array.from(states.keys())) {
+      const st = states.get(id)
+      if (!seen.has(id)) {
+        const now = Date.now()
+        if (keepMissingState(st, listEpoch)) continue
+        if (st.lastEventAt && now - st.lastEventAt < RECONCILE_INTERVAL_MS * 2) continue
+        states.delete(id)
+        cacheIndex.delete(id)
+      }
+    }
+    ready = true
+    queueLoad(toLoad)
+  }
+
+  // Background loader: keeps at most one pass alive, drains everything queued
+  // into it, and never rejects (a bad session must not stop the pass).
+  function queueLoad(recs) {
+    if (recs && recs.length) {
+      const queued = new Set(backgroundQueue.map((rec) => rec.header.id))
+      for (const rec of recs) {
+        const id = rec.header.id
+        if (queued.has(id)) continue
+        queued.add(id)
+        backgroundQueue.push(rec)
+      }
+    }
+    if (backgroundLoad || backgroundQueue.length === 0) return
+    backgroundLoad = (async () => {
+      try {
+        while (backgroundQueue.length) {
+          const batch = backgroundQueue
+          backgroundQueue = []
+          let cursor = 0
+          const worker = async () => {
+            while (cursor < batch.length) {
+              const rec = batch[cursor++]
+              try { await loadSession(rec) } catch (e) { /* isolate one bad session */ }
+            }
+          }
+          await Promise.all(Array.from({ length: LOAD_WORKERS }, () => worker()))
+          invalidate()
+          await flushCache().catch(() => {})
+        }
+      } catch (e) { /* a failed pass must never leak an unhandled rejection */
+      } finally {
+        backgroundLoad = null
+      }
+    })()
   }
 
   function affectsMetrics(event) {
@@ -405,7 +783,9 @@ export function apply(ctx, config) {
       st.lastEventEpoch = eventEpochNow
       st.lastEventAt = Date.now()
       st.pending.push(event)
-      loadSession({ header: session.header || {id} })
+      // The catch matters: a rejected history load must never surface as an
+      // unhandledRejection in the host process (Node default is to abort).
+      loadSession({ header: session.header || { id } }).catch(() => {})
       return
     }
     if (st.loading) {
@@ -413,61 +793,28 @@ export function apply(ctx, config) {
       const already = st.pending.find((e) => e && typeof e.seq === 'number' && e.seq === event.seq)
       if (!already) st.pending.push(event)
     } else {
-      // history loaded: append directly (no pending)
-      foldAppend(st.rollup, event)
-      st.at = Date.now()
+      // history loaded: append directly (no pending). A poison event must not
+      // break the dispatch to other listeners or crash the stream: drop it,
+      // count the drop, and let the next DSH boot (full refold) self-heal.
+      try {
+        foldAppend(st.rollup, event)
+        st.at = Date.now()
+      } catch (e) {
+        st.droppedEvents = (st.droppedEvents || 0) + 1
+        if (debugCache) console.error('[dash-event] foldAppend dropped event', id, event && event.type, e && e.message)
+      }
     }
   })
 
-  // reconcile: load newly created sessions, drop removed ones.
-  // All states participate in stats; reconcile reloads sessions with
-  // needsReload or an empty rollup, without a truncation cap.
-  // The routes below are registered unconditionally — a missing timer
-  // service only disables periodic reconcile + pre-warm, never the API.
+  // reconcile: pick up new/changed/removed sessions from the store walk and
+  // drop removed ones. The routes below are registered unconditionally — a
+  // missing timer service only disables periodic reconcile + pre-warm, never
+  // the API.
   const timer = getCtxService('timer')
   if (timer) {
-    ctx.effect(() => timer.setInterval(async () => {
-      const q = getCtxService('sessionQuery')
-      if (!q || !ready) return
-
-      const listEpoch = eventEpoch
-      let recs = []
-      try { recs = await q.listSessions() } catch (e) { return }
-
-      if (recs.length === 0 && states.size > 0) return
-
-      const seen = new Set(recs.map((r) => r.header.id))
-      for (const rec of recs) {
-        const st = states.get(rec.header.id)
-        if (st) {
-          st.listed = true
-          st.lastListedEventEpoch = st.lastEventEpoch
-          st.missingListEpoch = null
-        }
-      }
-      for (const id of Array.from(states.keys())) {
-        const st = states.get(id)
-        if (!seen.has(id)) {
-          const now = Date.now()
-          if (keepMissingState(st, listEpoch)) continue
-          if (st.lastEventAt && now - st.lastEventAt < RECONCILE_INTERVAL_MS * 2) continue
-          states.delete(id)
-        }
-      }
-      // reload sessions that have needsReload or an empty rollup
-      // fixed 4 workers, no infinite creation
-      const WORKER_COUNT = 4
-      let cursor = 0
-      async function worker() {
-        while (cursor < recs.length) {
-          const rec = recs[cursor++]
-          const st = states.get(rec.header.id)
-          if (!st || st.needsReload || st.rollup.last === null) {
-            try { await loadSession(rec) } catch (e) { /* skip failed session */ }
-          }
-        }
-      }
-      await Promise.all(Array.from({ length: WORKER_COUNT }, () => worker()))
+    ctx.effect(() => timer.setInterval(() => {
+      if (!ready) return
+      refreshCorpus().catch(() => {})
     }, RECONCILE_INTERVAL_MS), 'usage-dashboard: reconcile')
 
     // pre-warm the cold load right after startup: first open is instant

@@ -124,6 +124,7 @@ qwen3.6-plus,Alibaba,2,12,0.6
 qwen3.7-flash,Alibaba,0.6,2.4,0.12
 qwen3.7-max,Alibaba,12,36,1.8
 qwen3.7-plus,Alibaba,2,8,0.4
+qwen3.8-flash,Alibaba,0.8,2.7,0.1
 qwen3.8-max,Alibaba,12,36,1.8
 glm-4.5,Zhipu AI,1.2,8,0.24
 glm-4.5-air,Zhipu AI,1.2,8,0.24
