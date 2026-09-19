@@ -6,7 +6,7 @@
 //
 // Usage: npm run bench   (node scripts/bench.js)
 import { execFileSync } from 'node:child_process'
-import { foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, priceFor, priceForAt, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, presetBucketCount, cellOf } from '../src/core/rollup.js'
+import { foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, priceFor, priceForAt, resolveDSModel, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, presetBucketCount, cellOf } from '../src/core/rollup.js'
 
 const HOUR = 3600000
 const DAY = 86400000
@@ -1260,40 +1260,62 @@ const t1 = process.hrtime.bigint()
 console.log('  new incremental refold (' + K + ' changed)'.padEnd(44) + ((Number(t1 - t0) / 1e6)).toFixed(2).padStart(10) + ' ms')
 console.log('  legacy would rescan all ' + SESSIONS + ' sessions on every refresh')
 
-console.log('\n[4] DeepSeek 峰谷定价（2026-08-17 00:00 北京时间起）')
+console.log('\n[4] DeepSeek 峰谷定价（现行两型号：deepseek-flash / deepseek-v4-pro）')
 {
-  // 构造北京时间时刻：2026-08-17（周一）10:00（高峰 9-12）、13:00（空闲）、15:00（高峰 14-18）、
-  // 19:00（空闲），以及生效前 2026-08-16 23:00
-  const bj = (d, h, m = 0) => Date.UTC(2026, 7, d, h - 8, m) // 北京时间 → UTC
-  const flash = 'deepseek-v4-flash'
-  const vision = 'deepseek-v4-flash-vision-exp'
+  // 北京时间构造函数：月/日/时 → UTC。星期：2026-08-17 周一、08-22 周六。
+  const bj8 = (d, h, m = 0) => Date.UTC(2026, 7, d, h - 8, m)   // 8 月（legacy 价）
+  const bj9 = (d, h, m = 0) => Date.UTC(2026, 8, d, h - 8, m)   // 9 月（V4.1 Flash 新价）
+  const flash = 'deepseek-flash'
   const pro = 'deepseek-v4-pro'
-  const oldFlash = [3, 9, 0.1]
-  const oldPro = [9, 27, 0.3]
+  // legacy（V4.1 Flash 新价生效前）
+  const oldFlashPeak = [3.0, 9.0, 0.10], oldFlashOff = [1.5, 4.5, 0.05]
+  const oldProPeak = [9.0, 27.0, 0.30], oldProOff = [4.5, 13.5, 0.15]
+  // v41（2026-09-10 12:00 起）
+  const newPeak = [2.0, 8.0, 0.04], newOff = [1.0, 4.0, 0.02]
   const cases = [
-    // [model, t, expected p, expected matched]
-    [flash, bj(17, 10), [3.0, 9.0, 0.10], flash],
-     [vision, bj(17, 10), [3.0, 9.0, 0.10], vision],
-     [flash, bj(22, 10), [1.5, 4.5, 0.05], flash],
-    [flash, bj(17, 13), [1.5, 4.5, 0.05], flash],
-    [flash, bj(17, 15), [3.0, 9.0, 0.10], flash],
-    [flash, bj(17, 19), [1.5, 4.5, 0.05], flash],
-    [flash, bj(17, 0), [1.5, 4.5, 0.05], flash],
-    [pro, bj(17, 10), [9.0, 27.0, 0.30], pro],
-    [pro, bj(17, 13), [4.5, 13.5, 0.15], pro],
-    // 生效前仍按旧价
-    [flash, bj(16, 23), oldFlash, flash],
-    [pro, bj(16, 23), oldPro, pro],
-    // 边界：12:00/18:00 高峰结束；8:59 空闲
-    [flash, bj(17, 11, 59), [3.0, 9.0, 0.10], flash],
-    [flash, bj(17, 12), [1.5, 4.5, 0.05], flash],
-    [flash, bj(17, 13, 59), [1.5, 4.5, 0.05], flash],
-    [flash, bj(17, 14), [3.0, 9.0, 0.10], flash],
-    [flash, bj(17, 17, 59), [3.0, 9.0, 0.10], flash],
-    [flash, bj(17, 18), [1.5, 4.5, 0.05], flash],
-    [flash, bj(17, 8, 59), [1.5, 4.5, 0.05], flash],
+    // ---- 生效前（2026-08-17 周一）：feish 旧价 / pro 自身价 ----
+    [flash, bj8(17, 10), oldFlashPeak, flash],
+    [flash, bj8(17, 13), oldFlashOff, flash],
+    [pro, bj8(17, 10), oldProPeak, pro],
+    [pro, bj8(17, 13), oldProOff, pro],
+    // 峰谷边界：12:00/18:00 高峰结束；8:59、13:59 空闲；19:00 空闲
+    [flash, bj8(17, 11, 59), oldFlashPeak, flash],
+    [flash, bj8(17, 12), oldFlashOff, flash],
+    [flash, bj8(17, 14), oldFlashPeak, flash],
+    [flash, bj8(17, 17, 59), oldFlashPeak, flash],
+    [flash, bj8(17, 18), oldFlashOff, flash],
+    [flash, bj8(17, 8, 59), oldFlashOff, flash],
+    [flash, bj8(17, 0), oldFlashOff, flash],
+    // 周末全天空闲（08-22 周六 10:00 本是高峰时段）
+    [flash, bj8(22, 10), oldFlashOff, flash],
+    // ---- 比生效日更早（2026-08-16 23:00）：仍按 CSV 静态价 ----
+    [flash, bj8(16, 23), priceFor('deepseek-v4-flash').p, 'deepseek-v4-flash'],
+    [pro, bj8(16, 23), priceFor('deepseek-v4-pro').p, 'deepseek-v4-pro'],
+    // ---- V4.1 Flash 新价生效后（2026-09-10 12:00 起），周一 09-14 ----
+    [flash, bj9(14, 10), newPeak, flash],
+    [flash, bj9(14, 13), newOff, flash],
+    [flash, bj9(14, 15), newPeak, flash],
+    [flash, bj9(14, 19), newOff, flash],
+    // 生效瞬间前 1ms 仍是 legacy 价，生效后恰好 12:00 是新价
+    [flash, bj9(10, 11, 59) + 999, oldFlashPeak, flash],
+    [flash, bj9(10, 12), newOff, flash],
+    // Pro 在 09-14 12:00 前仍按自身价目（空闲 4.5/13.5/0.15）
+    [pro, bj9(10, 13), oldProOff, pro],
+    [pro, bj9(14, 11, 59), oldProPeak, pro],
+    // Pro 路由到 Flash 后：按 Flash 计费（周一 09-14 15:00 高峰）
+    [pro, bj9(14, 15), newPeak, pro],
+    [pro, bj9(14, 19), newOff, pro],
+    // ---- 旧名与第三方变体名：一律路由到 V4.1 Flash 并按 Flash 计费 ----
+    ['deepseek-v4-flash', bj9(14, 10), newPeak, 'deepseek-v4-flash'],
+    ['deepseek-v4-flash-vision-exp', bj9(14, 10), newPeak, 'deepseek-v4-flash-vision-exp'],
+    ['deepseek-ai/DeepSeek-V4-Flash-0731', bj9(14, 10), newPeak, 'deepseek-ai/DeepSeek-V4-Flash-0731'],
+    ['deepseek/deepseek-v4-pro', bj9(14, 15), newPeak, 'deepseek/deepseek-v4-pro'],
+    ['deepseek-v4.1-flash', bj9(14, 10), newPeak, 'deepseek-v4.1-flash'],
+    ['deepseek-v4-pro-0813', bj9(14, 15), newPeak, 'deepseek-v4-pro-0813'],
+    // Pro 变体名在路由生效前（09-14 10:00）仍按 Pro 自身价
+    ['deepseek/deepseek-v4-pro', bj9(14, 10), oldProPeak, 'deepseek/deepseek-v4-pro'],
     // 非 DeepSeek 模型不受影响
-    ['gpt-5', bj(17, 10), priceFor('gpt-5').p, 'gpt-5']
+    ['gpt-5', bj8(17, 10), priceFor('gpt-5').p, 'gpt-5']
   ]
   for (const [model, t, expect, matched] of cases) {
     const r = priceForAt(model, t)
@@ -1301,18 +1323,47 @@ console.log('\n[4] DeepSeek 峰谷定价（2026-08-17 00:00 北京时间起）')
     for (let i = 0; i < 3; i++) assertEq('peak ' + model + ' @' + t + ' p[' + i + ']', r.p[i], expect[i], 1e-9)
   }
   // 峰谷标记与区间价随行返回
-  const pk = priceForAt(flash, bj(17, 10))
-  if (!pk.ds || pk.peak[0] !== 3.0 || pk.off[0] !== 1.5) throw new Error('peak flag/range missing: ' + JSON.stringify(pk))
-  // 折叠计费与手工验算一致：高峰 10:00 1M 输入 + 1M 输出 + 1M 缓存读取
+  const pk = priceForAt(flash, bj9(14, 10))
+  if (!pk.ds || pk.peak[0] !== 2.0 || pk.off[0] !== 1.0) throw new Error('peak flag/range missing: ' + JSON.stringify(pk))
+  // 规范名归类：两型号名 + 变体名都能归一，无关模型为 null
+  const canon = [
+    ['deepseek-flash', flash], ['deepseek-v4.1-flash', flash],
+    ['deepseek-ai/DeepSeek-V4-Flash-0731', flash], ['deepseek-v4-flash-vision-exp', flash],
+    ['deepseek-v4-pro', pro], ['deepseek-v4-pro-0813', pro], ['deepseek/deepseek-v4-pro', pro],
+    ['gpt-5', null], ['deepseek-chat', null], ['deepseek-v3.2', null], ['', null]
+  ]
+  for (const [id, want] of canon) {
+    const got = resolveDSModel(id)
+    if (got !== want) throw new Error('resolveDSModel(' + id + ') = ' + got + ', want ' + want)
+  }
+  // 折叠计费与手工验算一致：V4.1 Flash 高峰 1M 输入 + 1M 输出 + 1M 缓存读取 = 2 + 8 + 0.04
   const evts = [
-    { type: 'user/message', time: bj(17, 10), data: { source: { kind: 'user' } } },
-    { type: 'assistant/message', time: bj(17, 10), data: { turn: 0, step: 0, usage: { inputTokens: 1e6, outputTokens: 1e6, cacheReadTokens: 1e6, cacheWriteTokens: 0 }, message: { source: { model: flash } } } }
+    { type: 'user/message', time: bj9(14, 10), data: { source: { kind: 'user' } } },
+    { type: 'assistant/message', time: bj9(14, 10), data: { turn: 0, step: 0, usage: { inputTokens: 1e6, outputTokens: 1e6, cacheReadTokens: 1e6, cacheWriteTokens: 0 }, message: { source: { model: flash } } } }
   ]
   const roll = foldSession(evts)
-  const u = queryUsage([roll], { range: 'custom', from: bj(17, 0), to: bj(17, 23) }, {})
-  const expectCost = (3.0 + 9.0 + 0.10) // 元
-  assertEq('peak fold cost', u.totals.cost, expectCost, 1e-9)
-  console.log('  峰谷取价/边界/生效日期/折叠计费 OK (' + cases.length + ' cases)')
+  const u = queryUsage([roll], { range: 'custom', from: bj9(14, 0), to: bj9(14, 23) }, {})
+  assertEq('peak fold cost', u.totals.cost, (2.0 + 8.0 + 0.04), 1e-9)
+  // 已下线的旧名同样计费（此前为 ¥0 的回归点）
+  const rollOld = foldSession([
+    { type: 'user/message', time: bj9(14, 10), data: { source: { kind: 'user' } } },
+    { type: 'assistant/message', time: bj9(14, 10), data: { turn: 0, step: 0, usage: { inputTokens: 1e6, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } } }
+  ])
+  const uOld = queryUsage([rollOld], { range: 'custom', from: bj9(14, 0), to: bj9(14, 23) }, {})
+  assertEq('retired name still billed', uOld.totals.cost, 2.0, 1e-9)
+  // 厂商分组：现行两型号与第三方变体名归到 DeepSeek（CSV 中已无这些行）
+  const vRoll = foldSession([
+    { type: 'assistant/message', time: bj9(14, 15), data: { turn: 0, step: 0, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: flash } } } },
+    { type: 'assistant/message', time: bj9(14, 15), data: { turn: 0, step: 0, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-ai/DeepSeek-V4-Flash-0731' } } } },
+    { type: 'assistant/message', time: bj9(14, 15), data: { turn: 0, step: 0, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'some-unknown-model' } } } }
+  ])
+  vRoll.id = 'v'; vRoll.cwd = 'D:/v'; vRoll.projectTitle = 'v'
+  const uV = queryUsage([vRoll], { range: 'custom', from: bj9(14, 0), to: bj9(14, 23) }, {})
+  const vv = uV.meta.vendors
+  if (vv[flash] !== 'DeepSeek') throw new Error('vendor(deepseek-flash) = ' + vv[flash])
+  if (vv['deepseek-ai/DeepSeek-V4-Flash-0731'] !== 'DeepSeek') throw new Error('vendor(variant) = ' + vv['deepseek-ai/DeepSeek-V4-Flash-0731'])
+  if (vv['some-unknown-model'] !== '其他') throw new Error('vendor(unknown) = ' + vv['some-unknown-model'])
+  console.log('  峰谷取价/边界/生效日/变体名归一/厂商分组/折叠计费 OK (' + cases.length + ' cases)')
 }
 
 console.log('\nall checks passed ✔')
