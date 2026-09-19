@@ -80,15 +80,51 @@ export function priceFor(model) {
   return null
 }
 
-// ---------- DeepSeek 峰谷定价（2026-08-17 00:00 北京时间起生效） ----------
-// 官方口径（UTC+8）：高峰时段 = 周一至周五 9:00-12:00 与 14:00-18:00，其余（含周末）为空闲时段；
-// 空闲时段价格为高峰时段的一半（元/百万 tokens）。生效前的事件按 CSV 静态价（USD×7）计。
+// ---------- DeepSeek 峰谷定价 ----------
+// 官方现行模型名只有两个，且都不带版本后缀：
+//   deepseek-flash   → DeepSeek-V4.1-Flash（原生多模态，2026-09-10 发布）
+//   deepseek-v4-pro  → DeepSeek-V4-Pro-0813
+// 旧名 deepseek-v4-flash / deepseek-v4-flash-vision-exp 已下线，但仍被路由到
+// V4.1 Flash 并按 Flash 单价计费；deepseek-v4-pro 自 2026-09-14 12:00（北京时间）
+// 起同样路由到 V4.1 Flash 并按 Flash 计费。第三方转售商的 provider 前缀
+// （deepseek-ai/…、deepseek/…）与日期后缀（-0731/-0813/-latest）在解析时剥离。
+//
+// 官方口径（UTC+8）：高峰时段 = 周一至周五 9:00-12:00 与 14:00-18:00，其余（含周末）
+// 为空闲时段；空闲价格为高峰时段的一半（元/百万 tokens）。生效前的事件按 CSV 静态价计。
 const DS_PEAK_SINCE = Date.UTC(2026, 7, 16, 16) // 2026-08-16T16:00Z = 08-17 00:00 +08:00
-// model → [输入(缓存未命中), 输出, 缓存(命中)] × [空闲, 高峰]
+const DS_FLASH_V41_SINCE = Date.UTC(2026, 8, 10, 4) // 2026-09-09T04:00Z = 09-10 12:00 +08:00（V4.1 Flash 新价）
+const DS_PRO_ROUTE_SINCE = Date.UTC(2026, 8, 14, 4) // 2026-09-13T04:00Z = 09-14 12:00 +08:00（Pro 路由到 Flash）
+
+const DS_FLASH = 'deepseek-flash'
+const DS_PRO = 'deepseek-v4-pro'
+
+// 规范名 → 价目。V4.1 Flash 新价自 2026-09-10 12:00 起生效（旧名 v4-flash /
+// v4-flash-vision-exp 同样按此价）；V4 Pro 在 2026-09-14 12:00 路由前价格始终不变
+// （官方原话「V4 Pro 服务期间价格保持不变」），路由后按 V4.1 Flash 单价计费。
 const DS_PEAK = {
-  'deepseek-v4-flash': { in: [1.5, 3.0], out: [4.5, 9.0], cache: [0.05, 0.10] },
-  'deepseek-v4-flash-vision-exp': { in: [1.5, 3.0], out: [4.5, 9.0], cache: [0.05, 0.10] },
-  'deepseek-v4-pro': { in: [4.5, 9.0], out: [13.5, 27.0], cache: [0.15, 0.30] }
+  [DS_FLASH]: {
+    legacy: { in: [1.5, 3.0], out: [4.5, 9.0], cache: [0.05, 0.10] },
+    v41: { in: [1.0, 2.0], out: [4.0, 8.0], cache: [0.02, 0.04] }
+  },
+  [DS_PRO]: {
+    legacy: { in: [4.5, 9.0], out: [13.5, 27.0], cache: [0.15, 0.30] }
+  }
+}
+
+// 规范名 → CSV 中的历史模型名（仅在峰谷价生效前回退使用）
+const DS_CSV_LEGACY = { [DS_FLASH]: 'deepseek-v4-flash', [DS_PRO]: 'deepseek-v4-pro' }
+
+// 任意模型名 → 规范 DeepSeek 名（非 DeepSeek V4 两型号返回 null）。
+// 剥离 provider 前缀与 -free/-latest/日期后缀后按系列归类，因此第三方转售商的
+// 变体名（deepseek-ai/DeepSeek-V4-Flash-0731 等）也能命中同一价目。
+export function resolveDSModel(model) {
+  const raw = String(model || '').toLowerCase()
+  if (!raw) return null
+  const base = raw.slice(raw.lastIndexOf('/') + 1).replace(/-(?:free|latest)$/, '')
+  if (!base.startsWith('deepseek')) return null
+  if (/^deepseek-v4-?pro|^deepseek-pro/.test(base)) return DS_PRO
+  if (/^deepseek-flash|^deepseek-v4\.?1?-?flash/.test(base)) return DS_FLASH
+  return null
 }
 
 // 北京时间（UTC+8）小时数 0-23
@@ -105,16 +141,21 @@ export function isDSPeak(t) {
   return (h >= 9 && h < 12) || (h >= 14 && h < 18)
 }
 
-// 按事件时间取价：DeepSeek 峰谷模型在 2026-08-17 00:00（北京时间）后按峰/谷价计费；
-// 其余模型与生效前的事件一律使用静态价（CSV）。返回 { matched, p, peak?, off?, ds? }。
+// 按事件时间取价：DeepSeek 两个现行型号按峰谷价计费（V4.1 Flash 新价自
+// 2026-09-10 12:00 北京时间起；V4 Pro 自 2026-09-14 12:00 起路由到 Flash 并按 Flash 计费）；
+// 其余模型与更早的事件一律使用静态价（CSV）。返回 { matched, p, peak?, off?, ds? }。
 export function priceForAt(model, t) {
   const id = String(model || '')
   if (!id) return null
-  const stripped = id.replace(/-free$/, '')
-  const key = hasOwn(DS_PEAK, stripped) ? stripped : (hasOwn(DS_PEAK, id) ? id : null)
-  if (key && typeof t === 'number' && t >= DS_PEAK_SINCE) {
+  const dsKey = resolveDSModel(id)
+  if (dsKey && typeof t === 'number' && t >= DS_PEAK_SINCE) {
+    // Pro 在路由生效前仍按自己的价目；路由后与所有 flash 名一样按 V4.1 Flash 计费
+    const era = dsKey === DS_PRO
+      ? (t >= DS_PRO_ROUTE_SINCE ? 'v41' : 'legacy')
+      : (t >= DS_FLASH_V41_SINCE ? 'v41' : 'legacy')
+    const rateKey = DS_PEAK[dsKey][era] ? dsKey : DS_FLASH
+    const ds = DS_PEAK[rateKey][era]
     const pk = isDSPeak(t) ? 1 : 0
-    const ds = DS_PEAK[key]
     return {
       matched: id,
       p: [ds.in[pk], ds.out[pk], ds.cache[pk]],
@@ -122,6 +163,11 @@ export function priceForAt(model, t) {
       off: [ds.in[0], ds.out[0], ds.cache[0]],
       ds: true
     }
+  }
+  // 峰谷价生效前：回退到该型号对应的历史 CSV 行（保证旧事件不被新价重算）
+  if (dsKey) {
+    const legacyId = DS_CSV_LEGACY[dsKey]
+    if (hasOwn(PRICES, legacyId)) return { matched: legacyId, p: PRICES[legacyId] }
   }
   return priceFor(id)
 }
@@ -1015,9 +1061,12 @@ export function queryUsage(rollups, req, opts) {
     })
     .sort((a, b) => (b.tokens + b.cost) - (a.tokens + a.cost))
   const projects = Array.from(projectList.values()).sort((a, b) => a.title.localeCompare(b.title, 'zh'))
-  // 模型 → 厂商（系列分组，来自 pricing CSV）；未收录模型归「其他」
+  // 模型 → 厂商（系列分组，来自 pricing CSV）；DeepSeek 现行两型号与第三方变体名
+  // 不在 CSV 中，按系列归到 DeepSeek；其余未收录模型归「其他」
   const vendors = {}
-  for (const m of models) vendors[m.id] = hasOwn(VENDORS, m.id) ? VENDORS[m.id] : '其他'
+  for (const m of models) {
+    vendors[m.id] = hasOwn(VENDORS, m.id) ? VENDORS[m.id] : (resolveDSModel(m.id) ? 'DeepSeek' : '其他')
+  }
 
   return {
     totals: cur.totals,

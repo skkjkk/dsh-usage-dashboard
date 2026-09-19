@@ -11,7 +11,7 @@ return {
     const BJ_OFFSET = 8 * 3600000
 
     // ===== Dashboard tooltips & icons =====
-    const COST_TIP = '费用按 vibe-usage-model-pricing-extended.csv 定价表估算（CNY 直接定价）；DeepSeek V4 自 2026-08-17 起按峰谷计费（工作日高峰 9:00-12:00、14:00-18:00，北京时间，周末及其余时段为空闲（高峰一半））；未匹配模型暂不计费。点击卡片切换 ¥/＄。'
+    const COST_TIP = '费用按 vibe-usage-model-pricing-extended.csv 定价表估算（CNY 直接定价）；DeepSeek 现行两型号（deepseek-flash、deepseek-v4-pro）按峰谷计费（工作日高峰 9:00-12:00、14:00-18:00，北京时间，周末及其余时段为空闲（高峰一半）），V4.1 Flash 新价自 2026-09-10 12:00 起、V4 Pro 自 2026-09-14 12:00 起路由到 Flash 计费；已下线的旧名（deepseek-v4-flash / -vision-exp）与第三方变体名同样按 Flash 计费；未匹配模型暂不计费。点击卡片切换 ¥/＄。'
     const DUR_TIP = '会话时长说明：活跃时长 = 模型生成区间（请求发出 → 回复完成）的累计时长，不含工具执行时间；旧版日志带输出分块时从首个分块起算（不含排队与首 Token 延迟）。并行会话的生成时间会分别累加，因此可能超过 24H。总时长 = 各会话首条到末条消息的时间跨度，重叠（并行）会话只计一次后相加（含思考、看代码等空闲）。'
     const TOTAL_TIP = '会话时长说明：总时长 = 每个会话从首条消息到末条消息的时间跨度，先合并重叠区间（并行会话只计一次）再相加；包含中间思考、看代码等空闲时间，但不包含会话之间的间隔，不会超过所选时间范围。'
     const ICON_ECG = h('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, h('polyline', { points: '22 12 18 12 15 21 9 3 6 12 2 12' }))
@@ -467,7 +467,7 @@ return {
         h('div', { className: 'pop-title' }, '模型定价匹配'),
         h('div', { className: 'pop-body' },
           h('div', null, '当前定价覆盖 ' + pricing.coverage + '% 的 Token 用量，未匹配的模型暂不计费。'),
-          hasDs ? h('div', { className: 'pop-sec', style: { marginTop: 6 } }, 'DeepSeek V4 自 2026-08-17 起按峰谷计费：高峰 9:00-12:00、14:00-18:00（北京时间），空闲为高峰一半；表中 ¥a~b/M 为空闲~高峰。') : null),
+          hasDs ? h('div', { className: 'pop-sec', style: { marginTop: 6 } }, 'DeepSeek 现行两型号按峰谷计费：高峰 9:00-12:00、14:00-18:00（北京时间），空闲为高峰一半；表中 ¥a~b/M 为空闲~高峰。V4.1 Flash 新价自 2026-09-10 12:00 起生效；V4 Pro 自 2026-09-14 12:00 起路由到 Flash 并按 Flash 单价计费。') : null),
         h('table', null,
           h('thead', null, h('tr', null,
             h('th', null, '模型'),

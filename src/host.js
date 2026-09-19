@@ -63,7 +63,9 @@ export function apply(ctx, config) {
   // v2: step-interval fallback + qwen3.8-flash. v3: bucket shape / edge-align.
   // v4: honest response times (fallback removed, timedCalls denominator).
   // v5: proximity join for migrated logs whose message envelope lost turn/step.
-  const CACHE_FORMAT_VERSION = 5
+  // v6: DeepSeek 现行两型号名（deepseek-flash / deepseek-v4-pro）峰谷价 + V4.1 Flash 新价。
+  //     Costs are baked into cached rollups, so a pricing change MUST bump this.
+  const CACHE_FORMAT_VERSION = 6
   // Optional diagnostics for the disk rollup cache (set debugCache: true in
   // the plugin config to trace cache writes).
   const debugCache = !!(config && config.debugCache)
