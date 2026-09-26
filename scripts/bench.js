@@ -1366,4 +1366,66 @@ console.log('\n[4] DeepSeek 峰谷定价（现行两型号：deepseek-flash / de
   console.log('  峰谷取价/边界/生效日/变体名归一/厂商分组/折叠计费 OK (' + cases.length + ' cases)')
 }
 
+console.log('\n[0k] case-insensitive pricing fallback (provider-cased model ids)')
+{
+  // 事件里的 model id 取自 provider 目录，大小写不受 CSV 约束：qoder provider 报
+  // Qwen3.8-Flash / MiniMax-M3。修复前只做精确匹配，这类 id 表里有价却计 ¥0。
+  const bj = (d, h, m) => Date.UTC(2026, 8, d, h - 8, m || 0)
+  const variants = [
+    ['qwen3.8-flash', 'qwen3.8-flash', [0.8, 2.7, 0.1]],
+    ['Qwen3.8-Flash', 'qwen3.8-flash', [0.8, 2.7, 0.1]],
+    ['QWEN3.8-FLASH', 'qwen3.8-flash', [0.8, 2.7, 0.1]],
+    ['Qwen3.8-Max', 'qwen3.8-max', [12, 36, 1.8]],
+    ['MiniMax-M3', 'minimax-m3', [2.1, 8.4, 0.42]],
+    ['Kimi-K3', 'kimi-k3', [20, 100, 5]],
+    ['GLM-5.3-Flash', 'glm-5.3-flash', [0.8, 2.8, 0.23]],
+    ['GPT-5', 'gpt-5', [8.75, 70, 0.875]]
+  ]
+  for (const [id, want, price] of variants) {
+    const r = priceFor(id)
+    if (!r || r.matched !== want) throw new Error('priceFor(' + id + ') = ' + JSON.stringify(r) + ', want matched ' + want)
+    for (let i = 0; i < 3; i++) assertEq('casePrice ' + id + ' p[' + i + ']', r.p[i], price[i], 1e-9)
+    // priceForAt 在非 DeepSeek 路径上必须与 priceFor 一致（不得退回精确匹配）
+    const at = priceForAt(id, bj(14, 10))
+    if (!at || at.matched !== want) throw new Error('priceForAt(' + id + ') = ' + JSON.stringify(at) + ', want ' + want)
+    assertEq('casePriceAt ' + id + ' p[0]', at.p[0], price[0], 1e-9)
+  }
+  // 精确匹配优先，且不得让原型键通过兜底索引泄漏成「已定价」
+  for (const proto of ['toString', 'constructor', '__proto__', 'hasOwnProperty', 'valueOf']) {
+    assertEq('casePrice.proto.' + proto, priceFor(proto), null)
+    assertEq('casePriceAt.proto.' + proto, priceForAt(proto, bj(14, 10)), null)
+  }
+  assertEq('casePrice.empty', priceFor(''), null)
+  assertEq('casePrice.absent', priceFor('definitely-not-a-model'), null)
+  // -free 后缀剥离同样大小写不敏感
+  assertEq('casePrice.freeSuffix', priceFor('Qwen3.8-Flash-free').matched, 'qwen3.8-flash')
+  assertEq('casePrice.freeSuffixUpper', priceFor('MiniMax-M3-FREE').matched, 'minimax-m3')
+  // 端到端：Qwen3.8-Flash 1M 输入 + 1M 输出 + 1M 缓存 = 0.8 + 2.7 + 0.1（回归点此前为 ¥0）
+  const roll = foldSession([
+    { type: 'user/message', time: bj(14, 10), data: { source: { kind: 'user' } } },
+    { type: 'assistant/message', time: bj(14, 10), data: { turn: 0, step: 0, usage: { inputTokens: 1e6, outputTokens: 1e6, cacheReadTokens: 1e6, cacheWriteTokens: 0 }, message: { source: { model: 'Qwen3.8-Flash' } } } }
+  ])
+  const u = queryUsage([roll], { range: 'custom', from: bj(14, 0), to: bj(14, 23) }, {})
+  assertEq('casePrice.foldCost', u.totals.cost, 0.8 + 2.7 + 0.1, 1e-9)
+  assertEq('casePrice.coverage', u.meta.pricing.coverage, 100)
+  // 厂商分组同样大小写不敏感：Qwen3.8-Flash 必须归到 Alibaba，不是「其他」
+  const vRoll = foldSession([
+    { type: 'assistant/message', time: bj(14, 15), data: { turn: 0, step: 0, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'Qwen3.8-Flash' } } } },
+    { type: 'assistant/message', time: bj(14, 15), data: { turn: 0, step: 0, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'MiniMax-M3' } } } }
+  ])
+  vRoll.id = 'vc'; vRoll.cwd = 'D:/vc'; vRoll.projectTitle = 'vc'
+  const uV = queryUsage([vRoll], { range: 'custom', from: bj(14, 0), to: bj(14, 23) }, {})
+  assertEq('casePrice.vendorQwen', uV.meta.vendors['Qwen3.8-Flash'], 'Alibaba')
+  assertEq('casePrice.vendorMinimax', uV.meta.vendors['MiniMax-M3'], 'MiniMax')
+  // 增量折叠（事件流）与整段折叠结果一致
+  const r2 = emptyRollup()
+  for (const ev of [
+    { type: 'assistant/message', time: bj(14, 10), data: { turn: 0, step: 0, usage: { inputTokens: 1e6, outputTokens: 1e6, cacheReadTokens: 1e6, cacheWriteTokens: 0 }, message: { source: { model: 'Qwen3.8-Flash' } } } }
+  ]) foldAppend(r2, ev)
+  r2.id = 'vc2'; r2.cwd = 'D:/vc'; r2.projectTitle = 'vc'
+  const u2 = queryUsage([r2], { range: 'custom', from: bj(14, 0), to: bj(14, 23) }, {})
+  assertEq('casePrice.foldAppendCost', u2.totals.cost, u.totals.cost, 1e-9)
+  console.log('  case-insensitive pricing OK (' + variants.length + ' provider-cased ids + prototype/free-suffix/fold/vendor guards)')
+}
+
 console.log('\nall checks passed ✔')
