@@ -65,6 +65,15 @@ All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 - 新增 `scripts/scan-unreadable.cjs`（生成 `unreadable-sessions-report.md`：逐会话列出不可读原因）与 `scripts/estimate-recovery.mjs`（用插件自身引擎估算各组会话的 token/费用体量）。
 - 修正两条依赖旧「请求内同步冷加载」语义的断言，改为显式跨过快照窗口并使用独立缓存键。
 
+### 文档
+
+- **`README.md` / `README.en.md` 全面重写**：原文档存在多处与实际行为不符的描述，逐条对照源码核实后修正。
+  - 事实性错误：版本号 `0.3.10` → `0.3.11`；定价表模型数 245 → **246**；趋势粒度「7D/30D/90D 均为每日」→ **90D 实为每周**（`pickGranularity` 实测）；雷达六轴定义停留在重设计前的旧版（响应效率/一致性/成本效率/缓存命中/Token 产出）→ 现为**响应速度/输出速度/平均输出量/平均输入量/稳定性/实际单价**，且归一化由「最佳值 1.2 倍」改为**固定外圈双端对数带宽**；缓存卡描述停留在「一条折线」→ 现为**缓存洞察卡**（KPI 条 + 双视图 + 模型排行）；启动预热 500ms → **150ms**（`PREWARM_DELAY_MS`）。
+  - 补充缺失章节：**系统要求**（DSH 版本区间、Node ≥18）、**统计范围**（子代理会话按产品决策排除，故会话数少于 `~/.dsh/sessions` 目录数）、**HTTP 接口**（三条 `/dash-api/*` 路由的参数表与响应结构）、**配置**（`debugCache`）、**已知限制**（费用为估算、冷启动耗时、不可读日志跳过等）、**深色模式**。
+  - 措辞改为产品文档口吻：移除「而非…」「不会出现…」「不虚构…」「这是预期行为而非漏算」等对照式辩解与内部验证细节（smoke 守卫、bench 容差）。
+- **README 截图全部重拍**：旧截图（2026-08-19）早于雷达 v3、缓存洞察卡与深色模式，与新文案矛盾。新增 `scripts/capture-screenshots.mjs`——把**真实的 `lib/client.js`** 与 `/dash-api/*` 实抓夹具在无头 Chromium 中渲染后按卡片裁剪，共 6 张（含深色模式）；移除 4 张过时截图。
+- **`COMPAT.md` 按最新 DSH 重新验证**：覆盖上限由 `0.1.5-rc.2` 更新至 **`0.1.7-rc.2`**（本机运行 `0.1.6-alpha.2`）。方法沿用原文：下载目标版本子包，对插件依赖的每个 API 定位源码行号（`requireStoredLog`/`snapshotEvents`/`listSessions`/`readSession`/`delegationDepth`/`webServer.register`/`settings.section` 等 8 处全部命中）。新增版本时间线、事件词汇表（0.1.7 新增 `developer/message`，实测全库 629 个会话文件中仅 3 个含该事件、共 8 次，被忽略且不计入消息数）、V4 日志文件名兼容性实测（三种文件名均被现有正则匹配），并记录 `peerDependencies` 版本范围偏窄这一非阻塞待办。
+
 ## [0.3.10] - 2026-09-09
 
 ### 新增

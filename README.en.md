@@ -4,95 +4,121 @@
 
 🌐 Language: **[中文](README.md)** · English
 
-[![npm](https://img.shields.io/npm/v/%40skkjkk%2Fdsh-usage-dashboard)](https://www.npmjs.com/package/@skkjkk/dsh-usage-dashboard) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) · [Changelog](CHANGELOG.md)
+[![npm](https://img.shields.io/npm/v/%40skkjkk%2Fdsh-usage-dashboard)](https://www.npmjs.com/package/@skkjkk/dsh-usage-dashboard) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) [![Changelog](https://img.shields.io/badge/changelog-CHANGELOG.md-blue.svg)](CHANGELOG.md)
 
 `dsh-usage-dashboard` is a DSH **bundle plugin**. It reads local DSH session data and adds a **Settings → 数据看板** view for usage statistics. All aggregation stays on the local machine; **session content is never sent to any external service**.
 
-The interaction model is inspired by VibeCafe.ai's Vibe Usage: this is a local DSH usage dashboard with a similar metric-toggle, distribution-hover and detail-browsing flow. All rollups and aggregation are completed locally; no session content or derived usage data is uploaded.
+The interaction model is inspired by VibeCafe.ai's Vibe Usage, offering metric toggles, distribution hover and detail browsing. All rollups and aggregation happen locally.
+
+![Filter bar and KPI overview](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/dashboard-overview.png)
 
 ## Features
 
 ### Filters and time range
 
-A filter bar sits at the top: the time range switches among `today / 24H / 7D / 30D / 90D / custom` (custom opens from/to date pickers); **model filtering is multi-select grouped by vendor** (expand a vendor to pick specific models; once selected, the button shows "模型 N 项" / "N models" without listing names); a project dropdown selects a single project; active filters can be cleared in one click. The chosen range, filters and display preferences are **cached locally** (localStorage) and restored after reopening settings or reloading the plugin. A "统计中" / "loading" indicator shows while data refreshes.
+The top filter bar switches the time range among `today / 24H / 7D / 30D / 90D / custom` (custom opens from/to date pickers). **Model filtering is multi-select grouped by vendor** — expand a vendor to pick specific models; once selected, the button shows "N项". A project dropdown selects a single project, and active filters can be cleared in one click. The chosen range, filters and display preferences are stored locally (`localStorage`) and restored after reopening settings or reloading the plugin. A "统计中" indicator shows while data refreshes.
 
 ### KPI overview
 
-A row of metric cards covering: estimated cost, total / input / output / cached Tokens, active duration, total duration, session count, total message count and user message count. Each card shows a **percentage change versus the previous period** (a zero baseline is hidden rather than showing a fabricated `+100%`), with a smooth tween animation on value changes. Clicking the **cost card** toggles ¥ / $; clicking a **Token card** toggles international units (K/M/B) and Chinese units (万 / 亿). **When a model filter is active, the duration and session cards collapse, leaving only the cost and Token cards** for a more focused comparison.
+**10** metric cards: estimated cost, total / input / output / cached Tokens, active duration, total duration, session count, total message count and user message count. Each card shows a **percentage change versus the previous period** (hidden when the baseline is zero).
 
-The ⓘ icon next to the **estimated cost**, **active duration** and **total duration** titles opens an explanatory popup — the first covers pricing-table coverage and peak/off-peak billing, the latter two clarify the difference between active and total duration. Clicking the icon and clicking the card body (unit toggle) are independent and don't interfere.
-
-![KPI overview and hourly trend](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/Snipaste_2026-08-19_21-28-02.png)
+- Clicking the **cost card** toggles ¥ / $; clicking the **total Token or cached Token card** toggles international units (K/M/B) and Chinese units (万 / 亿). All four Token cards share one unit.
+- **When a model filter is active, the duration and session cards collapse, leaving only the cost and Token cards.**
+- The ⓘ icon next to the **estimated cost**, **active duration** and **total duration** titles opens an explanatory popup (pricing coverage and peak/off-peak rules; the two duration definitions).
 
 ### Trend chart
 
-Granularity adapts to the selected range — **hourly / daily / weekly** (today and 24H use hourly, 7D/30D/90D use daily, longer ranges use weekly). It switches among **Token / cost / duration** modes; in Token mode output / input / cache stack as segments with independently toggleable legend items; in duration mode it separates active from total duration. Click any bar to highlight it (others dim); hover for details.
+Granularity adapts to the selected range: **hourly for today / 24H, daily for 7D / 30D, weekly for 90D** (a custom range picks hourly at ≤48h, daily at ≤62d, weekly beyond that). It switches among three modes:
 
-![Daily trend and hourly activity heatmap](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/Snipaste_2026-08-19_21-28-49.png)
+- **Token** — output / input / cache stack as segments with independently toggleable legend items;
+- **Cost** — estimated cost aggregated per bucket;
+- **Duration** — separates active from total duration, also independently toggleable.
+
+Click any bar to highlight it (others dim); click empty space to clear. Hover shows details. X-axis labels use a fixed step (every 3 hours for today, every 4–5 days for 30D, every 2 weeks for 90D).
+
+![Daily trend and hourly activity heatmap](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/trend-heatmap.png)
 
 ### Hourly activity heatmap
 
-A `7 rows (weekday) × 24 columns (hour)` grid where color intensity encodes magnitude, switchable among **Token / cost / active duration** metrics; hovering any cell shows the exact value, with a `少 → 多` (low → high) legend. (The right side of the screenshot above is this chart.)
+A `7 rows (weekday) × 24 columns (hour)` grid switchable among **Token / cost / duration**; hovering any cell shows the exact value and time, with a `少 → 多` (low → high) legend. (This is the lower half of the screenshot above.)
 
 ### Model and project distributions
 
-Two **donut charts** break usage down by Token (or cost) share: **model distribution** by model, **project distribution** by project (using the canonical `cwd` with DSH workspace membership as fallback). Toggle Token / cost; the top 6 slices each get a fixed color and the rest aggregate into "其他" / "Other" (names hidden), with totals conserved. Hovering a model / project, including the aggregated Other item, or its matching slice dims the rest and switches the donut center to that item's Token and cost summary: Token mode shows only the hovered item’s Token value in K/M/B form, while cost mode shows only the hovered item’s CNY cost; the legend still shows exact Token / cost values and share.
+Two **donut charts** break usage down by Token (or cost) share: **model distribution** by model, **project distribution** by project (canonical `cwd`, with DSH workspace membership as fallback). Toggle Token / cost; the top **6** slices each get a fixed color and the rest aggregate into "其他" / Other, with totals conserved. Hovering a legend item or slice dims the rest and switches the donut center to that item's Token and cost summary.
 
-![Model and project distributions](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/Snipaste_2026-08-19_21-29-29.png)
+![Model and project distributions](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/distributions.png)
 
 ### Activity heatmap (calendar)
 
-The latest **40 weeks** in a `7 rows × 40 columns` calendar grid, with fixed square rounded cells; colored by daily Token bands (`0 / ≥1M / ≥10M / ≥30M / ≥60M / ≥100M / ≥200M / ≥250M`), and edge-date floating tooltips clamped to the viewport.
-
-![Activity heatmap and detailed records](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/Snipaste_2026-08-19_21-29-53.png)
+The latest **40 weeks** in a `7 rows × 40 columns` calendar grid with fixed square rounded cells, colored by **8** daily Token bands (`none / ≥1M / ≥10M / ≥30M / ≥60M / ≥100M / ≥200M / ≥250M`). Edge-date floating tooltips are clamped to the viewport.
 
 ### Detailed records
 
-A table grouped by `time bucket × model × project`, with columns `time / project / model / tool / input / output / cache / cost` (tool is fixed to `dsh`); when one hour uses multiple models, each appears as a separate row. Paginated at **20 rows per page**, showing "显示 x–y 条，共 z 条" / "showing x–y of z", with prev/next paging. (The table below the screenshot above is this view.)
+A table grouped by `time bucket × model × project` with columns `time / project / model / tool / input / output / cache / cost` (tool is fixed to `dsh`); when one hour uses multiple models, each appears as a separate row. Paginated at **20 rows per page**, showing "showing x–y of z" with prev/next paging.
+
+![Activity heatmap and detailed records](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/calendar-records.png)
 
 ### Model performance radar
 
-A **six-axis radar chart** comparing the top **4** models by call volume in the selected window. Each axis is normalized to 0–1 against a **fixed cap** (derived from the real data distribution, roughly 1.2× the current best value), not against the window's Top-1 — so different time windows are directly comparable and models don't all hug the outer ring; the best model in a window typically lands at 75–85%. Response efficiency, response speed and cost efficiency use a logarithmic scale (large dynamic range), the rest are linear. The six axes:
+A **six-axis radar** comparing the top **4** models by call volume in the selected window. Each axis is normalized to 0–1 against a fixed outer-ring reference, so different time windows are directly comparable. Direction is consistent: **further out is better**.
 
-- **Response efficiency** = output Tokens / average response latency (ms)
-- **Response speed** = 1 / p50 response latency (ms)
-- **Consistency** = 1 / (1 + p95/p50), where p50/p95 are estimated from a logarithmic latency histogram in the rollup
-- **Cost efficiency** = output Tokens / cost; when cost is unavailable (model not found in `pricing/vibe-usage-model-pricing-extended.csv`), this axis is omitted from normalization and the list/tooltips render "—".
-- **Cache hit** = cache hit rate (%)
-- **Token output** = output Tokens / billed input Tokens (`billedInput`), expressed as a percentage
+| Axis | Meaning | Outer ring | Center |
+| --- | --- | --- | --- |
+| Response speed | How long a request typically takes (P50) | 1 s | 120 s |
+| Output speed | Tokens emitted per second | 166 t/s | 1 t/s |
+| Avg output | Tokens written per reply | 1,645 tok | 50 tok |
+| Avg input | Billed input tokens read per call | 294k tok | 5,000 tok |
+| Stability | How much slower the slowest 5% are (P95/P50) | ≤8.3× slower | 125× slower |
+| Effective price | Actual cost per million tokens (inverted) | ¥0.10/M | ¥2/M |
 
-Clicking a vertex or a right-side list item highlights that model (others dim). When a model filter is active, only models matching the filter compete for the Top-4 slots; an empty-state message shows when no model has usage data. The ⓘ icon next to the title opens a popup explaining each axis in plain language.
+All axes use a **two-sided logarithmic band** `log(v / floor) / log(ceil / floor)`. Vertices are labelled with **measured values** (e.g. `8.0s`, `¥0.09/M`); the right column holds the legend (with call counts) and **ruler rows** — one thin track per axis with all four models' scores plotted as dots, the focused model enlarged and highlighted. When a model has no price row, the "effective price" axis is left blank and annotated.
 
-### Cache hit-rate trend
+Clicking a vertex or legend item highlights that model (others dim): legend hover keeps the highlight, clicking locks and clicking again releases. The ⓘ popup explains each axis and its outer-ring reference.
 
-A line + scatter time-series showing cache hit rate across every time bucket in the selected window (Y axis fixed at 0–100%).
+### Cache insight
 
-**Hit-rate formula** (same definition at bucket and aggregate level):
+A time series plus a ranking table for cache efficiency across every time bucket in the window.
 
-```
-cacheHitRate = cacheRead / cacheObserved × 100%
-```
+- **KPI strip**: window hit rate (with ▲/▼ pp delta), telemetry coverage, and **estimated savings** (= cache-read tokens × (input price − cache price), following the ¥/$ toggle).
+- **Two views**: **hit rate** (monotone-cubic smoothed curve, Y axis auto-zoomed to the data band, amber dashed coverage line, mean reference line, end-value capsule, pale bands for no-telemetry spans) and **volume** (cache reads vs. missed billed input, stacked bars).
+- **Model cache ranking**: sorted by read volume — bar length = reads, amber tick = coverage, with hit rate and per-model savings on the right (unmatched models show "—", free models show ¥0). **Clicking a row filters the whole dashboard by that model**; click again to release. Expandable with internal scrolling.
+- The ⓘ popup explains hit rate / coverage / savings / ranking bar.
 
-Where:
-- **`cacheRead`** = sum of event-level `usage.cacheReadTokens` reported by the provider.
-- **`cacheObserved`** = sum of `inputTokens + cacheRead + cacheWrite` over rows whose provider explicitly reported `cacheReadTokens` or `cacheWriteTokens`; i.e. the billed input of the telemetry-visible subset. Rows without cache telemetry are excluded from this denominator so the hit rate is not diluted by unknown providers.
-- **`cacheRead`** = sum of provider-reported `usage.cacheReadTokens` over those same rows.
-- **`billedInput`** = `inputTokens + cacheTokens` (= `inputTokens + cacheRead + cacheWrite`) summed across **all** rows in the window, including those without cache telemetry — the total charged-input definition.
-- **Coverage `cacheCoverage`** = `cacheObserved / billedInput × 100%`; when no provider reports cache info, coverage is 0% and the rate shows "—".
+View switches are animated (line draws in, bars rise from the baseline in a staggered sweep, KPIs and legend fade in).
 
-The header shows the **current-window** hit rate, the **cache-data coverage** and the **period-over-period delta** in percentage points (current − previous window, hidden when the prior baseline is zero). Gaps in the line appear only between non-adjacent buckets.
+![Model performance radar and cache insight](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/radar-cache.png)
+
+### Dark mode
+
+The dashboard follows the DSH light/dark theme: colors are driven by a CSS variable table (scoped to `body[data-ds-dark-theme]`), and chart elements use dedicated graphic color variables so they keep sufficient contrast in both themes.
+
+![Full dashboard in dark mode](https://raw.githubusercontent.com/skkjkk/dsh-usage-dashboard/main/picture/dashboard-dark.png)
 
 ## Data semantics
 
 - **Tokens** = input + output + cache Tokens.
-- **Active duration** counts only actual AI generation time, from the first `assistant/chunk` event until the turn completes. Queueing, TTFT, idle thinking gaps and tool waits are excluded. Parallel sessions are summed independently, so active duration can exceed 24 hours.
-- **Total duration** is the span from the first message to the last message per session. Overlapping session spans are merged before summing and clipped to the selected window, so parallel work is not double-counted.
-- **Cost** is an estimate from this repo's pricing table `pricing/vibe-usage-model-pricing-extended.csv` (245 models; built into `lib/core/pricing.js` by the build script); unit prices in the table are already expressed in CNY per million tokens, so no currency conversion is applied. Unmatched models are not billed. DeepSeek V4 uses Beijing-time weekday peak / off-peak pricing from 2026-08-17 (Monday-Friday peak 9:00–12:00 and 14:00–18:00; weekends and other hours are off-peak at half price).
+- **Active duration** counts only actual AI generation time, from request dispatch until that step's reply completes. Queueing, TTFT, idle thinking gaps and tool waits are excluded; for older logs with output chunks it starts at the first chunk. Parallel sessions are summed independently, so active duration can exceed 24 hours.
+- **Total duration** is the span from the first to the last message per session. Overlapping session spans are merged (counted once) and clipped to the selected window before summing.
+- **Cost** is an estimate from this repo's pricing table `pricing/vibe-usage-model-pricing-extended.csv` (**246** models; built into `lib/core/pricing.js` by the build script). Unit prices are already in CNY per million tokens, so no currency conversion is applied. **Unmatched models are not billed** (they show ¥0 in the table; see the ⓘ popup for coverage). Model id matching is **case-insensitive**, so provider-catalog spellings such as `Qwen3.8-Flash` are billed at the canonical rate.
+- **DeepSeek peak/off-peak billing**: the two current models (`deepseek-flash`, `deepseek-v4-pro`) are billed in Beijing time — weekday peak 9:00–12:00 and 14:00–18:00; weekends and all other hours are off-peak at half price. The V4.1 Flash price took effect at 2026-09-10 12:00, and V4 Pro routes to Flash pricing from 2026-09-14 12:00; retired names and third-party reseller variants are billed as Flash, while historical events before the peak/off-peak regime keep their original static price.
 - **Projects** use the canonical `cwd` from the session header when available, with DSH workspace membership as a fallback. Separators, case and trailing slashes are normalized before grouping.
-- **Cache hit rate** = `cacheRead / cacheObserved × 100%`: numerator is provider-reported `usage.cacheReadTokens`; denominator is the `inputTokens + cacheRead + cacheWrite` sum over rows that explicitly reported `cacheReadTokens` or `cacheWriteTokens` (the telemetry-visible billed input). Rows without cache telemetry are excluded from the denominator rather than treated as 0%.
-- **Billed input `billedInput`** = `inputTokens + cacheTokens` summed across all rows (including those without cache telemetry); this is the full charged-input definition.
-- **Cache-data coverage** = `cacheObserved / billedInput × 100%`; when all providers lack cache metadata the coverage is 0% and both the current and previous-window rates display "—".
-- A zero comparison baseline has no finite percentage; the UI hides that percentage instead of showing a fabricated `+100%`.
+- **Scope**: normal sessions only. Subagent sessions (header `delegationDepth > 0` or a `parentSession`) and legacy bare-`<uuid>` directories are not counted, so the session count is lower than the number of directories under `~/.dsh/sessions`. Logs that cannot be read (failed format migration, corruption) are skipped.
+- **Cache hit rate** = `cacheRead / cacheObserved × 100%`:
+  - **`cacheRead`** = sum of provider-reported `usage.cacheReadTokens`.
+  - **`cacheObserved`** = sum of `inputTokens + cacheRead + cacheWrite` over rows that reported `cacheReadTokens` or `cacheWriteTokens` (the telemetry-visible billed input). Rows without telemetry are excluded from this denominator.
+  - **`billedInput`** = `inputTokens + cacheTokens` summed across **all** rows, including those without cache telemetry.
+  - **Cache-data coverage** = `cacheObserved / billedInput × 100%`; with no telemetry, coverage is 0% and the rate displays "—".
+- When the comparison baseline is zero, the UI hides that percentage.
+
+## Requirements
+
+| Item | Requirement |
+| --- | --- |
+| DSH | `0.1.3-alpha.2` or newer (verified up to `0.1.7-rc.2`) |
+| Node.js | `>=18` (declared in `package.json` `engines`) |
+| Runtime | DSH Web / Desktop GUI (the client half registers a `settings.section`) |
+
+The plugin adapts across DSH versions through capability probing: when `sessionPersistence` is available it reads individual session logs directly (fast path), otherwise it falls back to `sessionQuery.listSessions`; when the `timer` service is missing only periodic reconcile and pre-warm degrade, and the HTTP routes are unaffected. See [COMPAT.md](COMPAT.md) for the full capability matrix, rc.1 → rc.2 differences and the upgrade checklist.
 
 ## Install
 
@@ -128,19 +154,67 @@ Uninstall:
 dsh plugin --profile web remove @skkjkk/dsh-usage-dashboard
 ```
 
+## HTTP API
+
+The host half registers three read-only JSON GET routes on DSH's web server (returning local aggregation results, never raw session content):
+
+| Route | Returns | Main params |
+| --- | --- | --- |
+| `GET /dash-api/usage` | KPI totals + trend buckets + heatmap + model/project distributions + pricing coverage | `range`, `from`, `to`, `models`, `projects` |
+| `GET /dash-api/detail` | Detail rows (grouped by time bucket × model × project) | same as above + `offset`, `limit` (max **200**, default 100) |
+| `GET /dash-api/calendar` | Per-day Token for the calendar heatmap | `models`, `projects`, `now` |
+
+`range` accepts `today / 24h / 7d / 30d / 90d / custom` (default `today`); `custom` needs `from` / `to` in epoch milliseconds. `models` / `projects` are comma-separated multi-value params. Response shape:
+
+```jsonc
+// /dash-api/usage
+{ "totals": { "cost": 0, "totalTokens": 0, "sessions": 0, "cacheHitRate": null, ... },
+  "buckets": [{ "label": "9/26", "input": 0, "output": 0, "cache": 0, "costIn": 0, ... }],
+  "granularity": "day",
+  "heat": { "token": [], "cost": [], "dur": [], "active": [] },
+  "meta": { "models": [], "projects": [], "vendors": {}, "pricing": {}, "dist": {} } }
+```
+
+Requests are cached for 30s with stale-while-revalidate and single-flight, so repeated calls return in milliseconds. These routes are not behind the DSH GUI session auth and can be accessed directly (use the port your DSH instance listens on):
+
+```bash
+curl -s "http://127.0.0.1:<port>/dash-api/usage?range=7d" | head -c 200
+```
+
+## Configuration
+
+The optional `debugCache` switch diagnoses the disk rollup cache, printing `[dash-cache]` / `[dash-pending]` / `[dash-load]` / `[dash-event]` diagnostic lines to stderr. Add `config` in the profile's `cordis.patch.yml` using the **id-targeted override** form (it overrides an existing row and needs no `insert:` wrapper):
+
+```yaml
+- id: usage-dashboard
+  name: "@skkjkk/dsh-usage-dashboard"
+  config:
+    debugCache: true
+```
+
+> A duplicate `id` in the same file makes DSH fail to start (`duplicate loader entry id`).
+
+Off by default.
+
 ## Development and verification
 
-Sources live in `src/`; `lib/` contains the artifacts loaded by DSH. Edit `src/` and regenerate `lib/` with:
+Sources live in `src/`; the artifacts loaded by DSH live in `lib/`. After editing `src/`, rebuild — do not edit `lib/` directly:
 
 ```bash
 npm install
 npm run build      # node scripts/regenerate.cjs: adapts src/ into lib/
 npm run bench      # engine correctness + performance benchmarks
-node scripts/smoke-host.mjs
-npm test           # runs build + bench + host smoke test in sequence
+npm run smoke      # build + host smoke test
+npm test           # build + bench + host smoke
 ```
 
-`npm test` covers: Token / cost / message / calendar aggregation consistency, `foldAppend` vs full `foldSession` incremental equivalence, active and total duration union / window boundaries, model / project conservation, disjoint cache-hit-ratio semantics (`cacheRead` / `cacheObserved` vs `billedInput` conservation), Top-4 radar relative-score normalization and gap rendering, and the `/dash-api/usage`, `/dash-api/detail` and `/dash-api/calendar` host routes. Targeted regressions also cover edge buckets, message-only events, cache races, lagging session lists, UTC+8 boundaries, prototype keys and long trend ranges.
+`npm test` covers:
+
+- Token / cost / message / calendar aggregation consistency, and `foldAppend` vs. full `foldSession` **incremental equivalence** (byte-identical);
+- active/total duration union and window-boundary semantics, plus `totalMs` overlap deduplication for parallel sessions;
+- model / project conservation and conservation of the cache-hit-ratio fields (`cacheRead` / `cacheObserved` / `billedInput`);
+- pricing lookups: DeepSeek peak/off-peak boundaries and effective dates, variant-name resolution, case-insensitive model ids, prototype-key handling;
+- the `/dash-api/usage`, `/dash-api/detail` and `/dash-api/calendar` host routes, plus the client bundle's **slot registration contract**.
 
 Before publishing, inspect the packed artifact:
 
@@ -152,11 +226,14 @@ node scripts/verify-pack.mjs <package-dir>
 
 The verifier checks that host / core / client bundles load, the bundle patch and `package.files` are complete, and no personal data is included in the package.
 
+`scripts/capture-screenshots.mjs` generates the README screenshots: it renders the real `lib/client.js` with `/dash-api/*` data in headless Chromium and crops per card.
+
 ## Freshness and performance
 
-- **Pure aggregation engine** `src/core/rollup.js`: `foldSession` folds a session into a compact per-hour rollup, `foldAppend` updates it incrementally per event (byte-identical to a full refold), and `queryUsage / queryDetail / queryCalendar` answer any window / filter in memory; the disjoint cache-hit-ratio fields (`cacheRead` / `cacheObserved` / `billedInput`) are computed in the same pass.
+- **Pure aggregation engine** `src/core/rollup.js`: `foldSession` folds a session into a compact per-hour rollup, `foldAppend` updates it incrementally per event (byte-identical to a full refold), and `queryUsage / queryDetail / queryCalendar` answer any window / filter in memory.
 - **Event-driven refresh**: each session materializes one in-memory rollup at startup (live sessions read from the in-memory Session object, persisted sessions via `persistence.readFrom` once); thereafter `session/event` events are folded in via `foldAppend`, so a refresh never re-parses full logs. A 60-second reconcile discovers new or removed sessions.
-- **Request cache**: 30s TTL with stale-while-revalidate and single-flight; invalidated as soon as new events arrive. Pre-warmed ~500ms after boot, so every view returns in milliseconds thereafter.
+- **Disk rollup cache** (`~/.dsh/usage-dashboard-cache/<sessionId>.json`, invalidated by log file `mtime + size`): after a DSH restart, unchanged sessions are adopted from cache without re-decoding. The cache format is versioned, so a pricing or semantics change invalidates everything and recomputes.
+- **Request cache**: 30s TTL with stale-while-revalidate and single-flight; streamed events only bump the data version and never clear the cache. Pre-warmed ~150ms after boot, so every view returns in milliseconds thereafter. The client polls every 30 seconds.
 
 ## Privacy
 
@@ -164,9 +241,18 @@ The verifier checks that host / core / client bundles load, the bundle patch and
 - The npm package contains only `lib/` and the bundle patch; pricing is built into `lib/core/pricing.js`, and the source `pricing/` directory is not shipped. No local logs or session files are included.
 - Cost values are estimates, not billing statements.
 
+## Known limitations
+
+- **Normal sessions only**: subagent sessions (`delegationDepth > 0` / `parentSession`) and legacy bare-`<uuid>` directories are not counted, so the session count is lower than the directory count under `~/.dsh/sessions`.
+- **Cost is an estimate**: prices come from the local table, and unmatched models are not billed (they show ¥0), so dashboard cost is typically below the upstream bill. Cache "estimated savings" is likewise an estimate from table prices.
+- **First cold start takes time**: the initial full-corpus fold runs in the background (~150ms after boot). With a warm disk cache a restart is seconds; if the cache is missing or invalidated by a pricing/semantics change, every session is re-folded (minutes on a large install).
+- **Unreadable logs are skipped**: logs that fail migration or are corrupt are not retried, so a few historical sessions may not appear.
+- **Active duration accumulates generation intervals**, summed independently across parallel sessions, so it can exceed 24 hours. It measures model generation occupancy, not wall-clock time.
+- **`totalMs` is a union of intervals**: overlapping parallel sessions count once, window edges are clipped exactly per event, and step-crossing-boundary cases are approximated.
+
 ## Version
 
-Current release: `0.3.10`
+Current release: `0.3.11` (see [CHANGELOG.md](CHANGELOG.md))
 
 ## License
 
