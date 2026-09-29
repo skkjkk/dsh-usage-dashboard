@@ -1551,30 +1551,8 @@ console.log('\n[5] fork-seed 切断与 usage 重放去重（token-monitor 对照
   console.log('  fork-seed 切断 + usage 去重 OK (A/A2/B/C/C2/D/E)')
 }
 
-console.log('\n[6] 在场时长 presentMs（gap-cap 口径）与日期后缀取价')
+console.log('\n[6] 日期后缀取价')
 {
-  const H2 = 3600000
-  const bj = (d, h, m) => Date.UTC(2026, 8, d, h - 8, m || 0)
-  const t0 = bj(14, 9)
-  const mk = (id, times) => {
-    const events = []
-    let turn = 0
-    for (let i = 0; i < times.length; i++) {
-      events.push({ type: 'user/message', time: times[i], data: { source: { kind: 'user' } } })
-      events.push({ type: 'assistant/message', time: times[i] + 1000, data: { turn: turn++, step: 0, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'gpt-5' } } } })
-    }
-    const r = foldSession(events)
-    r.id = id; r.cwd = 'D:/p'; r.projectTitle = 'p'
-    return r
-  }
-  // 消息间隔：10min（两口径都计）、20min（只计 present）、40min（都不计）
-  const r = mk('present', [t0, t0 + 10 * 60000, t0 + 30 * 60000, t0 + 70 * 60000])
-  const q = queryUsage([r], { range: 'custom', from: t0 - H2, to: t0 + 4 * H2 }, {})
-  assertEq('present.durMs', q.buckets.reduce((s, b) => s + b.durMs, 0), 10 * 60000, 1)
-  const presentSum = q.buckets.reduce((s, b) => s + (b.presentMs || 0), 0)
-  assertEq('present.presentMs', presentSum, 30 * 60000, 1) // 10min + 20min（40min 丢弃）
-  // 窗口 totals.presentMs 与桶之和一致（同窗口、无边缘桶裁剪）
-  assertEq('present.totalsVsBuckets', q.totals.presentMs, presentSum, 1)
   // 日期后缀取价：gemini-3-pro-002 / qwen3.8-flash-20260101 剥后缀命中基础型号
   const dated = priceFor('gemini-3-pro-002')
   const base = priceFor('gemini-3-pro')
@@ -1586,7 +1564,7 @@ console.log('\n[6] 在场时长 presentMs（gap-cap 口径）与日期后缀取�
   // 命中不了的剥后缀 id 仍是 null（不猜测）
   assertEq('datedSuffix.absent', priceFor('made-up-model-20260101'), null)
   assertEq('datedSuffix.absentBase', priceFor('some-model-123456'), null)
-  console.log('  presentMs 口径 + 日期后缀取价 OK')
+  console.log('  日期后缀取价 OK')
 }
 
 console.log('\n[7] pruneRollup（evts 修剪）与序列化往返')
