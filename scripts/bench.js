@@ -6,7 +6,7 @@
 //
 // Usage: npm run bench   (node scripts/bench.js)
 import { execFileSync } from 'node:child_process'
-import { foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, priceFor, priceForAt, resolveDSModel, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, presetBucketCount, cellOf } from '../src/core/rollup.js'
+import { foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, priceFor, priceForAt, resolveDSModel, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, presetBucketCount, cellOf, pruneRollup } from '../src/core/rollup.js'
 
 const HOUR = 3600000
 const DAY = 86400000
@@ -1426,6 +1426,203 @@ console.log('\n[0k] case-insensitive pricing fallback (provider-cased model ids)
   const u2 = queryUsage([r2], { range: 'custom', from: bj(14, 0), to: bj(14, 23) }, {})
   assertEq('casePrice.foldAppendCost', u2.totals.cost, u.totals.cost, 1e-9)
   console.log('  case-insensitive pricing OK (' + variants.length + ' provider-cased ids + prototype/free-suffix/fold/vendor guards)')
+}
+
+console.log('\n[5] fork-seed 切断与 usage 重放去重（token-monitor 对照修复）')
+{
+  const bj = (d, h, m) => Date.UTC(2026, 8, d, h - 8, m || 0)
+  const t0 = bj(14, 10)
+  const mkMsg = (id, time, turn, inp, otp, seq) => ({
+    type: 'assistant/message', time, seq,
+    data: { turn, step: 0, usage: { inputTokens: inp, outputTokens: otp, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { id, source: { model: 'gpt-5' } } }
+  })
+  // ---- 用例 A：seq 切断（isSeeded + 最后一个 inherited:true 标记）----
+  // 父会话 2 条消息被重放进子会话，标记 seq=3；子会话自己的消息 seq=4 起。
+  // 修复前子会话把父的 2M 全部重计；修复后只计自己的 1M。
+  {
+    const events = [
+      { type: 'session', time: t0 - 5000, seq: 0, data: { id: 'child', isSeeded: true } },
+      { type: 'user/message', time: t0 - 4000, seq: 1, data: { source: { kind: 'user' } } },
+      mkMsg('p1', t0 - 3000, 0, 2e6, 0, 2),         // seq 2：父会话种子消息
+      { type: 'session/end-seed', time: t0 - 2000, seq: 3, data: { inherited: true } },
+      { type: 'user/message', time: t0, seq: 4, data: { source: { kind: 'user' } } },
+      mkMsg('c1', t0 + 1000, 5, 1e6, 0, 5)          // seq 5：子会话自己的消息
+    ]
+    const r = foldSession(events)
+    assertEq('seedA.skipCount', r.skippedSeedEvents, 2) // user1+p1（标记与 session 头被消费不计数）
+    const u = queryUsage([r], { range: 'custom', from: t0 - DAY, to: t0 + DAY }, {})
+    assertEq('seedA.inputTokens', u.totals.inputTokens, 1e6) // 只计 c1，父的 2M 不计
+  }
+  // ---- 用例 A2：最后一个标记生效（多个标记取 seq 最大者）----
+  {
+    const events = [
+      { type: 'session', time: t0 - 5000, seq: 0, data: { id: 'gchild', isSeeded: true } },
+      { type: 'user/message', time: t0 - 4000, seq: 1, data: { source: { kind: 'user' } } },
+      { type: 'session/end-seed', time: t0 - 3500, seq: 2, data: { inherited: true } }, // 祖先遗留标记
+      { type: 'user/message', time: t0 - 3000, seq: 3, data: { source: { kind: 'user' } } },
+      mkMsg('p2', t0 - 2000, 9, 5e6, 0, 4),         // seq 4
+      { type: 'session/end-seed', time: t0 - 1000, seq: 5, data: { inherited: true } }, // 本会话真实切断
+      { type: 'user/message', time: t0, seq: 6, data: { source: { kind: 'user' } } },
+      mkMsg('c2', t0 + 1000, 10, 7e5, 0, 7)         // seq 7
+    ]
+    const r = foldSession(events)
+    // 标记本身不计入 skipped（是被消费的控制事件），种子事件 seq 1/3/4 跳过
+    assertEq('seedA2.skipCount', r.skippedSeedEvents, 3)
+    const u = queryUsage([r], { range: 'custom', from: t0 - DAY, to: t0 + DAY }, {})
+    assertEq('seedA2.inputTokens', u.totals.inputTokens, 7e5)
+  }
+  // ---- 用例 B：legacy seedLength（v0 头按条数切断）----
+  {
+    const events = [
+      { type: 'session', time: t0 - 5000, data: { id: 'legacy', seedLength: 2 } },
+      { type: 'user/message', time: t0 - 4000, data: { source: { kind: 'user' } } }, // 种子 1
+      mkMsg('p3', t0 - 3000, 0, 9e5, 0),                                             // 种子 2
+      { type: 'user/message', time: t0, data: { source: { kind: 'user' } } },
+      mkMsg('c3', t0 + 1000, 1, 3e5, 0)
+    ]
+    const r = foldSession(events)
+    assertEq('seedB.skipCount', r.skippedSeedEvents, 2)
+    const u = queryUsage([r], { range: 'custom', from: t0 - DAY, to: t0 + DAY }, {})
+    assertEq('seedB.inputTokens', u.totals.inputTokens, 3e5)
+  }
+  // ---- 用例 C：isSeeded 但无标记 → 全量折叠 + seededWithoutMarker 标记 ----
+  // （pending 语义：只有标记出现才切断；无标记时宿主自行决定排除与否）
+  {
+    const events = [
+      { type: 'session', time: t0 - 5000, data: { id: 'noMark', isSeeded: true } },
+      { type: 'user/message', time: t0 - 4000, data: { source: { kind: 'user' } } },
+      mkMsg('p4', t0 - 3000, 0, 9e5, 0),
+      mkMsg('c4', t0 + 1000, 1, 4e5, 0)
+    ]
+    const r = foldSession(events)
+    assertEq('seedC.seededWithoutMarker', r.seededWithoutMarker, true)
+    const u = queryUsage([r], { range: 'custom', from: t0 - DAY, to: t0 + DAY }, {})
+    assertEq('seedC.inputTokens', u.totals.inputTokens, 13e5) // pending：全部折叠（9e5+4e5）
+  }
+  // ---- 用例 C2：isSeeded 后标记迟到 → 标记之后的正常折叠 ----
+  {
+    const events = [
+      { type: 'session', time: t0 - 5000, data: { id: 'lateMark', isSeeded: true } },
+      { type: 'user/message', time: t0 - 4000, seq: 1, data: { source: { kind: 'user' } } },
+      mkMsg('p5', t0 - 3000, 0, 8e5, 0, 2),         // seq 2：种子
+      { type: 'session/end-seed', time: t0 - 1000, seq: 3, data: { inherited: true } },
+      { type: 'user/message', time: t0, seq: 4, data: { source: { kind: 'user' } } },
+      mkMsg('c5', t0 + 1000, 1, 2e5, 0, 5)          // seq 5
+    ]
+    const r = foldSession(events)
+    assertEq('seedC2.seededWithoutMarker', r.seededWithoutMarker, false)
+    assertEq('seedC2.skipCount', r.skippedSeedEvents, 2) // user(1) + p5(2)
+    const u = queryUsage([r], { range: 'custom', from: t0 - DAY, to: t0 + DAY }, {})
+    assertEq('seedC2.inputTokens', u.totals.inputTokens, 2e5)
+  }
+  // ---- 用例 D：usage 重放去重（同一消息出现两次只计一次）----
+  {
+    const dup = mkMsg('r1', t0, 0, 2.5e6, 0)
+    const r = foldSession([
+      { type: 'user/message', time: t0 - 1000, data: { source: { kind: 'user' } } },
+      dup,
+      // 持久层重放：同 id 同时间同 token，仅 seq 缺失（老日志形态）
+      mkMsg('r1', t0, 0, 2.5e6, 0),
+      // 不同消息相同 token：不得被误伤
+      mkMsg('r2', t0 + 1000, 1, 2.5e6, 0)
+    ])
+    const u = queryUsage([r], { range: 'custom', from: t0 - DAY, to: t0 + DAY }, {})
+    assertEq('dedup.inputTokens', u.totals.inputTokens, 5e6) // 2.5M + 2.5M，重放不计
+    assertEq('dedup.assistantMessages', u.totals.assistantMessages, 2) // 重放整条事件被跳过，计数也正确地不重复
+    // 增量路径（事件流逐条 foldAppend）与整段折叠一致
+    const inc = emptyRollup()
+    for (const ev of [
+      { type: 'user/message', time: t0 - 1000, data: { source: { kind: 'user' } } },
+      mkMsg('r1', t0, 0, 2.5e6, 0),
+      mkMsg('r1', t0, 0, 2.5e6, 0),
+      mkMsg('r2', t0 + 1000, 1, 2.5e6, 0)
+    ]) foldAppend(inc, ev)
+    const u2 = queryUsage([inc], { range: 'custom', from: t0 - DAY, to: t0 + DAY }, {})
+    assertEq('dedup.appendEqualsFold', u2.totals.inputTokens, 5e6)
+  }
+  // ---- 用例 E：无 id 无 seq 的消息不因去重丢失（签名退化为 time+token）----
+  {
+    const anon = { type: 'assistant/message', time: t0 + 5000, data: { turn: 0, step: 0, usage: { inputTokens: 1e5, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'gpt-5' } } } }
+    const r = foldSession([anon, Object.assign({}, anon)])
+    const u = queryUsage([r], { range: 'custom', from: t0 - DAY, to: t0 + DAY }, {})
+    // 相同时间+token 的匿名消息视为重放，只计一次（保守正确：宁可少计不可双计）
+    assertEq('dedup.anonInput', u.totals.inputTokens, 1e5)
+  }
+  console.log('  fork-seed 切断 + usage 去重 OK (A/A2/B/C/C2/D/E)')
+}
+
+console.log('\n[6] 在场时长 presentMs（gap-cap 口径）与日期后缀取价')
+{
+  const H2 = 3600000
+  const bj = (d, h, m) => Date.UTC(2026, 8, d, h - 8, m || 0)
+  const t0 = bj(14, 9)
+  const mk = (id, times) => {
+    const events = []
+    let turn = 0
+    for (let i = 0; i < times.length; i++) {
+      events.push({ type: 'user/message', time: times[i], data: { source: { kind: 'user' } } })
+      events.push({ type: 'assistant/message', time: times[i] + 1000, data: { turn: turn++, step: 0, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'gpt-5' } } } })
+    }
+    const r = foldSession(events)
+    r.id = id; r.cwd = 'D:/p'; r.projectTitle = 'p'
+    return r
+  }
+  // 消息间隔：10min（两口径都计）、20min（只计 present）、40min（都不计）
+  const r = mk('present', [t0, t0 + 10 * 60000, t0 + 30 * 60000, t0 + 70 * 60000])
+  const q = queryUsage([r], { range: 'custom', from: t0 - H2, to: t0 + 4 * H2 }, {})
+  assertEq('present.durMs', q.buckets.reduce((s, b) => s + b.durMs, 0), 10 * 60000, 1)
+  const presentSum = q.buckets.reduce((s, b) => s + (b.presentMs || 0), 0)
+  assertEq('present.presentMs', presentSum, 30 * 60000, 1) // 10min + 20min（40min 丢弃）
+  // 窗口 totals.presentMs 与桶之和一致（同窗口、无边缘桶裁剪）
+  assertEq('present.totalsVsBuckets', q.totals.presentMs, presentSum, 1)
+  // 日期后缀取价：gemini-3-pro-002 / qwen3.8-flash-20260101 剥后缀命中基础型号
+  const dated = priceFor('gemini-3-pro-002')
+  const base = priceFor('gemini-3-pro')
+  if (!base) throw new Error('pricing CSV lacks gemini-3-pro baseline for suffix test')
+  if (!dated || dated.matched !== 'gemini-3-pro') throw new Error('dated suffix not stripped: ' + JSON.stringify(dated))
+  assertEq('datedSuffix.p0', dated.p[0], base.p[0], 1e-9)
+  const cn = priceFor('Qwen3.8-Flash-20260101')
+  if (!cn || cn.matched !== 'qwen3.8-flash') throw new Error('cased dated suffix failed: ' + JSON.stringify(cn))
+  // 命中不了的剥后缀 id 仍是 null（不猜测）
+  assertEq('datedSuffix.absent', priceFor('made-up-model-20260101'), null)
+  assertEq('datedSuffix.absentBase', priceFor('some-model-123456'), null)
+  console.log('  presentMs 口径 + 日期后缀取价 OK')
+}
+
+console.log('\n[7] pruneRollup（evts 修剪）与序列化往返')
+{
+  const bj = (d, h, m) => Date.UTC(2026, 8, d, h - 8, m || 0)
+  const t0 = bj(14, 10)
+  const events = [
+    { type: 'user/message', time: t0, data: { source: { kind: 'user' } } },
+    { type: 'step/start', time: t0 + 1, data: { turn: 0, step: 0 } },
+    { type: 'assistant/chunk', time: t0 + 2000, data: { turn: 0, step: 0, chunk: { type: 'text-delta', index: 0, text: 'x' } } },
+    { type: 'assistant/chunk', time: t0 + 3000, data: { turn: 0, step: 0, chunk: { type: 'finish', reason: 'stop' } } },
+    { type: 'assistant/message', time: t0 + 3000, data: { turn: 0, step: 0, usage: { inputTokens: 1e5, outputTokens: 2e5, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'gpt-5' } } } },
+    { type: 'tool/call', time: t0 + 4000, data: { callId: 'c1' } },
+    { type: 'tool/result', time: t0 + 5000, data: {} }
+  ]
+  const r = foldSession(events)
+  const beforeTypes = new Set()
+  for (const b of r.buckets.values()) for (const e of b.evts) beforeTypes.add(e[1])
+  if (!beforeTypes.has(6) || !beforeTypes.has(3)) throw new Error('fixture lacks generation/tool events')
+  // 修剪 30 天后的桶：type 3-6 明细丢弃，token/成本聚合不动
+  pruneRollup(r, t0 + 31 * DAY)
+  for (const b of r.buckets.values()) {
+    for (const e of b.evts) {
+      if (e[1] >= 3) throw new Error('prune left stale detail type ' + e[1])
+    }
+  }
+  const u = queryUsage([r], { range: 'custom', from: t0 - DAY, to: t0 + DAY }, {})
+  assertEq('prune.tokensSurvive', u.totals.inputTokens, 1e5)
+  assertEq('prune.assistantMessages', u.totals.assistantMessages, 1)
+  // 近期桶不动：cutoff 之前的桶保留全部明细
+  const r2 = foldSession(events)
+  pruneRollup(r2, t0 - DAY)
+  const types2 = new Set()
+  for (const b of r2.buckets.values()) for (const e of b.evts) types2.add(e[1])
+  if (!types2.has(6)) throw new Error('prune dropped recent generation events')
+  console.log('  pruneRollup OK (stale detail dropped, aggregates survive, recent intact)')
 }
 
 console.log('\nall checks passed ✔')

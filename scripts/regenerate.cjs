@@ -420,7 +420,8 @@ const pkg = {
     ...existingPkg.scripts,
     build: 'node scripts/regenerate.cjs',
     bench: 'node scripts/bench.js',
-    prepublishOnly: 'npm run build'
+    // 发版前置门禁：bench（引擎正确性）与 smoke（host 契约）不过不许发布
+    prepublishOnly: 'npm run test'
   },
   dsh: {
     bundle: {
@@ -432,7 +433,10 @@ const pkg = {
       // 仅在缺失时补全 inject/platform（避免重复）
       inject: (() => {
         const existing = existingPkg.dsh?.client?.inject || []
-        const toAdd = ['@deepseek-ai/dsh-client-runtime', '@deepseek-ai/dsh-client-connection', '@deepseek-ai/dsh-client-ui-settings']
+        // dsh-client-runtime 在 0.2.0 桌面 bundle 中已退役（被 dsh-client-modules 取代）；
+        // 两个名字都保留：inject 引用图中不存在的包会被浏览器侧静默跳过（arriveGraphRow
+        // 对 graphRows.get(name) === undefined 直接 continue），旧版 DSH 仍能命中 runtime。
+        const toAdd = ['@deepseek-ai/dsh-client-runtime', '@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-client-connection', '@deepseek-ai/dsh-client-ui-settings']
         return [...new Set([...existing, ...toAdd])]
       })(),
       platform: existingPkg.dsh?.client?.platform || 'web'
@@ -440,9 +444,9 @@ const pkg = {
   },
   peerDependencies: {
     ...existingPkg.peerDependencies,
-    '@deepseek-ai/dsh-client-connection': existingPkg.peerDependencies?.['@deepseek-ai/dsh-client-connection'] || '^0.1.0-rc.6',
-    '@deepseek-ai/dsh-client-runtime': existingPkg.peerDependencies?.['@deepseek-ai/dsh-client-runtime'] || '^0.1.0-rc.6',
-    '@deepseek-ai/dsh-client-ui-settings': existingPkg.peerDependencies?.['@deepseek-ai/dsh-client-ui-settings'] || '^0.1.0-rc.6',
+    '@deepseek-ai/dsh-client-connection': existingPkg.peerDependencies?.['@deepseek-ai/dsh-client-connection'] || '>=0.1.0-rc.6 <0.3.0',
+    '@deepseek-ai/dsh-client-modules': existingPkg.peerDependencies?.['@deepseek-ai/dsh-client-modules'] || '>=0.1.0-rc.6 <0.3.0',
+    '@deepseek-ai/dsh-client-ui-settings': existingPkg.peerDependencies?.['@deepseek-ai/dsh-client-ui-settings'] || '>=0.1.0-rc.6 <0.3.0',
     react: existingPkg.peerDependencies?.react || '^18.2.0'
   },
   files: [

@@ -2,7 +2,16 @@
 
 All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 
-## [Unreleased]
+## [0.3.12] - 2026-09-29
+
+### 兼容
+
+- **适配 DSH `0.2.0-rc.1`（桌面端）**：对 0.1.7-rc.2 → 0.2.0-rc.1 的 npm 包源码与 0.2.0 桌面 `app.asar` 内实际打包的 289 个 `@deepseek-ai` 包做逐个符号核对——插件依赖的全部 API（`requireStoredLog`、`snapshotEvents`、`session/event` 发射签名、`listSessions`/`readSession`、`delegationDepth`/`parentSession`、`webServer.register`、`workspaceRegistry`、`slots.inject('settings.section')`、`session-<id>` 磁盘布局与 `session.v\d+` 日志命名）**零签名变化、零删除**；0.2.0 新增的事件词汇（`team/*`、`tool/ptc-dispatch*`、`schedule/change` 等）全部落入 `foldAppend` 的 default 忽略分支。引擎与宿主胶水**无需改动**，实际适配动作为元数据级：
+  - `dsh.client.inject` 补 `@deepseek-ai/dsh-client-modules`：0.2.0 桌面 bundle 中 `dsh-client-runtime` 已退役（ABSENT），浏览器模块系统由 `dsh-client-modules` 承担（0.1.3 起随主线发布）。两个名字并存：inject 引用图中不存在的包会被 `arriveGraphRow` 静默跳过，旧 DSH 命中 runtime、新 DSH 命中 modules，一份包通吃 0.1.3 → 0.2.x。
+  - `peerDependencies` 范围从 `^0.1.0-rc.6`（按 semver 预发布规则实际不匹配 0.1.6/0.1.7/0.2.x）修正为 `>=0.1.0-rc.6 <0.3.0`，并移除已停更的 `dsh-client-runtime` 声明。
+  - `src/client.js` 的 `slots.register({` 改为同行书写：super-injector 的注入前预检按 `register\(\{…name:'slot'` 正则匹配合法 slot 名，此前换行排版被误判为「坏骨架」而拒绝注入。
+  - `COMPAT.md` 全量重写为 0.2.0-rc.1 验证档案（新旧双版本 grep 计数与行号对照）；README 系统要求更新为「已在 0.2.0-rc.1 上验证」。
+- 发版验证记录：`npm test`（build 常量守卫 + bench 引擎一致性 + smoke 缓存/SWR/路由/slot 契约）全绿；v0.3.12 功能项见下方。
 
 ### 修复
 
