@@ -20,7 +20,7 @@ The top filter bar switches the time range among `today / 24H / 7D / 30D / 90D /
 
 ### KPI overview
 
-**10** metric cards: estimated cost, total / input / output / cached Tokens, active duration, total duration, session count, total message count and user message count. Each card shows a **percentage change versus the previous period** (hidden when the baseline is zero).
+**9** metric cards: estimated cost, total / input / output / cached Tokens, active duration, total duration, session count, total message count and user message count. Each card shows a **percentage change versus the previous period** (hidden when the baseline is zero).
 
 - Clicking the **cost card** toggles ¥ / $; clicking the **total Token or cached Token card** toggles international units (K/M/B) and Chinese units (万 / 亿). All four Token cards share one unit.
 - **When a model filter is active, the duration and session cards collapse, leaving only the cost and Token cards.**
@@ -122,13 +122,32 @@ The plugin adapts across DSH versions through capability probing: when `sessionP
 
 ## Install
 
-Use the DSH CLI (recommended). It installs the package and automatically registers the plugin in the profile bundle list from the package's `dsh.bundle.patch` declaration:
+### Option 1: DSH Settings UI (Recommended)
+
+Open DSH Settings, find the plugin management entry, click **Add Plugin**, and enter one of the following in the input box:
+
+| Source | Enter | Example |
+| --- | --- | --- |
+| Package name | npm package name | `@skkjkk/dsh-usage-dashboard` |
+| GitHub repository | Repository URL | `https://github.com/skkjkk/dsh-usage-dashboard` |
+| Local directory | Absolute path | `D:\path\to\dsh-usage-dashboard` |
+
+The **Install Source** dropdown (top-right) lets you choose the npm registry (default / China mirror). After installation, restart DSH and open **Settings → 数据看板**.
+
+### Option 2: DSH CLI
 
 ```bash
+# From npm
 dsh plugin --profile web add @skkjkk/dsh-usage-dashboard
+
+# From GitHub (dev version)
+dsh plugin --profile web add "github:skkjkk/dsh-usage-dashboard#main"
+
+# From local directory (development)
+dsh plugin --profile web add link:/path/to/dsh-usage-dashboard
 ```
 
-Restart DSH and open **Settings → 数据看板**.
+### Option 3: Manual install
 
 Without the `dsh` CLI:
 
@@ -148,10 +167,17 @@ Then make sure the package appears in `dsh.profile.bundles` in the profile `pack
 }
 ```
 
-Uninstall:
+### Uninstall
 
 ```bash
 dsh plugin --profile web remove @skkjkk/dsh-usage-dashboard
+```
+
+### Inspect plugin
+
+```bash
+# Show dependency tree
+dsh plugin --profile web why @skkjkk/dsh-usage-dashboard
 ```
 
 ## HTTP API
