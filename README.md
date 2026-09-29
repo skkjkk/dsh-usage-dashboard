@@ -20,7 +20,7 @@
 
 ### KPI 总览
 
-共 **10 张**指标卡片：预估费用、总 Token、输入 / 输出 / 缓存 Token、活跃时长、总时长、会话数、总消息数、用户消息数。每张卡片带相对上一周期的**环比百分比**（基线为零时隐藏）。
+共 **9 张**指标卡片：预估费用、总 Token、输入 / 输出 / 缓存 Token、活跃时长、总时长、会话数、总消息数、用户消息数。每张卡片带相对上一周期的**环比百分比**（基线为零时隐藏）。
 
 - 点击**费用卡片**在 ¥ / $ 间切换；点击**总 Token 或缓存 Token 卡片**在国际单位（K/M/B）与中文单位（万 / 亿）间切换，四个 Token 卡片共用同一单位。
 - **选择模型筛选后，时长与会话类卡片自动收起，仅保留费用与 Token 五项**。
@@ -122,15 +122,34 @@
 
 ## 安装
 
-推荐使用 DSH CLI。它会安装包，并根据包内的 `dsh.bundle.patch` 自动把插件加入 profile bundle 列表：
+### 方式一：DSH 设置界面添加插件（推荐）
+
+打开 DSH 设置，找到插件管理入口，点击「添加插件」，在输入框中填入以下任一内容：
+
+| 来源 | 填写内容 | 示例 |
+| --- | --- | --- |
+| 包名 | npm 包名 | `@skkjkk/dsh-usage-dashboard` |
+| GitHub 仓库 | 仓库地址 | `https://github.com/skkjkk/dsh-usage-dashboard` |
+| 本地目录 | 绝对路径 | `D:\path\to\dsh-usage-dashboard` |
+
+右上角「安装源」可选择 npm 源（默认 / 中国大陆镜像源）。安装完成后重启 DSH，打开 **设置 → 数据看板**。
+
+### 方式二：使用 DSH CLI
 
 ```bash
+# 从 npm 安装
 dsh plugin --profile web add @skkjkk/dsh-usage-dashboard
+
+# 从 GitHub 安装（开发版本）
+dsh plugin --profile web add "github:skkjkk/dsh-usage-dashboard#main"
+
+# 从本地目录安装（开发调试）
+dsh plugin --profile web add link:/path/to/dsh-usage-dashboard
 ```
 
-安装完成后重启 DSH，打开 **设置 → 数据看板**。
+### 方式三：手动安装
 
-没有 `dsh` CLI 时，也可以手动安装：
+没有 `dsh` CLI 时，可以手动安装：
 
 ```bash
 pnpm --dir ~/.dsh/profiles/web add @skkjkk/dsh-usage-dashboard
@@ -148,10 +167,17 @@ pnpm --dir ~/.dsh/profiles/web add @skkjkk/dsh-usage-dashboard
 }
 ```
 
-卸载：
+### 卸载
 
 ```bash
 dsh plugin --profile web remove @skkjkk/dsh-usage-dashboard
+```
+
+### 查看插件信息
+
+```bash
+# 查看插件依赖关系
+dsh plugin --profile web why @skkjkk/dsh-usage-dashboard
 ```
 
 ## HTTP 接口
@@ -252,7 +278,7 @@ node scripts/verify-pack.mjs <package-dir>
 
 ## 版本
 
-当前发布版本：`0.3.12`（变更记录见 [CHANGELOG.md](CHANGELOG.md)）
+当前发布版本：`0.3.13`（变更记录见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## License
 
