@@ -31,20 +31,20 @@ dsh-usage-dashboard — DSH (DeepSeek Harness) usage statistics dashboard plugin
 
 - **`invalidate()` 只 bump 版本，绝不清缓存** → smoke SWR block。
 - **host.js 常量必须在 `apply()` 体内**（模块作用域被构建剥离且不报错）→ regenerate.cjs 的 undeclared-constants guard。注意该 guard 连字符串字面量里的 UPPER_SNAKE_CASE（如 `CNY`）也会误报——字符串里避免大写常量形标识符。
-- **CACHE_FORMAT_VERSION 必须在任何取价/折叠语义变化时 bump**（成本已固化进磁盘缓存 rollup；v8 = fork-seed 切断 + usage 去重 + presentGap + 日期后缀取价）→ 人工纪律，PR 描述检查。
+- **CACHE_FORMAT_VERSION 必须在任何取价/折叠语义变化时 bump**（成本已固化进磁盘缓存 rollup；v9 = fork-seed 切断 + usage 去重 + 日期后缀取价；v8 的 presentGap 桶字段已移除）→ 人工纪律，PR 描述检查。
 - **foldAppend 与 foldSession 必须字节级一致**（含 seed 切断与去重状态）→ bench `[3]`。seed 状态（`_seedCut`/`_seedPending`/`_seenUsage`）必须随 `serializeRollup` 持久化、`deserializeRollup` 恢复，否则 disk-cache 命中后的流式追加会与全量 refold 分叉。
 - **fork-seed 语义**：`isSeeded` 头 + 最后一个 `session/end-seed {inherited:true}` 标记 = 精确 seq 切断（last-marker-wins）；无标记 → 全量折叠 + `seededWithoutMarker` 置位（宿主可见，疑似双计）。→ bench `[5]`。
 - **usage 去重签名** = 消息 id（或 seq）+ time + 路由 + 六元 token；持久层重放已 flush 记录时签名相同 → bench `[5]` D/E。
-- **`presentGap`（≤30min 在场口径）与 `durGap`（≤10min 使用口径）是两个独立指标**；删除 presentGap 字段前先删 presentMs KPI → bench `[6]`。
+- **`durGap`（≤10min 使用口径）是唯一的间隙时长指标**；`presentGap` / `presentMs` 已在 v0.3.13 移除（与 totalMs 高度重复）。
 - **`pruneRollup` 只清 ≥3 的 evts 类型**（工具/step/generation 明细），type 0/1/2 保留；cutoff 之前桶的 activeMs 归零是 documented 近似 → bench `[7]`。
 - **磁盘缓存孤儿清理**依赖 `cacheIndex`/`states` 一致；改动会话删除路径时确认 sweep 仍能匹配（`<id>.json` 命名 + 跳过 `.` 前缀临时文件）。
 - **导出 CSV 公式注入防护**在 `csvCell`：`=+-@` 开头加前导单引号；改动导出格式时不得绕过。
 
-## v0.3.12 变更摘要（2026-09-29）
+## v0.3.13 变更摘要（2026-09-29）
 
 1. **fork-seed 切断**（正确性）：fork 子会话日志的父前缀不再重复计费。
 2. **usage 重放去重**（正确性）：持久层重放已 flush 的 assistant 消息不再双计 token/成本。
-3. **presentMs 在场时长**（新指标）：≤30min 间隙累加口径，KPI 卡 + 弹层说明 + prev 窗口对比。
+3. **presentMs 在场时长**（v0.3.12 新增，v0.3.13 移除）：与 totalMs 高度重复，已删除。
 4. **pruneRollup + flushCache 集成**（内存/磁盘）：90 天前的桶丢弃工具/step/generation 明细。
 5. **磁盘缓存孤儿清理**：reconcile 周期清理已删除会话与旧版本残留的 `.json`。
 6. **日期后缀取价兜底**：`gemini-3-pro-002` / `Qwen3.8-Flash-20260101` 等 2-8 位纯数字后缀剥离后命中基础型号；命中不了仍是未匹配（绝不猜测）。
