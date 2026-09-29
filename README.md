@@ -114,7 +114,7 @@
 
 | 项 | 要求 |
 | --- | --- |
-| DSH | `0.1.3-alpha.2` 及以上（已在 `0.1.7-rc.2` 上验证） |
+| DSH | `0.1.3-alpha.2` 及以上（已在 `0.2.0-rc.1` 上验证） |
 | Node.js | `>=18`（`package.json` 的 `engines` 声明） |
 | 运行环境 | DSH Web / Desktop GUI（客户端半边注册为 `settings.section`） |
 
@@ -252,7 +252,7 @@ node scripts/verify-pack.mjs <package-dir>
 
 ## 版本
 
-当前发布版本：`0.3.11`（变更记录见 [CHANGELOG.md](CHANGELOG.md)）
+当前发布版本：`0.3.12`（变更记录见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## License
 

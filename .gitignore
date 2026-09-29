@@ -8,6 +8,9 @@ node_modules/
 .tmp-check-*
 spill-compare/
 
+# third-party reference clones (token-monitor / tracker study)
+.study/
+
 # logs
 *.log
 npm-debug.log*
