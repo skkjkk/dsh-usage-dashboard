@@ -280,6 +280,19 @@ node scripts/verify-pack.mjs <package-dir>
 
 当前发布版本：`0.3.13`（变更记录见 [CHANGELOG.md](CHANGELOG.md)）
 
+## 扩展与定制
+
+本项目鼓励你用 AI 辅助开发来按需增减功能。无论是删掉不关心的 KPI 卡片、增加新的图表维度，还是接入你自己的定价表——直接把需求告诉 AI，让它帮你改代码、跑测试、出构建产物。
+
+几个常见方向：
+
+- **删减卡片**：不用的指标卡直接在 `src/client.js` 的 `cards2` 数组中移除对应项即可
+- **新增图表**：在 `src/client.js` 中追加一个 section，调用已有的 `/dash-api/usage` 数据
+- **自定义定价**：编辑 `pricing/vibe-usage-model-pricing-extended.csv` 后 `npm run build` 即可生效
+- **接入其他数据源**：host 半边的 `src/core/rollup.js` 是纯聚合引擎，可以 fork 后替换事件源
+
+源码结构清晰（`src/core/rollup.js` 聚合、`src/host.js` 路由、`src/client.js` 界面），`npm test` 覆盖核心逻辑，适合 AI 直接上手改。欢迎提交 PR 分享你的定制版本。
+
 ## License
 
 Apache-2.0
