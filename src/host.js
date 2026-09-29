@@ -68,8 +68,13 @@ export function apply(ctx, config) {
   // v7: 大小写不敏感取价兜底（Qwen3.8-Flash / MiniMax-M3 等 provider 目录原样大小写
   //     此前漏计为 ¥0）；缓存里已固化的 ¥0 必须随版本一起失效重算。
   // v8: fork-seed 切断 + usage 重放去重 + 日期后缀取价。
-  //     Costs are baked into cached rollups, so a pricing change MUST bump this.
-  const CACHE_FORMAT_VERSION = 9
+  // v9: 移除 presentMs 在场时长（桶字段变化，0.3.13）。
+  //     Costs are baked into cached rollups, so a pricing/semantics change MUST bump this.
+  // v10: Claude Opus 5.5 / Sonnet 5.5 / Mythos 5.1 / Fable 5.1（连字符 API id）、
+  //      GPT-6 系列（gpt-6.1-sol / gpt-6-luna / gpt-6-astra 各模式）、chat-latest、
+  //      MiMo-V2.6 三型 + Batch；并修正 gpt-5.6-sol 现行促销价（$4/$20 → ¥28/¥140）。
+  //      Costs are baked into cached rollups, so a pricing change MUST bump this.
+  const CACHE_FORMAT_VERSION = 10
   // Optional diagnostics for the disk rollup cache (set debugCache: true in
   // the plugin config to trace cache writes).
   const debugCache = !!(config && config.debugCache)

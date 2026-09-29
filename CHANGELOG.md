@@ -2,6 +2,38 @@
 
 All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 
+## [0.3.14] - 2026-09-30
+
+### 定价表
+
+- **补录 Claude / GPT / MiMo 近期新发布型号，修正过期价**——`pricing/vibe-usage-model-pricing-extended.csv` 模型数 246 → **273**。全部按厂商官方页面取价：Anthropic / OpenAI 为 USD 官方价 × 7 写入（表内单价仍为 ¥/M tokens），小米 MiMo 直接用官方人民币价（不做汇率折算）。
+  - **Anthropic 新增**：`claude-opus-5-5` / `claude-sonnet-5-5` / `claude-mythos-5-1`（官方 API id 为连字符形态，同时补点号别名 `claude-opus-5.5` / `claude-sonnet-5.5` / `claude-mythos-5.1` 与既有的 `claude-fable-5.1` 双写并存）、`claude-opus-5-5-fast`（Fast mode 2× 标准价）、`claude-fable-5-1`。
+  - **OpenAI 新增**：`gpt-6.1-sol` / `gpt-6-luna` 及其 `-batch` / `-fast` / `-flex` 变体（batch、flex = 50%，fast = 2×），`gpt-6-astra-batch` / `-fast` / `-flex` / `-ultrafast`（astra 基线价原已在表内），以及 `chat-latest`。
+  - **OpenAI 修正**：`gpt-5.6-sol` 35/210/3.5 → **28/140/2.8**（官方促销价 $4/$20/cache hit $0.40，至少有效至 2026-11-21），`-batch`/`-flex` 与 `-fast` 随之联动修正。
+  - **Xiaomi 新增**：MiMo-V2.6 三型 `mimo-v2.6-pro`（3/6，命中 0.025）、`mimo-v2.6-flash`（1/2，命中 0.02）、`mimo-v2.6-pro-ultraspeed`（30/60，命中 0.25）及官方 Batch 价 `mimo-v2.6-pro-batch` / `mimo-v2.6-flash-batch`。`mimo-v2.5*` 系列官方将于 2026-10-21 10:00（GMT+8）弃用，按既有策略保留原行、历史事件继续按发售时价计。
+  - 取价口径：第 3 列只填 **cache 读取（hit）** 价——缓存写入按基础输入价计费（`src/core/rollup.js` 的 `costCache = (cr*p[2] + cw*p[0])/1e6`）。长上下文阶梯价与 `inference_geo` 加成不建模（事件里没有上下文长度信息）。
+- **未收录**（口径不同或本机不可能出现）：OpenAI 多模态/worker 类（`gpt-image-2.5-*`、`gpt-realtime-2.1`、`gpt-live-1`、按分钟计费的转写）、`gpt-rosalind-research`（受限研究，2026-10-05 起计费）。未匹配模型依旧不计费并在 UI 显示未匹配徽标。
+- **真实性核验**：每个新增模型 id 都对照官方模型目录、定价页与 deprecations 记录逐一确认。`gpt-6-sol` 出自博客标题（"Introducing GPT-6 Sol and Luna"）但从未是官方 API id——官方 Sol 槽位为 `gpt-6.1-sol`，其基线与变体行已删除；Claude 点号别名（`claude-opus-5.5` 等）指向真实存在的模型，属防御性双写（沿用表内既有惯例）。
+
+### 缓存
+
+- `CACHE_FORMAT_VERSION` **9 → 10**：取价变化会影响已缓存会话的成本，旧缓存整批作废重算。
+
+## [0.3.13] - 2026-09-29
+
+### 正确性 / 缓存 / 导出
+
+- **fork-seed 切断**：fork 子会话日志的父前缀不再重复计费。
+- **usage 重放去重**：持久层重放已 flush 的 assistant 消息不再双计 token 与成本。
+- **移除 presentMs（在场时长）**：与 totalMs 高度重复（v0.3.12 新增、本版删除）；`CACHE_FORMAT_VERSION` 8 → 9。
+- **pruneRollup + flushCache 集成**：90 天前的桶丢弃 tool/step/generation 明细。
+- **磁盘缓存孤儿清理**：reconcile 周期清理已删除会话与旧版本残留的 `.json`。
+- **日期后缀取价兜底**：`gemini-3-pro-002`、`Qwen3.8-Flash-20260101` 等 2–8 位纯数字后缀剥离后命中基础型号；命中不了仍是未匹配（绝不猜测）。
+- **未匹配模型提醒**：coverage < 100% 时过滤栏下方出现琥珀色徽标，列出未匹配模型。
+- **CSV 导出**：`/dash-api/export` 全量分页导出（含公式注入防护），详细记录卡提供「导出 CSV」按钮。
+- **prepublishOnly → npm run test**：发版前置门禁（build + bench + smoke）。
+- **DSH 0.2.0-rc.1 适配**（元数据级）：逐符号验证零签名变化，`dsh.client.inject` 增补 `dsh-client-modules`，peer 范围改 `>=0.1.0-rc.6 <0.3.0`（详见 COMPAT.md）。
+
 ## [0.3.12] - 2026-09-29
 
 ### 兼容
