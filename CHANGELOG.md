@@ -6,18 +6,20 @@ All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 
 ### 定价表
 
-- **补录 Claude / GPT / MiMo 近期新发布型号，修正过期价**——`pricing/vibe-usage-model-pricing-extended.csv` 模型数 246 → **277**。全部按厂商官方页面取价：Anthropic / OpenAI 为 USD 官方价 × 7 写入（表内单价仍为 ¥/M tokens），小米 MiMo 直接用官方人民币价（不做汇率折算）。
+- **补录 Claude / GPT / MiMo 近期新发布型号，修正过期价**——`pricing/vibe-usage-model-pricing-extended.csv` 模型数 246 → **280**。全部按厂商官方页面取价：Anthropic / OpenAI 为 USD 官方价 × 7 写入（表内单价仍为 ¥/M tokens），小米 MiMo 直接用官方人民币价（不做汇率折算）。
   - **Anthropic 新增**：`claude-opus-5-5` / `claude-sonnet-5-5` / `claude-mythos-5-1`（官方 API id 为连字符形态，同时补点号别名 `claude-opus-5.5` / `claude-sonnet-5.5` / `claude-mythos-5.1` 与既有的 `claude-fable-5.1` 双写并存）、`claude-opus-5-5-fast`（Fast mode 2× 标准价）、`claude-fable-5-1`。
   - **OpenAI 新增**：`gpt-6-sol` / `gpt-6.1-sol` / `gpt-6-luna` 及其 `-batch` / `-fast` / `-flex` 变体（batch、flex = 50%，fast = 2×；注意 gpt-6-sol 的 cache hit 为输入的 10%（¥1.4），与 6.1-sol 的 5%（¥0.7）不同），`gpt-6-astra-batch` / `-fast` / `-flex` / `-ultrafast`（astra 基线价原已在表内），以及 `chat-latest`。
   - **OpenAI 修正**：`gpt-5.6-sol` 35/210/3.5 → **28/140/2.8**（官方促销价 $4/$20/cache hit $0.40，至少有效至 2026-11-21），`-batch`/`-flex` 与 `-fast` 随之联动修正；`gpt-5.6-terra-batch`/`-flex` 8.75/52.5/0.875 → **7/42/0.7**、`-fast` → **28/168/2.8**（官方全表 batch=50%、fast=2×）。
   - **Xiaomi 新增**：MiMo-V2.6 三型 `mimo-v2.6-pro`（3/6，命中 0.025）、`mimo-v2.6-flash`（1/2，命中 0.02）、`mimo-v2.6-pro-ultraspeed`（30/60，命中 0.25）及官方 Batch 价 `mimo-v2.6-pro-batch` / `mimo-v2.6-flash-batch`。`mimo-v2.5*` 系列官方将于 2026-10-21 10:00（GMT+8）弃用，按既有策略保留原行、历史事件继续按发售时价计。
   - 取价口径：第 3 列只填 **cache 读取（hit）** 价——缓存写入按基础输入价计费（`src/core/rollup.js` 的 `costCache = (cr*p[2] + cw*p[0])/1e6`）。长上下文阶梯价与 `inference_geo` 加成不建模（事件里没有上下文长度信息）。
+  - **xAI 补录**：`grok-4-fast-reasoning` / `grok-4-fast-non-reasoning`（发售时价 $0.20/$0.50、cached $0.05 → ¥1.4/¥3.5/¥0.35；xAI 目录已将其下架，按「旧型号用发售时原始价」策略保留）、`grok-4.20`（官方别名规则 `<modelname>` → 最新稳定版，与在册 `grok-4.20-0309-*` 同价 ¥8.75/¥17.5/¥1.4）。
+  - **Moonshot 修正**：`kimi-k3` 缓存命中 ¥5 → **¥2**（[官方定价](https://platform.kimi.com/docs/pricing/chat)：输入未命中 ¥20 / 输出 ¥100 / 缓存命中 ¥2.00；缓存写入 ¥20/5min、¥40/1h 为单独计费维度，不在建模范围）。`scripts/bench.js` `[0k]` 的 Kimi-K3 回归价同步为 [20,100,2]。
 - **未收录**（口径不同或本机不可能出现）：OpenAI 多模态/worker 类（`gpt-image-2.5-*`、`gpt-realtime-2.1`、`gpt-live-1`、按分钟计费的转写）、`gpt-rosalind-research`（受限研究，2026-10-05 起计费）。未匹配模型依旧不计费并在 UI 显示未匹配徽标。
 - **真实性核验**：官方文档页默认把大部分行折叠在 "All models" 之后（URL 追加 `.md` 才能拿到未折叠的完整定价表）——初次核验据此误判 `gpt-6-sol` 为博客推导名而删除其 4 行，二次核验用官方模型详情页（`/api/docs/models/gpt-6-sol`，Snapshots 原文 "Use `gpt-6-sol` in your API requests."）与发布博客（"In the OpenAI API, they are available as `gpt-6-sol` and `gpt-6-luna`."）确认其为**真实在册 API 模型**（初代 Sol，与新版 `gpt-6.1-sol` 并存），已恢复并改用它自己的官方 cache-hit 价（10%）。目录槽位与旗舰折叠表省略 ≠ 模型不存在。其余全部新增行同样经详情页/全表逐一确认为官方在册模型；Claude 点号别名（`claude-opus-5.5` 等）指向真实存在的模型，属防御性双写（沿用表内既有惯例）。
 
 ### 缓存
 
-- `CACHE_FORMAT_VERSION` **9 → 10 → 11**：v10 = 新模型补录与 gpt-5.6-sol 促销价修正；v11 = 恢复被误删的 `gpt-6-sol`（含其 10% cache-hit 价）+ `gpt-5.6-terra` 变体价修正。取价变化会影响已缓存会话的成本，旧缓存整批作废重算。
+- `CACHE_FORMAT_VERSION` **9 → 10 → 11 → 12**：v10 = 新模型补录与 gpt-5.6-sol 促销价修正；v11 = 恢复被误删的 `gpt-6-sol`（含其 10% cache-hit 价）+ `gpt-5.6-terra` 变体价修正；v12 = xAI grok 补录 + `kimi-k3` 缓存命中价修正。取价变化会影响已缓存会话的成本，旧缓存整批作废重算。
 
 ## [0.3.13] - 2026-09-29
 
