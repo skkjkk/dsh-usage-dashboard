@@ -1377,7 +1377,7 @@ console.log('\n[0k] case-insensitive pricing fallback (provider-cased model ids)
     ['QWEN3.8-FLASH', 'qwen3.8-flash', [0.8, 2.7, 0.1]],
     ['Qwen3.8-Max', 'qwen3.8-max', [12, 36, 1.8]],
     ['MiniMax-M3', 'minimax-m3', [2.1, 8.4, 0.42]],
-    ['Kimi-K3', 'kimi-k3', [20, 100, 5]],
+    ['Kimi-K3', 'kimi-k3', [20, 100, 2]],
     ['GLM-5.3-Flash', 'glm-5.3-flash', [0.8, 2.8, 0.23]],
     ['GPT-5', 'gpt-5', [8.75, 70, 0.875]]
   ]

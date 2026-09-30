@@ -175,7 +175,7 @@ kimi-k2,Moonshot AI,6,24,1.2
 kimi-k2.5,Moonshot AI,4,21,1
 kimi-k2.6,Moonshot AI,6.5,27,1.35
 kimi-k2.7-code,Moonshot AI,6.5,27,1.35
-kimi-k3,Moonshot AI,20,100,5
+kimi-k3,Moonshot AI,20,100,2
 moonshot-v1-128k,Moonshot AI,12,36,1.8
 moonshot-v1-32k,Moonshot AI,6,18,0.9
 moonshot-v1-8k,Moonshot AI,2,8,0.4
@@ -201,6 +201,9 @@ mistral-nemo,Mistral AI,0.14,0.21,
 grok-3-beta,xAI,21,105,5.25
 grok-4,xAI,21,105,5.25
 grok-4-0709,xAI,21,105,5.25
+grok-4-fast-non-reasoning,xAI,1.4,3.5,0.35
+grok-4-fast-reasoning,xAI,1.4,3.5,0.35
+grok-4.20,xAI,8.75,17.5,1.4
 grok-4.20-multi-agent,xAI,8.75,17.5,1.4
 grok-4.20-non-reasoning,xAI,8.75,17.5,1.4
 grok-4.20-reasoning,xAI,8.75,17.5,1.4
