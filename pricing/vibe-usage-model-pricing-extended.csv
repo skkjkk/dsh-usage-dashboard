@@ -71,9 +71,9 @@ gpt-5.6-sol-batch,OpenAI,14,70,1.4
 gpt-5.6-sol-fast,OpenAI,56,280,5.6
 gpt-5.6-sol-flex,OpenAI,14,70,1.4
 gpt-5.6-terra,OpenAI,14,84,1.4
-gpt-5.6-terra-batch,OpenAI,8.75,52.5,0.875
-gpt-5.6-terra-fast,OpenAI,35,210,3.5
-gpt-5.6-terra-flex,OpenAI,8.75,52.5,0.875
+gpt-5.6-terra-batch,OpenAI,7,42,0.7
+gpt-5.6-terra-fast,OpenAI,28,168,2.8
+gpt-5.6-terra-flex,OpenAI,7,42,0.7
 gpt-6-astra,OpenAI,70,350,7
 gpt-6-astra-batch,OpenAI,35,175,3.5
 gpt-6-astra-fast,OpenAI,140,700,14
@@ -83,6 +83,10 @@ gpt-6-luna,OpenAI,0.7,3.5,0.07
 gpt-6-luna-batch,OpenAI,0.35,1.75,0.035
 gpt-6-luna-fast,OpenAI,1.4,7,0.14
 gpt-6-luna-flex,OpenAI,0.35,1.75,0.035
+gpt-6-sol,OpenAI,14,70,1.4
+gpt-6-sol-batch,OpenAI,7,35,0.7
+gpt-6-sol-fast,OpenAI,28,140,2.8
+gpt-6-sol-flex,OpenAI,7,35,0.7
 gpt-6.1-sol,OpenAI,14,70,0.7
 gpt-6.1-sol-batch,OpenAI,7,35,0.35
 gpt-6.1-sol-fast,OpenAI,28,140,1.4
