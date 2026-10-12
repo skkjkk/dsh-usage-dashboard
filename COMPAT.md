@@ -1,6 +1,6 @@
 # DSH 版本兼容性档案
 
-> 2026-09-29 更新。基线：桌面端 `0.2.0-rc.1`（本机 `D:\DeepSeek Harness`，实测运行实例）。
+> 2026-10-13 更新。基线：桌面端 `0.2.0-rc.1`（本机 `<DSH 安装目录>`，实测运行实例）。
 > 方法：把 0.1.7-rc.2 与 0.2.0-rc.1 的相关子包从 npm 逐个下载，对 0.2.0 桌面 app.asar 内
 > 实际打包的 289 个 `@deepseek-ai` 包做版本清点，插件实际依赖的每个 API 做符号定位
 > （grep 源码行号，新旧双版本计数与行号对齐），不使用 changelog 文字推断。
@@ -55,11 +55,27 @@
    inject 数组**同时保留** runtime（旧 DSH）与 modules（新 DSH）两个名字，全版本兼容。
 2. **peerDependencies 范围修正**：旧声明 `^0.1.0-rc.6` 按 semver 预发布规则不匹配
    0.1.6/0.1.7/0.2.x（此前实测不影响运行，因 DSH 以 bundle 方式装配、不做严格 peer 校验）。
-   现改为 `>=0.1.0-rc.6 <0.3.0`，声明与实际支持面一致；`dsh-client-runtime` 从 peer 中移除
+   现改为 `>=0.1.0-rc.6 <0.3.0`；`dsh-client-runtime` 从 peer 中移除
    （它已停更在 0.1.1-rc.2，不应再作为对等依赖声明）。
+   > **注意（semver 预发布语义）**：`>=0.1.0-rc.6 <0.3.0` 并**不**匹配 `0.2.0-rc.1` 这类
+   > 预发布版本——按 semver 规则，`<0.3.0` 的上界比较不包含 `0.3.0` 之前的预发布序列，
+   > 且比较元组中带 prerelease 的版本只有在同 `[major,minor,patch]` 元组被显式允许时才
+   > 满足范围。因此该声明表达的是「0.1.x 的 rc 起、到 0.2.x 稳定版为止」，与实测支持面
+   > （0.1.3-alpha.2 → 0.2.0-rc.1，靠 bundle 装配而非 peer 校验）**不完全等价**。
+   > 若要让声明与实测严格一致，应写成显式列举（如
+   > `^0.1.5-rc.3 || ^0.1.7-rc.1 || ^0.2.0-rc.1`）。当前保留宽范围是权衡后的选择：
+   > 过窄的 peer 范围会阻止新 DSH 版本安装，而实际装配并不依赖 peer 解析。
 3. 0.2.0 的 `client-modules` 对 `dsh.client` 声明做了显式校验（`parseDshClient`：
    `platform` 必须是字符串、`inject`/`external` 必须是字符串数组、`immediately` 必须是
    布尔）——本插件声明全部合规。
+4. **`/dash-api/*` 共四条路由**（`usage` / `detail` / `calendar` / `export`），且宿主
+   `webServer` **对插件注册的 `kind:'exact'` 路由不做任何鉴权**（0.1.6-alpha.2 /
+   0.1.0-rc.8 / 0.1.0-rc.6 三份 `dsh-host-webserver` 实现交叉核对：`match()` 命中后
+   直接调用 `route.handler(req, res)`，全文无 401/403/token/Origin 校验，也没有中间件；
+   `/api` 的信任栅栏由 `dsh-client-connection` 的 `API_PATH = "/api"` 限定，
+   **结构上不覆盖 `/dash-api/*`**）。因此插件侧自 v0.3.15 起默认只服务 loopback
+   调用方（见 README 安全边界）。宿主版本升级后若要复核这一点，只需确认
+   `webServer.register` 的 `handler` 调用点前后是否新增了鉴权分支。
 
 ## 能力矩阵（usage-dashboard 依赖的全部 DSH 接口 · 0.1.7-rc.2 历史验证）
 

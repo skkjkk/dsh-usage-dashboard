@@ -20,7 +20,7 @@
 
 ### KPI 总览
 
-共 **9 张**指标卡片：预估费用、总 Token、输入 / 输出 / 缓存 Token、活跃时长、总时长、会话数、总消息数、用户消息数。每张卡片带相对上一周期的**环比百分比**（基线为零时隐藏）。
+共 **10 张**指标卡片：预估费用、总 Token、输入 / 输出 / 缓存 Token、活跃时长、总时长、会话数、总消息数、用户消息数。每张卡片带相对上一周期的**环比百分比**（基线为零时隐藏）。
 
 - 点击**费用卡片**在 ¥ / $ 间切换；点击**总 Token 或缓存 Token 卡片**在国际单位（K/M/B）与中文单位（万 / 亿）间切换，四个 Token 卡片共用同一单位。
 - **选择模型筛选后，时长与会话类卡片自动收起，仅保留费用与 Token 五项**。
@@ -182,13 +182,16 @@ dsh plugin --profile web why @skkjkk/dsh-usage-dashboard
 
 ## HTTP 接口
 
-host 半边在 DSH 的 web server 上注册三条只读 JSON GET 路由（返回本地聚合结果，不含会话原文）：
+host 半边在 DSH 的 web server 上注册四条只读 JSON GET 路由（返回本地聚合结果，不含会话原文）：
 
 | 路由 | 说明 | 主要参数 |
 | --- | --- | --- |
 | `GET /dash-api/usage` | KPI 总计 + 趋势桶 + 热力图 + 模型/项目分布 + 定价覆盖 | `range`、`from`、`to`、`models`、`projects` |
 | `GET /dash-api/detail` | 明细行（按「时间桶 × 模型 × 项目」分组） | 同上 + `offset`、`limit`（上限 **200**，默认 100） |
 | `GET /dash-api/calendar` | 日历热力图逐日 Token | `models`、`projects`、`now` |
+| `GET /dash-api/export` | 全量 CSV 导出（一次聚合取全，含公式注入防护） | `range`、`from`、`to`、`models`、`projects` |
+
+> **安全边界**：四条路由默认**只服务 loopback 调用方**（非 loopback 返回 403），因为宿主 webserver 自身没有鉴权——一旦以 `0.0.0.0` 启动，同网段任意主机就能读到全库用量与项目路径。确实需要非 loopback 直连时，用插件配置 `allowNonLoopback: true` 显式放行（自担风险）。`dsh-mobile` 网关从 `127.0.0.1` 反代，手机访问不受影响。
 
 `range` 取 `today / 24h / 7d / 30d / 90d / custom`（缺省 `today`）；`custom` 需配合 `from` / `to`（epoch 毫秒）。`models` / `projects` 为逗号分隔的多值参数。响应形如：
 
@@ -201,7 +204,7 @@ host 半边在 DSH 的 web server 上注册三条只读 JSON GET 路由（返回
   "meta": { "models": [], "projects": [], "vendors": {}, "pricing": {}, "dist": {} } }
 ```
 
-请求级缓存为 30 秒 TTL + stale-while-revalidate + 单飞，重复调用为毫秒级。这些路由不经过 DSH GUI 的会话鉴权，可直接访问（端口为 DSH 实例实际监听的端口）：
+请求级缓存为 30 秒 TTL + stale-while-revalidate + 单飞，重复调用为毫秒级。这些路由不经 DSH GUI 的会话鉴权，但**默认只接受 loopback 来源**（见上方安全边界），可直接访问（端口为 DSH 实例实际监听的端口）：
 
 ```bash
 curl -s "http://127.0.0.1:<port>/dash-api/usage?range=7d" | head -c 200
@@ -240,7 +243,7 @@ npm test           # build + bench + host smoke
 - 活跃时长与总时长的并集 / 窗口边界语义、`totalMs` 的并行会话去重；
 - 模型 / 项目分布与总 Token / 总费用守恒、缓存命中率各口径（`cacheRead` / `cacheObserved` / `billedInput`）的守恒；
 - 定价取用：DeepSeek 峰谷边界与生效日、变体名归一、模型 id 大小写不敏感、原型键处理；
-- `/dash-api/usage`、`/dash-api/detail`、`/dash-api/calendar` 三条 host 路由，以及 client bundle 的 **slot 注册契约**。
+- `/dash-api/usage`、`/dash-api/detail`、`/dash-api/calendar`、`/dash-api/export` 四条 host 路由（含 loopback 守卫与缓存 key 命名空间），以及 client bundle 的 **slot 注册契约**。
 
 发布前可验证 npm 包内容：
 
@@ -278,7 +281,7 @@ node scripts/verify-pack.mjs <package-dir>
 
 ## 版本
 
-当前发布版本：`0.3.13`（变更记录见 [CHANGELOG.md](CHANGELOG.md)）
+当前发布版本：`0.3.15`（变更记录见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 扩展与定制
 

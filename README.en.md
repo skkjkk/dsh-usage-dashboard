@@ -20,7 +20,7 @@ The top filter bar switches the time range among `today / 24H / 7D / 30D / 90D /
 
 ### KPI overview
 
-**9** metric cards: estimated cost, total / input / output / cached Tokens, active duration, total duration, session count, total message count and user message count. Each card shows a **percentage change versus the previous period** (hidden when the baseline is zero).
+**10** metric cards: estimated cost, total / input / output / cached Tokens, active duration, total duration, session count, total message count and user message count. Each card shows a **percentage change versus the previous period** (hidden when the baseline is zero).
 
 - Clicking the **cost card** toggles ¥ / $; clicking the **total Token or cached Token card** toggles international units (K/M/B) and Chinese units (万 / 亿). All four Token cards share one unit.
 - **When a model filter is active, the duration and session cards collapse, leaving only the cost and Token cards.**
@@ -182,13 +182,16 @@ dsh plugin --profile web why @skkjkk/dsh-usage-dashboard
 
 ## HTTP API
 
-The host half registers three read-only JSON GET routes on DSH's web server (returning local aggregation results, never raw session content):
+The host half registers four read-only JSON GET routes on DSH's web server (returning local aggregation results, never raw session content):
 
 | Route | Returns | Main params |
 | --- | --- | --- |
 | `GET /dash-api/usage` | KPI totals + trend buckets + heatmap + model/project distributions + pricing coverage | `range`, `from`, `to`, `models`, `projects` |
 | `GET /dash-api/detail` | Detail rows (grouped by time bucket × model × project) | same as above + `offset`, `limit` (max **200**, default 100) |
 | `GET /dash-api/calendar` | Per-day Token for the calendar heatmap | `models`, `projects`, `now` |
+| `GET /dash-api/export` | Full CSV export (single aggregation pass, formula-injection guarded) | `range`, `from`, `to`, `models`, `projects` |
+
+> **Trust boundary**: all four routes serve **loopback callers only** (non-loopback gets 403), because the host web server itself has no authentication — bound to `0.0.0.0`, any host on the same network could read your whole usage history and project paths. If you really need non-loopback access, opt in explicitly with the plugin config `allowNonLoopback: true` (at your own risk). The `dsh-mobile` gateway proxies from `127.0.0.1`, so phone access is unaffected.
 
 `range` accepts `today / 24h / 7d / 30d / 90d / custom` (default `today`); `custom` needs `from` / `to` in epoch milliseconds. `models` / `projects` are comma-separated multi-value params. Response shape:
 
@@ -201,7 +204,7 @@ The host half registers three read-only JSON GET routes on DSH's web server (ret
   "meta": { "models": [], "projects": [], "vendors": {}, "pricing": {}, "dist": {} } }
 ```
 
-Requests are cached for 30s with stale-while-revalidate and single-flight, so repeated calls return in milliseconds. These routes are not behind the DSH GUI session auth and can be accessed directly (use the port your DSH instance listens on):
+Requests are cached for 30s with stale-while-revalidate and single-flight, so repeated calls return in milliseconds. These routes are not behind the DSH GUI session auth, but they **only accept loopback callers by default** (see the trust boundary above). Use the port your DSH instance listens on:
 
 ```bash
 curl -s "http://127.0.0.1:<port>/dash-api/usage?range=7d" | head -c 200
@@ -240,7 +243,7 @@ npm test           # build + bench + host smoke
 - active/total duration union and window-boundary semantics, plus `totalMs` overlap deduplication for parallel sessions;
 - model / project conservation and conservation of the cache-hit-ratio fields (`cacheRead` / `cacheObserved` / `billedInput`);
 - pricing lookups: DeepSeek peak/off-peak boundaries and effective dates, variant-name resolution, case-insensitive model ids, prototype-key handling;
-- the `/dash-api/usage`, `/dash-api/detail` and `/dash-api/calendar` host routes, plus the client bundle's **slot registration contract**.
+- the `/dash-api/usage`, `/dash-api/detail`, `/dash-api/calendar` and `/dash-api/export` host routes (loopback guard and cache-key namespace included), plus the client bundle's **slot registration contract**.
 
 Before publishing, inspect the packed artifact:
 
@@ -278,7 +281,7 @@ The verifier checks that host / core / client bundles load, the bundle patch and
 
 ## Version
 
-Current release: `0.3.13` (see [CHANGELOG.md](CHANGELOG.md))
+Current release: `0.3.15` (see [CHANGELOG.md](CHANGELOG.md))
 
 ## Extending & customizing
 

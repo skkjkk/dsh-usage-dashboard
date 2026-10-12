@@ -2,6 +2,57 @@
 
 All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 
+## [0.3.15] - 2026-10-13
+
+> 本版基于一次全仓审计（`.audit/`，P1×4 / P2×22 / P3×8，无 P0）。下面按「隐私与安全 → 正确性 → 工程」列。
+
+### 隐私 / 安全
+
+- **从全部 git 历史移除 `unreadable-sessions-report.md`**：该文件曾包含 **321 个真实会话 UUID** 与本机项目路径，虽然早已从工作树删除，但作为 `main` 的祖先提交永久留在公开仓库里（任何人 clone 都能 `git show` 取回）。已用 `git filter-repo --invert-paths` 重写全部历史并强制推送 `main` 与 `v0.3.11`~`v0.3.13` tag。**重写前后 `HEAD^{tree}` 哈希逐字节一致**——只动历史，不动任何文件内容。
+  - 注意：GitHub 侧不可达对象会保留一段时间，**已有 fork/clone 仍持有旧历史**；彻底清除需联系 GitHub Support 并通知协作者重新克隆。
+- **堵住产生机制**：`scripts/scan-unreadable.cjs` 的报告改写到 `~/.dsh/usage-dashboard-reports/`，写入前断言输出不在仓库内；`.gitignore` 新增 `.audit/`、`/audit-*.md`、`/*-report.md`、`/unreadable-sessions-report.md` 以及通用凭据模式（`.env*`、`*.pem`、`*.key`、`*credentials*` 等）。CI 增加一道护栏，拒绝跟踪含真实会话数据的诊断报告。
+- **`/dash-api/*` 默认只服务 loopback 调用方**（F1）：插件把自己的 HTTP 端点注册进宿主 webserver，却无法假设宿主的绑定配置——宿主一旦以 `0.0.0.0` 启动，同网段任意主机即可无凭据读取全库用量、项目 cwd 与 token。现在按 `remoteAddress` 判定（IPv4 / IPv6 / IPv4-mapped-IPv6 / 整个 `127.0.0.0/8`），非 loopback 返回 403；逃生阀为插件配置 `allowNonLoopback: true`。`dsh-mobile` 网关从 `127.0.0.1` 反代，**本机手机访问不受影响**。
+- **去掉硬编码本机路径**：`scan-unreadable.cjs` 的 v0→v1 迁移器路径改为 `DSH_V0_MIGRATOR` 环境变量或模块解析自动探测（此前在其他机器上必然崩溃）；LICENSE 版权人占位 `[linxin666]` → `skkjkk`。
+- **纵深防御**：磁盘缓存目录 `0o700` / 文件 `0o600`（内容含 cwd、项目标题、会话 id、逐时用量）；缓存文件名按会话 id 白名单校验 + 目录内断言。
+
+### 正确性
+
+- **磁盘缓存折叠状态往返**（F5，`CACHE_FORMAT_VERSION` **12 → 13**）：`_openSteps` / `_lastClosed` / `_lastMsgT` / `_lastUserT` 此前不落盘，于是「日志被崩溃截断在某个 generation 中间 → 跨启动命中磁盘缓存 → 之后才收到闭合事件」这条路径上 `closeStep` 会因找不到 step 直接返回 0，**静默丢掉该 generation 的 activeMs 与延迟样本**。`generation` 内的 `bucketEvts` 是活引用，序列化只存 `(t, hk, evtIdx)`，反序列化时重新绑回桶数组。
+- **`serializeRollup` / `deserializeRollup` 下沉到引擎**（纯数据变换，无 IO/ctx），使 bench 能对磁盘缓存往返做真实断言——此前 `bench [7]` 标题写了「序列化往返」却没有任何断言，这正是 F5 长期不可见的原因。
+- **缓存 key 加路由前缀**（F6）：三个端点此前都用裸 `JSON.stringify(normalized)`，构造同形参数即可让 `usage` / `detail` / `calendar` 互相命中并返回错误结构。
+- **`export` 不再 O(页数 × 库大小)**（F2）：旧实现每 200 行重跑一次全库聚合，且循环内无 `await`，可被并发请求放大为宿主事件循环阻塞。引擎新增纯函数 `queryDetailAll`（一次聚合取全），导出侧加跨 key 串行闸并让出事件循环。
+- **`export` 容错**（F9）：一条非有限时间戳不再让整次导出 500，改为跳过该行并在响应里报告 `skipped` 计数。
+- **CSV 公式注入**（F28）：`csvCell` 先剥掉前导空白/控制字符再判断，`" =cmd|..."` 不再绕过。
+- **会话读取失败可见化 + 退避复活**（F8）：一次瞬时 I/O 错误（文件被占用、网络盘抖动）此前会让会话从看板**永久消失且无任何提示**。现在记录 `failCount` / `lastError`，reconcile 按 2^n 退避复活（上限 3 次后保持永久跳过，避免回到「每个周期对同一份坏日志重付一次完整解码」的死亡风暴），并通过 `meta.sessionHealth` 暴露给前端。
+
+### 前端
+
+- **「统计中」不再永久卡住**（F12）：busy 只由最新一次请求收尾。旧实现里被 silent 轮询顶掉的非 silent 请求会提前 return，`setBusy(false)` 永不执行。
+- **错误不再静默**（F13）：4 处 `catch` 保留错误对象并 `console.warn`；热力图区分「加载失败 + 重试」与「加载中」。
+- **未匹配定价徽标点击真正打开定价弹层**（F15）：此前只命中费用卡片的 `onClick`，即误切 ¥/$。
+- **`inject` 去掉从未使用的 `timer`**（F17）：缺 `timer` 插件的宿主会让看板整块不挂载，而代码只用构建期垫片化的 `ctx.interval`。
+- **分页收敛与键盘语义**（F30）：刷新后 total 变小不再显示「41-30 条，共 30 条」并停在空页；卡片上的 Enter/Space 不再同时触发「切换单位」与「打开弹层」；卸载清理淡入定时器。
+
+### 构建 / 发布
+
+- **新增 CI**（`.github/workflows/ci.yml`）：`npm ci` → build → 生成物漂移检查（`lib/`、`src/core/pricing.js`、`package.json` 必须无 diff）→ bench → smoke → verify-pack → 隐私文件护栏。
+- **`package-lock.json` 重新生成**：0.3.9 → 0.3.15，全部 `resolved` 从 `registry.npmmirror.com` 改为官方 `registry.npmjs.org`（新增项目级 `.npmrc` 钉住 registry，不含凭据）；`playwright` 归入 devDependencies；peer 集合与 `package.json` 对齐。`npm ci` 实测通过。
+- **`prepublishOnly` 增补 verify-pack**；`verify-pack.mjs` 支持无参运行（缺省校验仓库根目录）、跳过 `node_modules` 等目录，`new Function` → `vm.Script`（只编译不执行）。
+- **`exports` 去掉误导性子路径**：`./usage` / `./detail` / `./calendar` 曾指向 host bundle，但那些能力是 HTTP 路由而非模块导出，已移除。
+- **构建守卫改为语义检查**（F18/F19）：新增 `assertNoDroppedModuleDeclarations`——不看命名风格，只要「在 `apply()` 之前声明、又在 `apply()` 体内被引用」就构建失败（旧守卫只覆盖全大写且 ≥3 字符，`const helper = ...` 会静默漏检）；`coreImports` 去掉已漏过 `pruneRollup` 的硬编码兜底，改为失配即失败 + 与引擎实际导出交叉校验；客户端转换的裸 `'return {'` 子串替换改为行首锚点 `/^return \{\s*$/m`（旧兜底会命中任意嵌套函数里的第一个 `return {`，且其守卫条件恒真）。三处均做了反向验证。
+- **测试收紧**：bench 热力图容差按序列收紧（旧值 `0.5` 在相对容差语义下等于「允许 50% 偏差」，足以掩盖定价回归）；8 个零引用一次性脚本移入 `scripts/oneoff/` 并加警告 README（其中 `dark-codemod.cjs` 会原地改写 `src/client.js`）。
+
+### 文档
+
+- 版本号、KPI 卡片数（9 → **10**）、预热延迟（~500ms → **150ms**）、`/dash-api/*` 路由数（3 → **4**，补录 `export` 与「默认仅 loopback」说明）与实现对齐。
+- 补上缺失的 `[0.3.11]` 变更段落。
+
+### 未采纳（附理由）
+
+- **F11 的两条子建议**：①「`_seenUsage` 按时间窗淘汰」——淘汰后重放的旧记录会再次计入；②「签名区分字段缺失与显式 0」——重放副本（字段缺失）与原记录（显式 0）会因签名不同而双计。两者都会直接破坏成本准确性，而收益只是几 MB 内存/磁盘，故拒绝。签名保持完整拼接串。
+- **F16（`src/client.js` 拆模块 + 标准打包器）**：属数天的战略性重构，会重写整个构建链与 1800 行单文件，风险与收益比不适合与本次修复同批进行。
+- **F21（截图含真实项目名）**：需以匿名化数据重拍 6 张 README 截图，属独立任务。
+
 ## [0.3.14] - 2026-09-30
 
 ### 定价表
@@ -116,6 +167,23 @@ All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
   - 措辞改为产品文档口吻：移除「而非…」「不会出现…」「不虚构…」「这是预期行为而非漏算」等对照式辩解与内部验证细节（smoke 守卫、bench 容差）。
 - **README 截图全部重拍**：旧截图（2026-08-19）早于雷达 v3、缓存洞察卡与深色模式，与新文案矛盾。新增 `scripts/capture-screenshots.mjs`——把**真实的 `lib/client.js`** 与 `/dash-api/*` 实抓夹具在无头 Chromium 中渲染后按卡片裁剪，共 6 张（含深色模式）；移除 4 张过时截图。
 - **`COMPAT.md` 按最新 DSH 重新验证**：覆盖上限由 `0.1.5-rc.2` 更新至 **`0.1.7-rc.2`**（本机运行 `0.1.6-alpha.2`）。方法沿用原文：下载目标版本子包，对插件依赖的每个 API 定位源码行号（`requireStoredLog`/`snapshotEvents`/`listSessions`/`readSession`/`delegationDepth`/`webServer.register`/`settings.section` 等 8 处全部命中）。新增版本时间线、事件词汇表（0.1.7 新增 `developer/message`，实测全库 629 个会话文件中仅 3 个含该事件、共 8 次，被忽略且不计入消息数）、V4 日志文件名兼容性实测（三种文件名均被现有正则匹配），并记录 `peerDependencies` 版本范围偏窄这一非阻塞待办。
+
+## [0.3.11] - 2026-09-26
+
+> 本段此前缺失（git tag `v0.3.11` 存在但 CHANGELOG 无对应段落），现按该区间的提交记录补录。
+
+### 新增 / 重设计
+
+- **深色模式**：CSS 全量 token 化（`--dd-*` 变量）；修复深色下雷达图轴线不可见、缓存卡出现纯白块。
+- **缓存洞察卡重设计**、**雷达图 v3（六轴）**、**趋势切换动画与 X 轴固定步长**。
+- **README（中英）重写**，`COMPAT.md` 覆盖上限更新至 DSH `0.1.7-rc.2`。
+- **可复现的截图流水线**：`scripts/capture-screenshots.mjs` 以真实的 `lib/client.js` 配合 `/dash-api/*` 夹具在无头 Chromium 中渲染并按卡片裁剪，共 6 张（含深色模式）；移除 4 张过时截图。
+
+### 修正
+
+- **活跃时长改用 step 区间口径**，迁移日志做邻近合并（缓存格式 v5）；定价表补 `qwen3.8-flash`。
+- **DeepSeek 现行两型号计价**：`deepseek-flash` 等新名此前静默漏计为 ¥0。
+- **provider 目录原样大小写的模型名**（如 `Qwen3.8-Flash`）此前静默漏计为 ¥0。
 
 ## [0.3.10] - 2026-09-09
 
