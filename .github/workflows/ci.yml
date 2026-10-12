@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: build + drift + bench + smoke + pack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the runtime the plugin is developed and verified against.
+          node-version: '24'
+          cache: npm
+
+      - name: Install (must be reproducible from the lockfile)
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Generated files must be committed (lib/, src/core/pricing.js, package.json)
+        run: |
+          if ! git diff --exit-code -- lib src/core/pricing.js package.json; then
+            echo "::error::npm run build produced a diff — run 'npm run build' and commit lib/, src/core/pricing.js and package.json."
+            exit 1
+          fi
+
+      - name: Bench (engine correctness + performance)
+        run: npm run bench
+
+      - name: Host smoke (routing / cache / SWR invariants)
+        run: node scripts/smoke-host.mjs
+
+      - name: Package verification (bundle patch, files whitelist, client contract)
+        run: node scripts/verify-pack.mjs
+
+      - name: No private data in tracked files
+        run: |
+          if git ls-files | grep -Ei 'unreadable-sessions-report|\.audit/|audit-.*\.md$'; then
+            echo "::error::a diagnostic report containing real session ids/paths is tracked"
+            exit 1
+          fi
