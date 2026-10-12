@@ -31,3 +31,10 @@ credlib.cs
 
 # pricing/ is the tracked source for generated pricing tables.
 # package.json files only ships lib/ and cordis.patch.yml.
+
+# audit / diagnostic reports — NEVER commit: they contain real session UUIDs,
+# project cwd paths and other local-only data (see CHANGELOG 0.3.15).
+.audit/
+/audit-*.md
+/*-report.md
+/unreadable-sessions-report.md

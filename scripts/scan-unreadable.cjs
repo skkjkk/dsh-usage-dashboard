@@ -2,16 +2,43 @@
 // DSH 0.1.5 official APIs, with per-session reasons. Read-only.
 'use strict'
 const fs = require('fs')
+const os = require('os')
 const path = require('path')
 const z = require('node:zlib')
 
 const ROOT = path.join(process.env.USERPROFILE, '.dsh', 'sessions')
-const MIGRATOR = 'C:/Users/17644/AppData/nvm/v24.5.0/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-session-format-v0-to-v1/lib/index.js'
 const MAGIC = 0xfd2fb528
+
+// Locate DSH's v0→v1 session migrator without hardcoding a machine-specific path.
+// Order: explicit env override → module resolution from the DSH install roots.
+function resolveMigrator () {
+  const override = process.env.DSH_V0_MIGRATOR
+  if (override) return override
+  const candidates = [
+    '@deepseek-ai/dsh-session-format-v0-to-v1/lib/index.js',
+    '@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-session-format-v0-to-v1/lib/index.js'
+  ]
+  for (const spec of candidates) {
+    try { return require.resolve(spec) } catch (e) { /* try next */ }
+  }
+  return null
+}
+const MIGRATOR = resolveMigrator()
 
 // ---- released v0 event inventory (from DSH's own migrator source) ----
 function releasedV0Inventory () {
-  const src = fs.readFileSync(MIGRATOR, 'utf8')
+  if (!MIGRATOR) {
+    throw new Error(
+      'cannot locate @deepseek-ai/dsh-session-format-v0-to-v1 — set DSH_V0_MIGRATOR to its lib/index.js, ' +
+      'or run this script from an environment where the DSH package is resolvable'
+    )
+  }
+  let src
+  try {
+    src = fs.readFileSync(MIGRATOR, 'utf8')
+  } catch (e) {
+    throw new Error('cannot read the v0→v1 migrator at ' + MIGRATOR + ' — set DSH_V0_MIGRATOR to the correct path')
+  }
   const m = src.match(/RELEASED_V0_EVENT_DISPOSITIONS\s*=\s*Object\.freeze\(\{([\s\S]*?)\n\}\)/)
   if (!m) return null
   const keys = []
@@ -193,8 +220,19 @@ async function main () {
   group(refusedS, '被拒读的普通会话', '')
   group(migratable, '可迁移的普通会话（数据没丢）', '这些是正常的 v0 历史会话，官方 API 首次读取会自动迁移成功，数据可以恢复。')
 
-  fs.writeFileSync(path.join(__dirname, '..', 'unreadable-sessions-report.md'), lines.join('\n'), 'utf8')
-  console.log('report written: unreadable-sessions-report.md')
+  // The report contains real session UUIDs and project cwd paths: it must never
+  // land inside the repository (a previous version wrote it to the repo root and
+  // it was committed — see CHANGELOG 0.3.15). Write it under ~/.dsh instead.
+  const outDir = path.join(os.homedir(), '.dsh', 'usage-dashboard-reports')
+  const outFile = path.join(outDir, 'unreadable-sessions-report.md')
+  const repoRoot = path.resolve(__dirname, '..')
+  if (path.resolve(outFile).toLowerCase().startsWith(repoRoot.toLowerCase() + path.sep)) {
+    throw new Error('refusing to write a report containing real session data inside the repository: ' + outFile)
+  }
+  fs.mkdirSync(outDir, { recursive: true })
+  fs.writeFileSync(outFile, lines.join('\n'), 'utf8')
+  console.log('report written: ' + outFile)
+  console.log('(kept outside the repository on purpose — it lists real session ids and cwd paths)')
 }
 
 main().catch((e) => { console.error(e); process.exit(1) })
