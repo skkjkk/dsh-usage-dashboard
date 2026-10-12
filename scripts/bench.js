@@ -510,8 +510,12 @@ function compareUsage(label, l, n) {
       assertEq(label + '.buckets[' + i + '].' + k, l.buckets[i][k], n.buckets[i][k], 1e-6)
     }
   }
+  // 热力图逐格比对。旧实现对 token/cost/dur 统一用 0.5 相对容差——而 near() 是相对
+  // 容差，0.5 等于「允许 50% 偏差」，足以掩盖整块定价回归（审计 F26）。按序列收紧：
+  // token 是整数计数（应完全相等），cost 与 totals 用同一档 1e-6，dur 是毫秒整数。
+  const heatTol = { token: 1e-9, cost: 1e-6, dur: 1e-6 }
   for (const h of ['token', 'cost', 'dur']) {
-    for (let i = 0; i < 168; i++) assertEq(label + '.heat.' + h + '[' + i + ']', l.heat[h][i], n.heat[h][i], 0.5)
+    for (let i = 0; i < 168; i++) assertEq(label + '.heat.' + h + '[' + i + ']', l.heat[h][i], n.heat[h][i], heatTol[h])
   }
   assertEq(label + '.meta.models.length', l.meta.models.length, n.meta.models.length)
   for (let i = 0; i < l.meta.models.length; i++) {
