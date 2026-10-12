@@ -265,13 +265,61 @@ function assertNoUndeclaredConstants(src, label) {
 }
 assertNoUndeclaredConstants(hostSrc, 'src/host.js')
 
+// ---- build guard: 模块作用域声明被构建丢弃 ----
+// 比上面的 UPPER_SNAKE 检查更彻底：不看命名风格，只要「在 apply() 之前声明、又在
+// apply() 体内被引用」，构建就会把它丢掉 → DSH boot 时 ReferenceError。旧守卫只覆盖
+// 「全大写且 ≥3 字符」的 const/let，`const helper = ...` 这类 camelCase 声明会静默漏检
+// ——而那正是它声称要防的失效模式（审计 F18）。
+function assertNoDroppedModuleDeclarations(src, bodyStartPos, closePosPos, label) {
+  let importEnd = 0
+  for (const m of src.matchAll(/^import\s[\s\S]*?from\s*['"][^'"]+['"];?/gm)) {
+    importEnd = Math.max(importEnd, m.index + m[0].length)
+  }
+  const moduleScope = stripComments(src.slice(importEnd, bodyStartPos))
+  const names = new Set()
+  for (const m of moduleScope.matchAll(/\b(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/g)) names.add(m[1])
+  for (const m of moduleScope.matchAll(/\b(?:const|let|var)\s*\{([^}]*)\}/g)) {
+    for (const part of m[1].split(',')) {
+      const n = part.trim().split(':').pop().split('=')[0].trim()
+      if (/^[A-Za-z_$][\w$]*$/.test(n)) names.add(n)
+    }
+  }
+  const bodyCode = stripComments(src.slice(bodyStartPos, closePosPos))
+  const dropped = [...names].filter((n) => new RegExp('\\b' + n.replace(/\$/g, '\\$') + '\\b').test(bodyCode))
+  if (dropped.length) {
+    throw new Error(label + ': declared at module scope but used inside apply() → ' + dropped.join(', ') +
+      '\n  the host body extraction drops everything above `export function apply`; move these inside apply()')
+  }
+  return dropped
+}
+assertNoDroppedModuleDeclarations(hostSrc, bodyStart, closePos, 'src/host.js')
+
 let body = hostSrc.slice(bodyStart, closePos)
 // 只清理尾部空白行（v0.2 host 直接以 export function apply 定义，
 // 函数体内嵌套的闭合括号必须原样保留）
 body = body.replace(/\n\s*\n\s*$/, '\n')
-// 从 src/host.js 提取 core 导入，保持宿主包与源码一致（新增导出时无需改模板）
+// 从 src/host.js 提取 core 导入，保持宿主包与源码一致（新增导出时无需改模板）。
+// 旧的兜底是一个硬编码名字列表，已经漏过 pruneRollup：正则一旦失配就会静默生成
+// 缺 import 的 lib/index.js（运行时 ReferenceError）。现在改成硬失败 + 交叉校验
+// 导入名确实存在于引擎导出中（审计 F19）。
 const importMatch = hostSrc.match(/^import\s*\{([^}]*)\}\s*from\s*['"]\.\/core\/rollup\.js['"]/m)
-const coreImports = importMatch ? importMatch[1].trim() : 'foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, sessionTitle'
+if (!importMatch) {
+  throw new Error('src/host.js: cannot find the `import { ... } from \'./core/rollup.js\'` line — ' +
+    'the host bundle would be generated without engine imports')
+}
+const coreImports = importMatch[1].trim()
+const engineExports = new Set()
+for (const m of coreSrc.matchAll(/^export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm)) engineExports.add(m[1])
+for (const m of coreSrc.matchAll(/^export\s*\{([^}]*)\}/gm)) {
+  for (const part of m[1].split(',')) {
+    const name = part.trim().split(/\s+as\s+/).pop().trim()
+    if (/^[A-Za-z_$][\w$]*$/.test(name)) engineExports.add(name)
+  }
+}
+const missingEngineExports = coreImports.split(',').map((s) => s.trim()).filter(Boolean).filter((n) => !engineExports.has(n))
+if (missingEngineExports.length) {
+  throw new Error('src/host.js imports names that src/core/rollup.js does not export: ' + missingEngineExports.join(', '))
+}
 
 const hostOut = `// dsh-usage-dashboard — host half (adapted from the src/host.js glue layer).
 // Registers four JSON GET routes under /dash-api/* (usage / detail / calendar /
@@ -375,12 +423,15 @@ let c = clientSrc
         }
       })`
   )
-  // 函数体 return { inject, apply } → module.exports 赋值（嵌入 UMD factory）
-  .replace(/return \{\n(\s*)inject:/, 'module.exports = {\n$1inject:')
-// 保险：若上面替换失败则兜底
-if (!c.includes('module.exports = {')) {
-  c = c.replace('return {', 'module.exports = {', 1)
+// 顶层 `return {`（列 0）→ module.exports 赋值（嵌入 UMD factory）。
+// 用行首锚点，而不是裸 `return {` 子串替换：后者会命中任意嵌套函数里的第一个
+// `return {`，源码形态一变（例如在 inject 前加一行注释）就会静默改错位置——而且
+// 原实现的「守卫」条件是替换结果里含 module.exports，恒真，等于没有守卫（审计 F19）。
+const topReturnRe = /^return \{\s*$/m
+if (!topReturnRe.test(c)) {
+  throw new Error('client transform: could not find the top-level `return {` block in src/client.js')
 }
+c = c.replace(topReturnRe, 'module.exports = {')
 if (c.includes('ctx.interval(') || c.includes('styles.insert(')) {
   throw new Error('client transform left host-only API references in lib/client.js')
 }
