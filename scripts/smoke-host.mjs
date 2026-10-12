@@ -88,17 +88,23 @@ const ctx = {
 
 apply(ctx, {})
 
-async function request(path) {
+async function request(path, remoteAddress = '127.0.0.1') {
+  const res = await rawRequest(path, remoteAddress)
+  if (res.status !== 200) throw new Error('route failed ' + res.status + ': ' + res.body)
+  return JSON.parse(res.body)
+}
+
+// 原始请求：拿状态码与 body，用于断言非 200 分支。
+async function rawRequest(path, remoteAddress) {
   const handler = routes.get(path.split('?')[0])
   if (!handler) throw new Error('missing route ' + path)
   let status = 0
   let body = ''
-  await handler({ url: path }, {
+  await handler({ url: path, socket: { remoteAddress } }, {
     writeHead(code) { status = code },
     end(value) { body = String(value || '') }
   })
-  if (status !== 200) throw new Error('route failed ' + status + ': ' + body)
-  return JSON.parse(body)
+  return { status, body }
 }
 
 const queryPath = '/dash-api/usage?range=custom&from=' + from + '&to=' + now
@@ -309,7 +315,37 @@ try {
   }
 }
 
+// --- loopback guard (audit F1): /dash-api/* must refuse non-loopback callers ---
+for (const addr of ['192.168.1.50', '::ffff:192.168.1.50', '10.0.0.7']) {
+  const denied = await rawRequest('/dash-api/usage?range=today', addr)
+  if (denied.status !== 403) throw new Error('non-loopback caller ' + addr + ' was not refused (status ' + denied.status + ')')
+}
+for (const addr of ['127.0.0.1', '127.0.0.5', '::1', '::ffff:127.0.0.1']) {
+  const allowed = await rawRequest('/dash-api/usage?range=today', addr)
+  if (allowed.status !== 200) throw new Error('loopback caller ' + addr + ' was refused (status ' + allowed.status + ')')
+}
+
+// --- cache key namespace (audit F6) ---
+// These two requests normalize to byte-identical JSON; before the route prefix was
+// added they shared one cache entry and returned the wrong payload shape.
+const collideUsage = await request('/dash-api/usage?range=today&from=&to=&models=&projects=&offset=0&limit=100')
+if (!collideUsage.totals) throw new Error('usage payload lacks totals')
+const collideDetail = await request('/dash-api/detail?range=today')
+if (!Array.isArray(collideDetail.rows)) throw new Error('detail payload lacks rows')
+const collideAgain = await request('/dash-api/usage?range=today&from=&to=&models=&projects=&offset=0&limit=100')
+if (!collideAgain.totals) throw new Error('usage was served a detail payload (cache key collision)')
+
+// --- export path (audit F2/F9): one-pass full export, no 500 on the happy path ---
+const exported = await request('/dash-api/export?range=custom&from=' + from + '&to=' + now)
+if (typeof exported.csv !== 'string' || exported.csv.indexOf('时间,项目,模型') !== 0) {
+  throw new Error('export did not return the expected CSV header')
+}
+if (!(exported.rows >= 1)) throw new Error('export returned no rows')
+
 console.log('host smoke passed')
 console.log('  cache/event regressions     OK')
 console.log('  routes survive no timer     OK')
+console.log('  loopback guard              OK')
+console.log('  cache key namespace         OK')
+console.log('  export one-pass path        OK')
 console.log('  client contract check       OK')

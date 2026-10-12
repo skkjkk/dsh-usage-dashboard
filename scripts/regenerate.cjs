@@ -274,8 +274,9 @@ const importMatch = hostSrc.match(/^import\s*\{([^}]*)\}\s*from\s*['"]\.\/core\/
 const coreImports = importMatch ? importMatch[1].trim() : 'foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, sessionTitle'
 
 const hostOut = `// dsh-usage-dashboard — host half (adapted from the src/host.js glue layer).
-// Registers three JSON GET routes under /dash-api/* serving usage aggregation
-// over the local session store. Aggregation itself lives in ./core/rollup.js.
+// Registers four JSON GET routes under /dash-api/* (usage / detail / calendar /
+// export), loopback-only by default, serving usage aggregation over the local
+// session store. Aggregation itself lives in ./core/rollup.js.
 
 import { ${coreImports} } from './core/rollup.js'
 
@@ -299,11 +300,30 @@ function parseQueryArgs(url) {
   return args
 }
 
-function registerJsonRoute(ctx, pathname, fn) {
+// 只认 loopback 调用方（含 IPv4 / IPv6 / IPv4-mapped-IPv6 与整个 127.0.0.0/8）。
+// 插件把自己的 HTTP 端点注册到宿主 webserver，却无法假设宿主的绑定配置：宿主一旦以
+// 0.0.0.0 启动，同网段任意主机即可无凭据读到全库用量、项目 cwd 与 token（审计 F1）。
+// dsh-mobile 网关会先做设备会话鉴权，但插件不应把安全押在它身上；该网关从
+// 127.0.0.1 反代，因此本机手机访问不受影响。
+function isLoopbackAddress(addr) {
+  if (typeof addr !== 'string' || addr === '') return false
+  let a = addr
+  if (a.startsWith('::ffff:')) a = a.slice(7)
+  if (a === '::1' || a === '0:0:0:0:0:0:0:1') return true
+  const m = /^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$/.exec(a)
+  return m !== null && Number(m[1]) === 127
+}
+
+function registerJsonRoute(ctx, pathname, fn, allowNonLoopback) {
   ctx.effect(() => ctx.get('webServer').register({
     kind: 'exact',
     path: pathname,
     handler: async (req, res) => {
+      if (allowNonLoopback !== true && !isLoopbackAddress(req.socket && req.socket.remoteAddress)) {
+        res.writeHead(403, { 'content-type': 'application/json; charset=utf-8' })
+        res.end(JSON.stringify({ error: 'forbidden', hint: 'this endpoint only serves loopback callers' }))
+        return
+      }
       try {
         const data = await fn(parseQueryArgs(req.url))
         res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
@@ -317,8 +337,10 @@ function registerJsonRoute(ctx, pathname, fn) {
 }
 
 export function apply(ctx, config) {
+  // 逃生阀：确实需要非 loopback 直连（且自担风险）时用插件配置 allowNonLoopback: true。
+  const allowNonLoopback = !!(config && config.allowNonLoopback === true)
   // 与 cordis-host-runner 动态插件沙盒同构的桥：handle(method, fn) → GET /dash-api/<method>
-  const harness = { handle: (method, fn) => registerJsonRoute(ctx, '/dash-api/' + method, fn) }
+  const harness = { handle: (method, fn) => registerJsonRoute(ctx, '/dash-api/' + method, fn, allowNonLoopback) }
 ${body}
 }
 
@@ -407,21 +429,21 @@ const pkg = {
   ...existingPkg,
   // 确保关键构建字段始终正确
   main: 'lib/index.js',
+  // 只有三个真实入口。旧版把 ./usage / ./detail / ./calendar 也指向 lib/index.js，
+  // 但那些能力是 HTTP 路由（/dash-api/*），不是模块导出——消费者 import 它们
+  // 只会拿到 host bundle（审计 F31）。
   exports: {
     '.': './lib/index.js',
     './client': './lib/client.js',
-    './package.json': './package.json',
-    // 三个额外入口：usage、detail、calendar（在现有基础上补齐）
-    './usage': './lib/index.js',
-    './detail': './lib/index.js',
-    './calendar': './lib/index.js'
+    './package.json': './package.json'
   },
   scripts: {
     ...existingPkg.scripts,
     build: 'node scripts/regenerate.cjs',
     bench: 'node scripts/bench.js',
-    // 发版前置门禁：bench（引擎正确性）与 smoke（host 契约）不过不许发布
-    prepublishOnly: 'npm run test'
+    'verify-pack': 'node scripts/verify-pack.mjs',
+    // 发版前置门禁：bench（引擎正确性）+ smoke（host 契约）+ verify-pack（打包产物）不过不许发布
+    prepublishOnly: 'npm run test && node scripts/verify-pack.mjs'
   },
   dsh: {
     bundle: {

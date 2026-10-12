@@ -6,7 +6,7 @@
 //
 // Usage: npm run bench   (node scripts/bench.js)
 import { execFileSync } from 'node:child_process'
-import { foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, priceFor, priceForAt, resolveDSModel, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, presetBucketCount, cellOf, pruneRollup } from '../src/core/rollup.js'
+import { foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryCalendar, priceFor, priceForAt, resolveDSModel, num, rangeBounds, prevWindow, pickGranularity, bucketKey, bucketLabel, bucketSeries, presetBucketCount, cellOf, pruneRollup, serializeRollup, deserializeRollup } from '../src/core/rollup.js'
 
 const HOUR = 3600000
 const DAY = 86400000
@@ -1601,6 +1601,51 @@ console.log('\n[7] pruneRollup（evts 修剪）与序列化往返')
   for (const b of r2.buckets.values()) for (const e of b.evts) types2.add(e[1])
   if (!types2.has(6)) throw new Error('prune dropped recent generation events')
   console.log('  pruneRollup OK (stale detail dropped, aggregates survive, recent intact)')
+
+  // ---- 序列化往返（审计 F5 / F26）----
+  // 真实故障路径：日志被崩溃截断在某个 generation 中间 → 跨启动命中磁盘缓存
+  // → 之后才收到闭合事件。缓存若不带折叠状态（_openSteps 等），closeStep 会因
+  // 找不到 step 直接 return 0，静默丢掉 activeMs 与延迟样本。这里断言「重启后
+  // 继续折叠」与「一口气折叠」得到相同结果。
+  {
+    const trunc = [
+      { type: 'user/message', time: t0, data: { source: { kind: 'user' } } },
+      { type: 'step/start', time: t0 + 1, data: { turn: 0, step: 0 } },
+      { type: 'assistant/chunk', time: t0 + 2000, data: { turn: 0, step: 0, chunk: { type: 'text-delta', index: 0, text: 'x' } } }
+    ]
+    const rest = [
+      { type: 'assistant/chunk', time: t0 + 5000, data: { turn: 0, step: 0, chunk: { type: 'finish', reason: 'stop' } } },
+      { type: 'assistant/message', time: t0 + 5001, data: { turn: 0, step: 0, usage: { inputTokens: 10, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'gpt-5' } } } }
+    ]
+    const continuous = foldSession(trunc.concat(rest))
+    // 磁盘缓存就是 JSON 文件：必须经过真实的 JSON 往返
+    const resumed = deserializeRollup(JSON.parse(JSON.stringify(serializeRollup(foldSession(trunc)))))
+    for (const ev of rest) foldAppend(resumed, ev)
+
+    const win = { range: 'custom', from: t0 - DAY, to: t0 + DAY }
+    const a = queryUsage([continuous], win, {})
+    const b = queryUsage([resumed], win, {})
+    // 夹具本身必须产生非零 activeMs，否则「两边都是 0」也会通过比较
+    if (!(a.totals.activeMs > 0)) throw new Error('round-trip fixture produced no activeMs')
+    assertEq('roundTrip.activeMs', b.totals.activeMs, a.totals.activeMs)
+    assertEq('roundTrip.inputTokens', b.totals.inputTokens, a.totals.inputTokens)
+    assertEq('roundTrip.outputTokens', b.totals.outputTokens, a.totals.outputTokens)
+    assertEq('roundTrip.assistantMessages', b.totals.assistantMessages, a.totals.assistantMessages)
+    assertEq('roundTrip.totalMs', b.totals.totalMs, a.totals.totalMs)
+    // 折叠状态确实进了 wire（旧缓存格式没有这些字段）
+    const wire = JSON.parse(JSON.stringify(serializeRollup(continuous)))
+    if (!Array.isArray(wire.openSteps)) throw new Error('serialized rollup lacks openSteps')
+    if (!('lastMsgT' in wire) || !('lastUserT' in wire) || !('lastClosed' in wire)) {
+      throw new Error('serialized rollup lacks fold state (lastMsgT/lastUserT/lastClosed)')
+    }
+    // 截断点必须真的留下未闭合的 generation —— 否则上面的 activeMs 比较会退化成
+    // 「两边都没东西」，测不到 F5。
+    const truncWire = serializeRollup(foldSession(trunc))
+    if (!truncWire.openSteps.some((e) => Array.isArray(e[2]))) {
+      throw new Error('truncation fixture did not leave an open generation to resume')
+    }
+    console.log('  serialize/deserialize round-trip OK (resumed fold matches continuous fold)')
+  }
 }
 
 console.log('\nall checks passed ✔')

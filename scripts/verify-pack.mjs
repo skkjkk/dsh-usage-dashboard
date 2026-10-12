@@ -1,19 +1,17 @@
 // dsh-usage-dashboard — npm 包内容自检（发布前验证「别人安装后能正常使用」）。
 //
-// Usage: node scripts/verify-pack.mjs <extracted-package-dir>
+// Usage: node scripts/verify-pack.mjs [<extracted-package-dir>]
+//   缺省校验本仓库根目录（即将要发布的内容）；也可传入 npm pack 后的解包目录。
 //   * lib/index.js 可被 ESM import（导出 apply/inject，无顶层副作用）
 //   * lib/core/rollup.js 可被 import（priceFor/foldSession/queryUsage 可用）
 //   * lib/client.js 语法合法（UMD，浏览器环境才执行）
-//   * 必需文件齐全（pricing CSV、cordis.patch.yml、package.json files 字段）
+//   * 必需文件齐全（cordis.patch.yml、package.json files 字段）
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { join, resolve } from 'node:path'
+import { pathToFileURL, fileURLToPath } from 'node:url'
+import { Script } from 'node:vm'
 
-const dir = process.argv[2]
-if (!dir) {
-  console.error('usage: node scripts/verify-pack.mjs <extracted-package-dir>')
-  process.exit(2)
-}
+const dir = resolve(process.argv[2] || fileURLToPath(new URL('..', import.meta.url)))
 const ok = (msg) => console.log('  ✔ ' + msg)
 const fail = (msg) => { console.error('  ✘ ' + msg); process.exitCode = 1 }
 
@@ -47,7 +45,8 @@ try {
 // 4) client bundle 语法与 slot 注册契约校验（DSH client-modules 规范）
 try {
   const clientCode = readFileSync(join(dir, 'lib/client.js'), 'utf8')
-  new Function(clientCode)
+  // 只编译不执行（旧实现用 new Function，语义上等同 eval 且错误信息无文件名）。
+  new Script(clientCode, { filename: 'lib/client.js' })
   ok('client bundle syntax valid')
 
   const hasSlotsService = /['"]slots['"]/.test(clientCode) && /ctx\.get\(\s*['"]slots['"]\s*\)/.test(clientCode)
@@ -114,8 +113,12 @@ if (customPersonalPattern) {
   }
 }
 const hasPersonalData = (text) => personalPatterns.some((pattern) => pattern.test(text))
+// 缺省校验仓库根目录时必须跳过这些目录：node_modules 里几乎必然存在邮箱/令牌形态的字符串，
+// 会把发布门禁变成永久红灯。
+const SKIP_DIRS = new Set(['node_modules', '.git', '.audit', '.study', 'picture'])
 const scan = (p) => {
   for (const e of readdirSync(p)) {
+    if (SKIP_DIRS.has(e)) continue
     const fp = join(p, e)
     if (statSync(fp).isDirectory()) { scan(fp); continue }
     if (/\.(js|cjs|mjs|json|yml|md|txt|csv)$/.test(e)) {

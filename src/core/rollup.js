@@ -575,6 +575,87 @@ export function emptyRollup() {
   }
 }
 
+// ---------- 磁盘缓存序列化契约 ----------
+// 这两个函数是纯数据变换（无 IO / 无 ctx），放在引擎里以便 bench 直接做往返断言；
+// 宿主只负责读写文件。任何折叠语义变化都必须同步 bump 宿主的 CACHE_FORMAT_VERSION。
+export function serializeRollup(r) {
+  const buckets = []
+  for (const [hk, b] of r.buckets) {
+    const per = []
+    for (const [model, arr] of b.per) per.push([model, arr])
+    buckets.push([hk, [per, b.msg, b.durGap, b.first, b.last, b.hasMsg ? 1 : 0, b.evts]])
+  }
+  // fold 状态随缓存持久化：_seenUsage 保证 foldAppend 续算（disk cache 命中后
+  // drainPending 追加的事件）与全量 refold 去重一致；_seedCut/_seedSkip 同理
+  // （v8 起缓存的是已切断的 rollup，继续 fold 不需要再切）。
+  // v13 起再带上 generation 折叠状态：此前 _openSteps/_lastClosed/_lastMsgT/_lastUserT
+  // 不落盘，于是「日志被崩溃截断在某个 generation 中间 → 跨启动命中磁盘缓存 →
+  // 之后才收到闭合事件」这条路径上 closeStep 会因 _openSteps 为空直接 return 0，
+  // 静默丢掉该 generation 的 activeMs 与延迟样本，并少一个 durGap（审计 F5）。
+  return {
+    first: r.first, last: r.last, buckets, modelMeta: Array.from(r.modelMeta || []),
+    seenUsage: Array.from(r._seenUsage || []),
+    skippedSeedEvents: r.skippedSeedEvents || 0,
+    // generation 里的 bucketEvts 是指向桶 evts 数组的活引用，只存 (t, hk, evtIdx)，
+    // 反序列化时重新绑定到重建后的桶数组。
+    openSteps: Array.from(r._openSteps || [], ([k, s]) => [
+      k,
+      s.start === undefined ? null : s.start,
+      s.generation ? [s.generation.t, s.generation.hk, s.generation.evtIdx] : null,
+      s.lastGenDur === undefined ? null : s.lastGenDur
+    ]),
+    lastClosed: r._lastClosed
+      ? { dur: r._lastClosed.dur, endT: r._lastClosed.endT, claimed: !!r._lastClosed.claimed }
+      : null,
+    lastMsgT: r._lastMsgT === undefined ? null : r._lastMsgT,
+    lastUserT: r._lastUserT === undefined ? null : r._lastUserT
+  }
+}
+
+export function deserializeRollup(o) {
+  const r = emptyRollup()
+  r.first = o.first === null || typeof o.first === 'number' ? o.first : null
+  r.last = o.last === null || typeof o.last === 'number' ? o.last : null
+  for (const entry of o.buckets || []) {
+    const hk = entry[0]
+    const arr = entry[1]
+    const per = new Map(arr[0])
+    r.buckets.set(hk, { per, msg: arr[1], durGap: arr[2], first: arr[3], last: arr[4], hasMsg: !!arr[5], evts: arr[6] })
+  }
+  r.modelMeta = new Map(o.modelMeta || [])
+  r._seenUsage = new Set(o.seenUsage || [])
+  r.skippedSeedEvents = o.skippedSeedEvents || 0
+  // v8 缓存里存的是已切断/已去重的 rollup：seed 状态置「无 seed」，
+  // 让 drainPending 的 foldAppend 把后续事件原样折叠。
+  r._seedCut = null
+  r._seedSkip = 0
+  // v13：恢复 generation 折叠状态，并把 bucketEvts 重新绑回对应桶的 evts 数组。
+  r._openSteps = new Map()
+  for (const e of o.openSteps || []) {
+    if (!Array.isArray(e) || typeof e[0] !== 'string') continue
+    let generation = null
+    const g = e[2]
+    if (Array.isArray(g) && typeof g[0] === 'number' && typeof g[1] === 'number') {
+      const b = r.buckets.get(g[1])
+      // 桶可能已被 pruneRollup 丢弃：此时无法恢复该 generation 的落点，
+      // 退化为「无 generation」（与旧行为一致），而不是留一个悬空引用。
+      if (b && Array.isArray(b.evts) && b.evts[g[2]] !== undefined) {
+        generation = { t: g[0], hk: g[1], evtIdx: g[2], bucketEvts: b.evts }
+      }
+    }
+    const step = { generation, start: typeof e[1] === 'number' ? e[1] : null }
+    if (typeof e[3] === 'number') step.lastGenDur = e[3]
+    r._openSteps.set(e[0], step)
+  }
+  r._lastClosed = o.lastClosed && typeof o.lastClosed === 'object' &&
+    typeof o.lastClosed.dur === 'number' && typeof o.lastClosed.endT === 'number'
+    ? { dur: o.lastClosed.dur, endT: o.lastClosed.endT, claimed: !!o.lastClosed.claimed }
+    : null
+  r._lastMsgT = typeof o.lastMsgT === 'number' ? o.lastMsgT : null
+  r._lastUserT = typeof o.lastUserT === 'number' ? o.lastUserT : null
+  return r
+}
+
 function bucketAt(r, t) {
   const hk = hourOf(t)
   let b = r.buckets.get(hk)
@@ -1604,8 +1685,9 @@ export function patchModelMeta(modelAgg, rollups) {
 }
 
 // ---------- query: detail records ----------
-export function queryDetail(rollups, req) {
-  if (!req || !req.range) return { gran: 'hour', total: 0, rows: [] }
+// 聚合主体：产出过滤后的「全部」明细行（未分页）。queryDetail 与 queryDetailAll 共用，
+// 保证「交互分页查询」与「全量导出」逐字段一致。
+function buildDetailRows(rollups, req) {
   const [lo, hi] = rangeBounds(req)
   let gran = req.range === 'today' || req.range === '24h' ? 'hour' : 'day'
   if (req.range === 'custom') gran = (hi - lo) <= 48 * HOUR ? 'hour' : 'day'
@@ -1674,9 +1756,24 @@ export function queryDetail(rollups, req) {
   }
   const rows = Array.from(bucketMap.values())
   rows.sort((a, b) => b.t - a.t || a.project.localeCompare(b.project, 'zh') || a.model.localeCompare(b.model))
+  return { gran, rows }
+}
+
+export function queryDetail(rollups, req) {
+  if (!req || !req.range) return { gran: 'hour', total: 0, rows: [] }
+  const { gran, rows } = buildDetailRows(rollups, req)
   const offset = Math.max(0, Number(req.offset) || 0)
   const limit = Math.min(200, Math.max(1, Number(req.limit) || 100))
   return { gran, total: rows.length, rows: rows.slice(offset, offset + limit) }
+}
+
+// 全量导出专用：一次聚合产出全部行，不设 200 行上限。
+// 旧实现靠「每页 200 行、循环 offset 直到取尽」反复调用 queryDetail，每次都要
+// 全库聚合再 slice，代价 O(页数 × 库大小) 且循环内无 await（审计 F2）。
+export function queryDetailAll(rollups, req) {
+  if (!req || !req.range) return { gran: 'hour', total: 0, rows: [] }
+  const { gran, rows } = buildDetailRows(rollups, req)
+  return { gran, total: rows.length, rows }
 }
 
 // ---------- query: calendar (53-week daily activity) ----------
