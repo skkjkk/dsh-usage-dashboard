@@ -1432,6 +1432,63 @@ console.log('\n[0k] case-insensitive pricing fallback (provider-cased model ids)
   console.log('  case-insensitive pricing OK (' + variants.length + ' provider-cased ids + prototype/free-suffix/fold/vendor guards)')
 }
 
+console.log('\n[0l] provider 作用域 / 市场后缀归一（global: · cn: · provider/model · -sg）')
+{
+  // 事件里的 model id 会带 provider 作用域与市场后缀：qoder 报 `cn:hy4-preview`，
+  // 聚合路由报 `global:deepseek-v4.1-flash` / `global:deepseek-v4.1-flash-sg`，
+  // 第三方转售报 `deepseek-ai/DeepSeek-V4-Flash-0731`。这些**是同一个模型**，
+  // 修复前全部落空为 ¥0。
+  const scoped = [
+    ['global:gpt-6-luna', 'gpt-6-luna', [0.7, 3.5, 0.07]],
+    ['cn:hy3', 'hy3', [1, 4, 0.25]],
+    ['CN:HY3', 'hy3', [1, 4, 0.25]],
+    ['global:GPT-6-Luna', 'gpt-6-luna', [0.7, 3.5, 0.07]]
+  ]
+  for (const [id, want, price] of scoped) {
+    const r = priceFor(id)
+    if (!r || r.matched !== want) throw new Error('scopedPrice(' + id + ') = ' + JSON.stringify(r) + ', want ' + want)
+    for (let i = 0; i < 3; i++) assertEq('scopedPrice ' + id + ' p[' + i + ']', r.p[i], price[i], 1e-9)
+    const at = priceForAt(id, Date.UTC(2026, 8, 14, 2, 0))
+    if (!at || at.matched !== want) throw new Error('scopedPriceAt(' + id + ') = ' + JSON.stringify(at) + ', want ' + want)
+  }
+
+  // DeepSeek 特判路径：带作用域/市场后缀必须与裸名解析到同一型号、同一价
+  const t0 = Date.UTC(2026, 8, 14, 2, 0) // 北京时间 10:00 → 高峰
+  for (const id of ['deepseek-v4.1-flash', 'global:deepseek-v4.1-flash', 'global:deepseek-v4.1-flash-sg', 'deepseek-ai/DeepSeek-V4-Flash-0731']) {
+    const bare = resolveDSModel('deepseek-v4.1-flash')
+    if (resolveDSModel(id) !== bare || bare === null) {
+      throw new Error('resolveDSModel(' + id + ') = ' + resolveDSModel(id) + ', want ' + bare)
+    }
+    const a = priceForAt(id, t0)
+    const b = priceForAt('deepseek-v4.1-flash', t0)
+    if (!a || !b) throw new Error('priceForAt(' + id + ') resolved to nothing')
+    for (let i = 0; i < 3; i++) assertEq('scopedDS ' + id + ' p[' + i + ']', a.p[i], b.p[i], 1e-9)
+  }
+
+  // ---- 反向断言：绝不能过度剥离 ----
+  // `-pro` / `-lite` / `-plus` 是模型名本身，不在市场后缀白名单里。
+  // gpt-5-pro 不在表中，就必须是未匹配，而不是被错按 gpt-5（¥8.75/¥70）计价。
+  assertEq('scopedNeg.gpt5pro', priceFor('gpt-5-pro'), null)
+  assertEq('scopedNeg.flashLite', priceFor('gemini-2.5-flash-lite').matched, 'gemini-2.5-flash-lite')
+  assertEq('scopedNeg.plus', priceFor('qwen3.7-plus').matched, 'qwen3.7-plus')
+  // 剥完仍不在表里 → 依旧未匹配（数据缺失由补表解决，不靠猜价兜底）
+  assertEq('scopedNeg.step5preview', priceFor('cn:step-5-preview'), null)
+  assertEq('scopedNeg.hy4preview', priceFor('cn:hy4-preview'), null)
+  assertEq('scopedNeg.spaceBunny', priceFor('space-bunny-free'), null)
+  assertEq('scopedNeg.bogusScope', priceFor('definitely-not-a-provider:foo'), null)
+
+  // 端到端：global:gpt-6-luna 1M 输入 + 1M 输出 + 1M 缓存 = 0.7 + 3.5 + 0.07（回归点此前为 ¥0）
+  const bj = (d, h) => Date.UTC(2026, 8, d, h - 8, 0)
+  const roll = foldSession([
+    { type: 'assistant/message', time: bj(14, 10), data: { turn: 0, step: 0, usage: { inputTokens: 1e6, outputTokens: 1e6, cacheReadTokens: 1e6, cacheWriteTokens: 0 }, message: { source: { model: 'global:gpt-6-luna' } } } }
+  ])
+  roll.id = 'sc'; roll.cwd = 'D:/sc'; roll.projectTitle = 'sc'
+  const u = queryUsage([roll], { range: 'custom', from: bj(14, 0), to: bj(14, 23) }, {})
+  assertEq('scoped.foldCost', u.totals.cost, 0.7 + 3.5 + 0.07, 1e-9)
+  assertEq('scoped.coverage', u.meta.pricing.coverage, 100)
+  console.log('  provider-scope / market-suffix pricing OK (' + scoped.length + ' scoped ids + DeepSeek path + 7 negative guards + fold)')
+}
+
 console.log('\n[5] fork-seed 切断与 usage 重放去重（token-monitor 对照修复）')
 {
   const bj = (d, h, m) => Date.UTC(2026, 8, d, h - 8, m || 0)
