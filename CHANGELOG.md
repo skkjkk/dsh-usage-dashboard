@@ -2,6 +2,31 @@
 
 All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 
+## [0.3.16] - 2026-10-13
+
+> 起因：与 [`token-monitor`](https://github.com/Javis603/token-monitor)（计价内核 tokscale）做了一次模型/定价对比（对比报告为本地文件 `docs/token-monitor-定价与模型对比.md`，未纳入 git），并据此核对了本机真实用量。**结论：报告列出的 76 个"补录候选"确实全部不在表里，但它漏掉了一个更直接的问题——本机实际用过的 55 个模型里有 24 个取不到价、成本被记成 ¥0。**
+
+### 取价归一（`CACHE_FORMAT_VERSION` 13 → 14）
+
+- **provider 作用域与市场后缀**：事件里的 model id 会带 `global:` / `cn:` 前缀或 `provider/model` 形态，也会带 `-sg` 这类市场后缀。此前 `priceFor` 只做「精确 → 剥 `-free` → 剥日期后缀」，这些 id 全部落空为 ¥0。新增 `modelIdCandidates`：按优先级产出候选名（原样 → 剥 provider 作用域 → 剥市场后缀白名单），`priceFor` 与 `resolveDSModel` 共用。
+  - 本机实测恢复：`global:deepseek-v4.1-flash`（550 次）、`global:deepseek-v4.1-flash-sg`（19 次）、`global:gpt-6-luna`（2 次）。
+- **绝不猜测**：每个候选剥出的名字必须**精确命中**价目表才计价；命中不了仍是未匹配（显示徽标），与既有日期后缀兜底同一纪律。
+- **市场后缀走白名单**（`-sg` / `-cn` / `-us` / `-eu` / `-jp` / `-hk` / `-tw` / `-kr` / `-global` / `-intl` / `-oversea`），**不是**通用剥后缀——`-pro` / `-lite` / `-plus` / `-luna` 是模型名本身，通用剥会让 `gpt-5-pro` 被错按 `gpt-5`（¥8.75/¥70）计价。bench `[0l]` 用反向断言锁住这一点。
+- `-free` 的语义保持既有口径：剥掉后按**基座**模型计价（因此免费模型要把基座登记为 0,0,0）。
+
+### 定价表补录（`CACHE_FORMAT_VERSION` 14 → 15，280 → 291 行）
+
+- 新增 4 个收费模型（USD 源按仓库惯例 × 7 写入 ¥/M）：`hy4-preview`（Tencent，0.834/2.501/0.042 USD）、`step-5-preview`（StepFun，1.00/2.70/0.05 USD）、`kimi-k2.8-preview`（Moonshot AI，6.5/27/1.7 CNY）、`agnes-3.0-flash`（Sapiens AI，0.35/1/0.035 CNY）。
+- 新增 7 个免费基座（0,0,0）：`space-bunny`、`nemotron-3.5-lightning`、`ling-3.1-flash`、`sensenova-6.7-flash-lite`、`sensenova-6.8-flash-lite`、`laguna-s-2.1`、`x-preview-f`。
+- **实测效果**：这些模型此前全部计 ¥0，补录后累计新增计入 **¥671.44**（`cn:step-5-preview` ¥268.72、`cn:hy4-preview` ¥189.38、`hy4-preview` ¥103.58、`kimi-k2.8-preview` ¥79.77、`step-5-preview-free` ¥25.36、`agnes-3.0-flash` ¥0.13，其余为归一修复的 ¥4.49）；定价覆盖率 98%。
+- `step-5-preview` 的三数顺序由上游目录裁决：models.dev 的 6 个 provider 一致给出 input 1 / output 2.7 / cache_read 0.05，即"输入 / 缓存命中 / 输出"顺序。
+
+### 已知遗留
+
+- 仍有 8 个模型未定价（`step-explore`、`kat-coder-pro-v2.5`、`sakana-namazu`、`big-pickle`、`Qwen3.6-35B-A3B`、`spark-x2.5`、`Qwen3.8-27B`、`qoder-cn`）。其中 `sakana-namazu`（上游四源一致 0.95/4/0.15 USD）与 `big-pickle`（上游为 0）有目录依据待确认；`step-explore` / `kat-coder-pro-v2.5` / `spark-x2.5` 三份目录均无；`Qwen3.6-35B-A3B` / `Qwen3.8-27B` 各转售商价差达 5 倍，不适合拍板。`qoder-cn` 疑似 provider 名漏进 model 字段，建议**不**计价。
+- `step-5-preview-free` 按 `-free` 口径计为基座价（本机 206 次 → ¥25.36），但上游目录显示该免费通道为 0，待确认。
+- 审计报告（`.audit/`）中仍未处理的项：F23（45 行空缓存价，Mistral 系占一半）、F14（项目筛选逗号协议）、F7（single-flight 版本竞态）、F25/F29、F16/F21。
+
 ## [0.3.15] - 2026-10-13
 
 > 本版基于一次全仓审计（`.audit/`，P1×4 / P2×22 / P3×8，无 P0）。下面按「隐私与安全 → 正确性 → 工程」列。
