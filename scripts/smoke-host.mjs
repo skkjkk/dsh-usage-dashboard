@@ -355,6 +355,45 @@ if (typeof exported.csv !== 'string' || exported.csv.indexOf('时间,项目,模�
 }
 if (!(exported.rows >= 1)) throw new Error('export returned no rows')
 
+// A formula-like model name containing commas and quotes must remain ONE valid
+// CSV cell, and its first character after parsing must be a literal apostrophe.
+// An apostrophe OUTSIDE the CSV quotes does not guard the rest of the field:
+// spreadsheet parsers split at the embedded comma and can see a new '=...' cell.
+{
+  const hostileModel = '=1,=HYPERLINK("https://example.invalid/a,b","x")'
+  eventHandler({ id: sessionId, header }, {
+    type: 'assistant/message', time: now - 200, seq: 80,
+    data: { usage: { inputTokens: 1, outputTokens: 1 }, message: { id: 'csv-formula', source: { model: hostileModel } } }
+  })
+  // Use a distinct normalized window so the earlier export cache is not hit.
+  const csvResult = await request('/dash-api/export?range=custom&from=' + (from + 1) + '&to=' + now)
+  const parseCsv = (text) => {
+    const rows = []
+    let row = [], cell = '', quoted = false
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i]
+      if (quoted) {
+        if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++ }
+        else if (ch === '"') quoted = false
+        else cell += ch
+      } else if (ch === '"' && cell === '') {
+        quoted = true
+      } else if (ch === ',') {
+        row.push(cell); cell = ''
+      } else if (ch === '\r' && text[i + 1] === '\n') {
+        row.push(cell); rows.push(row); row = []; cell = ''; i++
+      } else cell += ch
+    }
+    if (quoted) throw new Error('export CSV left a quoted cell open')
+    row.push(cell); rows.push(row)
+    return rows
+  }
+  const rows = parseCsv(csvResult.csv)
+  if (!rows.every((row) => row.length === 8)) throw new Error('export CSV contains a split or malformed field: ' + JSON.stringify(rows.map((row) => row.length)))
+  if (!rows.some((row) => row[2] === "'" + hostileModel)) throw new Error('export CSV formula field lost its literal apostrophe or contents')
+  if (rows.length - 1 !== csvResult.rows) throw new Error('export CSV row count differs from parsed records')
+}
+
 // --- list-param encoding (audit F14) ---
 // `projects` values are project ids, i.e. the session cwd, and Windows paths can
 // contain commas. The wire format used to be join(","), so the single project
