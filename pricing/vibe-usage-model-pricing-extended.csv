@@ -279,3 +279,14 @@ amazon-nova-micro,AWS,0.105,0.42,
 amazon-nova-lite,AWS,0.21,1.68,
 amazon-nova-pro,AWS,5.6,22.4,
 amazon-nova-premier,AWS,17.5,87.5,4.375
+agnes-3.0-flash,Sapiens AI,0.35,1,0.035
+hy4-preview,Tencent,5.838,17.507,0.294
+kimi-k2.8-preview,Moonshot AI,6.5,27,1.7
+step-5-preview,StepFun,7,18.9,0.35
+laguna-s-2.1,Poolside,0,0,0
+ling-3.1-flash,inclusionAI,0,0,0
+nemotron-3.5-lightning,Nvidia,0,0,0
+sensenova-6.7-flash-lite,SenseNova,0,0,0
+sensenova-6.8-flash-lite,SenseNova,0,0,0
+space-bunny,未知,0,0,0
+x-preview-f,未知,0,0,0

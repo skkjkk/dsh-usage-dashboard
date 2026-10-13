@@ -86,8 +86,10 @@ export function apply(ctx, config) {
   //      旧缓存缺这些字段，必须作废重算。
   // v14: 取价归一新增 provider 作用域（`global:` / `cn:` / `provider/model`）与市场后缀
   //      （`-sg` 等白名单）剥离，带前缀/后缀的模型不再落空为 ¥0；取价结果变化，旧缓存作废。
+  // v15: 定价表补录 11 个模型（hy4-preview / step-5-preview / kimi-k2.8-preview /
+  //      agnes-3.0-flash + 7 个免费基座），这些模型此前计 ¥0；取价结果变化，旧缓存作废。
   //      Costs are baked into cached rollups, so a pricing change MUST bump this.
-  const CACHE_FORMAT_VERSION = 14
+  const CACHE_FORMAT_VERSION = 15
   // Optional diagnostics for the disk rollup cache (set debugCache: true in
   // the plugin config to trace cache writes).
   const debugCache = !!(config && config.debugCache)

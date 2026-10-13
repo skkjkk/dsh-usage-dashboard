@@ -1465,6 +1465,17 @@ console.log('\n[0l] provider 作用域 / 市场后缀归一（global: · cn: · 
     for (let i = 0; i < 3; i++) assertEq('scopedDS ' + id + ' p[' + i + ']', a.p[i], b.p[i], 1e-9)
   }
 
+  // ---- 正向：补表后，带作用域/后缀的 id 必须落到新行 ----
+  // （这些 id 在补表前全部计 ¥0；bench 断言随表变化同步更新，避免变成"永远为真"的空守卫）
+  assertEq('scopedPos.cnStep5', priceFor('cn:step-5-preview').matched, 'step-5-preview')
+  assertEq('scopedPos.step5', priceFor('step-5-preview').p[0], 7, 1e-9)
+  assertEq('scopedPos.cnHy4', priceFor('cn:hy4-preview').matched, 'hy4-preview')
+  assertEq('scopedPos.hy4', priceFor('hy4-preview').p[0], 5.838, 1e-9)
+  // `-free` 剥离后落到免费的基座行（用户口径：按去掉 -free 的模型计价）
+  assertEq('scopedPos.spaceBunnyFree', priceFor('space-bunny-free').matched, 'space-bunny')
+  assertEq('scopedPos.spaceBunnyFreeZero', priceFor('space-bunny-free').p[0], 0, 1e-9)
+  assertEq('scopedPos.agnes3', priceFor('agnes-3.0-flash').p[2], 0.035, 1e-9)
+
   // ---- 反向断言：绝不能过度剥离 ----
   // `-pro` / `-lite` / `-plus` 是模型名本身，不在市场后缀白名单里。
   // gpt-5-pro 不在表中，就必须是未匹配，而不是被错按 gpt-5（¥8.75/¥70）计价。
@@ -1472,9 +1483,10 @@ console.log('\n[0l] provider 作用域 / 市场后缀归一（global: · cn: · 
   assertEq('scopedNeg.flashLite', priceFor('gemini-2.5-flash-lite').matched, 'gemini-2.5-flash-lite')
   assertEq('scopedNeg.plus', priceFor('qwen3.7-plus').matched, 'qwen3.7-plus')
   // 剥完仍不在表里 → 依旧未匹配（数据缺失由补表解决，不靠猜价兜底）
-  assertEq('scopedNeg.step5preview', priceFor('cn:step-5-preview'), null)
-  assertEq('scopedNeg.hy4preview', priceFor('cn:hy4-preview'), null)
-  assertEq('scopedNeg.spaceBunny', priceFor('space-bunny-free'), null)
+  assertEq('scopedNeg.bigPickle', priceFor('big-pickle-free'), null)
+  assertEq('scopedNeg.stepExplore', priceFor('step-explore'), null)
+  // `-cn` 剥出 `qoder`（不存在）→ 仍未匹配；且不因剥后缀而误命中任何行
+  assertEq('scopedNeg.qoderCn', priceFor('qoder-cn'), null)
   assertEq('scopedNeg.bogusScope', priceFor('definitely-not-a-provider:foo'), null)
 
   // 端到端：global:gpt-6-luna 1M 输入 + 1M 输出 + 1M 缓存 = 0.7 + 3.5 + 0.07（回归点此前为 ¥0）
