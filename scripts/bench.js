@@ -1101,6 +1101,49 @@ console.log('\n[0g] edge-bucket latency stats match the aggregate path')
   console.log('  latency edge/aggregate OK (avg=' + am.avgResponseMs.toFixed(1) + 'ms on both paths)')
 }
 
+console.log('\n[0m] num() 与 bucketSeries 的输入契约（审计 F29）')
+{
+  // num()：正有限数原样返回，其余（0 / 负数 / NaN / ±Infinity / 字符串 / null /
+  // undefined / 对象）一律归 0。负数归 0 是刻意行为——损坏日志里的负 token 不能
+  // 污染总量与成本；此处把它钉成契约，免得日后被当成 bug「修」成放行负值。
+  const numCases = [
+    ['positive', 5, 5],
+    ['fractional', 0.25, 0.25],
+    ['zero', 0, 0],
+    ['negative', -1, 0],
+    ['negative-big', -1e9, 0],
+    ['nan', NaN, 0],
+    ['infinity', Infinity, 0],
+    ['neg-infinity', -Infinity, 0],
+    ['numeric-string', '5', 0],
+    ['null', null, 0],
+    ['undefined', undefined, 0],
+    ['object', {}, 0]
+  ]
+  for (const [name, input, expected] of numCases) assertEq('num.' + name, num(input), expected)
+
+  // bucketSeries 的桶上限是硬契约：超出即抛 RangeError（HTTP 层据此回 400 而不是
+  // 500，见 scripts/regenerate.cjs 的 registerJsonRoute）。用 1200 年窗口构造超限
+  // ——注意 pickGranularity 对宽窗口选 week，所以这正是真实可达路径（约 6.2 万周）。
+  // 不能用 year 1：Date.UTC 把 0-99 年映射成 1900+年，mondayOf(year 1) 实际落在
+  // 1901，桶数被截到 6563 而不会触发上限（该年份映射问题是独立缺陷，另记）。
+  let overCap = null
+  try {
+    bucketSeries(Date.now() - 1200 * 365 * DAY, Date.now(), 'week', null)
+  } catch (e) {
+    overCap = e
+  }
+  if (!(overCap instanceof RangeError)) {
+    throw new Error('bucketSeries over-cap must throw RangeError, got ' + overCap)
+  }
+  // 反向断言：上限内的窗口必须正常返回，别把守卫写成「总是抛」
+  const withinCap = bucketSeries(Date.now() - 365 * DAY, Date.now(), 'week', null)
+  if (!Array.isArray(withinCap) || withinCap.length < 52 || withinCap.length > 54) {
+    throw new Error('bucketSeries within cap returned ' + (withinCap && withinCap.length) + ' buckets')
+  }
+  console.log('  num()/bucketSeries contract OK (' + numCases.length + ' num cases + over-cap RangeError + within-cap return)')
+}
+
 console.log('\n[0] totalMs union semantics (parallel sessions counted once)')
 {
   const H = 3600000

@@ -306,7 +306,16 @@ export function apply(ctx, config) {
       // events bumped dataVersion mid-flight — the old `dataVersion === version`
       // gate discarded those results and, combined with per-event cache
       // clearing, left every entry permanently stale in a busy session.
-      cache.set(key, { at: Date.now(), data, failCount: 0, version: dataVersion })
+      //
+      // 但版本戳必须记「本次计算开始时」的版本，且只在它不比现有条目更旧时落盘
+      // （审计 F7）。并发结算下同键可能有两次计算：A 在版本 V 启动、B 在 V+1 启动，
+      // 若 B 先完成而 A 后完成，旧实现用写入时刻的 dataVersion 无条件覆盖 → A 的陈旧
+      // 结果盖掉 B 的新结果，却被标记为当前版本，快速路径据此判定「新鲜」，
+      // 于是 30s TTL 内不再重算、也不触发 SWR。用启动版本比较即可让旧计算让位。
+      const prev = cache.get(key)
+      if (!prev || prev.version <= version) {
+        cache.set(key, { at: Date.now(), data, failCount: 0, version })
+      }
       return data
     }).catch((e) => {
       // Keep the last good value visible; count failures so the max-failure

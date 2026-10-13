@@ -313,6 +313,19 @@ try {
     if (!KNOWN_SLOTS.has(slot)) throw new Error('client injects unknown slot: ' + slot)
     if (!registered.has(slot)) throw new Error('client injects ' + slot + ' but never registers it')
   }
+
+  // The host bridge serialises array params as JSON (audit F14). Assert on the
+  // generated text, because the suite never executes the browser bundle: a
+  // regression back to join(",") is exactly the bug this guards, and the server
+  // side alone cannot detect it (the two halves must agree on the encoding).
+  const arrayLine = clientCode.split('\n').find((line) => line.indexOf('Array.isArray(v)') !== -1)
+  if (!arrayLine) throw new Error('client bundle: array query-param branch not found')
+  if (arrayLine.indexOf('JSON.stringify(v)') === -1) {
+    throw new Error('client bundle: array params are not JSON-encoded → ' + arrayLine.trim())
+  }
+  if (/\.join\(\s*["'],["']\s*\)/.test(arrayLine)) {
+    throw new Error('client bundle: array params are still comma-joined → ' + arrayLine.trim())
+  }
 }
 
 // --- loopback guard (audit F1): /dash-api/* must refuse non-loopback callers ---
@@ -342,6 +355,162 @@ if (typeof exported.csv !== 'string' || exported.csv.indexOf('时间,项目,模�
 }
 if (!(exported.rows >= 1)) throw new Error('export returned no rows')
 
+// --- list-param encoding (audit F14) ---
+// `projects` values are project ids, i.e. the session cwd, and Windows paths can
+// contain commas. The wire format used to be join(","), so the single project
+// "D:/a,b" arrived as TWO projects and the filter silently matched nothing.
+{
+  const metaNow = await request('/dash-api/usage?range=custom&from=' + from + '&to=' + now)
+  const realProjectId = (metaNow.meta.projects || []).map((p) => p.id).find((id) => id.indexOf('smoke') !== -1)
+  if (!realProjectId) throw new Error('F14 fixture: smoke project id not found')
+  if (realProjectId.indexOf(',') !== -1) throw new Error('F14 fixture: project id already contains a comma')
+  const window = '&from=' + from + '&to=' + now
+
+  // (a) a JSON array must actually be decoded as an array: send one real project
+  // plus one unknown. Comma-splitting the JSON *text* instead would match nothing,
+  // so this is the discriminating case for the decoder itself.
+  const decoded = await request('/dash-api/usage?range=custom' + window +
+    '&projects=' + encodeURIComponent(JSON.stringify([realProjectId, 'D:/does-not-exist'])))
+  if (decoded.totals.sessions !== 1) {
+    throw new Error('F14: JSON project array was not decoded (sessions=' + decoded.totals.sessions + ')')
+  }
+
+  // (b) a single project id containing a comma must stay ONE element.
+  const jsonFiltered = await request('/dash-api/usage?range=custom' + window +
+    '&projects=' + encodeURIComponent(JSON.stringify([realProjectId + ',extra'])))
+  if (jsonFiltered.totals.sessions !== 0) {
+    throw new Error('F14: a JSON-encoded project id containing a comma was split (sessions=' + jsonFiltered.totals.sessions + ')')
+  }
+
+  // (c) Backward compatibility: the legacy comma-joined form must keep splitting,
+  // otherwise previously bookmarked links silently start matching nothing.
+  const legacyFiltered = await request('/dash-api/usage?range=custom' + window +
+    '&projects=' + encodeURIComponent(realProjectId + ',extra'))
+  if (legacyFiltered.totals.sessions !== 1) {
+    throw new Error('F14: legacy comma-joined project list stopped splitting (sessions=' + legacyFiltered.totals.sessions + ')')
+  }
+}
+
+// --- bad-request contract (audit F29) ---
+// An out-of-range custom window is a caller error, not a server fault: a 1200-year
+// span exceeds the engine's trend-bucket cap (bucketSeries throws RangeError), so
+// it must surface as 400 with a clean body rather than 500 internal_error.
+// The span is expressed in years rather than as year 1 because Date.UTC maps
+// years 0-99 to 1900+y, which would silently shrink the series below the cap.
+{
+  const overWide = await rawRequest('/dash-api/usage?range=custom&from=' +
+    (now - 1200 * 365 * 86400000) + '&to=' + now, '127.0.0.1')
+  if (overWide.status !== 400) {
+    throw new Error('F29: over-wide custom range returned ' + overWide.status + ', expected 400')
+  }
+  if (JSON.parse(overWide.body).error !== 'bad_request') {
+    throw new Error('F29: over-wide custom range body was ' + overWide.body)
+  }
+  // Reverse assertion: an ordinary custom window must stay 200 — the guard must
+  // not degrade into "any custom range fails".
+  const normal = await rawRequest('/dash-api/usage?range=custom&from=' + from + '&to=' + now + '&f29=1', '127.0.0.1')
+  if (normal.status !== 200) throw new Error('F29: normal custom range returned ' + normal.status)
+}
+
+// --- single-flight version stamp (audit F7) ---
+// A compute must stamp its cache entry with the data version it STARTED from, not
+// with the dataVersion at settle time. If it stamps the settle-time version, an
+// event that lands while the compute is in flight is recorded as already
+// reflected by that entry: the fast path then serves it as "current" for a full
+// TTL and never revalidates.
+//
+// Reproducing this needs a compute that can actually be held in flight, which
+// only happens while the rollup snapshot is cold (the first request awaits the
+// materialisation pass). So this drives a second, independent host instance
+// rather than perturbing the shared one, whose assertions are already fixed.
+{
+  const routes2 = new Map()
+  let eventHandler2 = null
+  let listCalls2 = 0
+  let gateArmed = true
+  let release = null
+  const gate = new Promise((resolve) => { release = resolve })
+  const base = Date.now()
+  const header2 = { id: 'f7-session', cwd: 'D:/f7' }
+  const events2 = [
+    { type: 'user/message', time: base - 30000, seq: 1, data: { source: { kind: 'user' } } },
+    { type: 'assistant/message', time: base - 29000, seq: 2, data: { usage: { inputTokens: 10, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } } }
+  ]
+  const services2 = {
+    webServer: { register(definition) { routes2.set(definition.path, definition.handler) } },
+    sessionQuery: {
+      async listSessions() {
+        listCalls2 += 1
+        const snapshot = [{ header: header2, live: false, persisted: true }]
+        if (gateArmed) { gateArmed = false; await gate }
+        return snapshot
+      },
+      async readSession() { return { session: header2, events: events2, inheritedEventCount: 0 } }
+    },
+    sessionPersistence: {
+      async open(id) { return { id, header: header2, read: async () => ({ eventState: 'shared-frozen', events: events2 }), close: async () => {} } },
+      async requireStoredLog() { return { meta: header2, events: events2, inheritedEventCount: 0, status: 'current' } }
+    },
+    workspaceRegistry: { list() { return [{ path: header2.cwd, title: 'F7', sessionIds: [header2.id] }] } },
+    sessions: { get() { return { header: header2, inheritedEventCount: 0, snapshotEvents: () => events2 } } },
+    timer: { setInterval() { return () => {} }, timeout() { return () => {} } }
+  }
+  const ctx2 = {
+    get(name) { return services2[name] },
+    on(_name, handler) { eventHandler2 = handler },
+    effect(fn) { return fn() || (() => {}) }
+  }
+  apply(ctx2, {})
+  const raw2 = async (path) => {
+    const handler = routes2.get(path.split('?')[0])
+    if (!handler) throw new Error('missing route ' + path)
+    let status = 0
+    let body = ''
+    await handler({ url: path, socket: { remoteAddress: '127.0.0.1' } }, {
+      writeHead(code) { status = code },
+      end(value) { body = String(value || '') }
+    })
+    return { status, body }
+  }
+  const f7Path = '/dash-api/usage?range=custom&from=' + (base - 60000) + '&to=' + base
+  const realDateNow2 = Date.now
+  Date.now = () => base
+  try {
+    // (1) cold first request: it blocks inside listSessions() before computing,
+    //     so the version it starts from is observable.
+    const p1 = raw2(f7Path)
+    await flush()
+    await flush()
+    if (listCalls2 !== 1) throw new Error('F7 setup: cold compute did not reach the gated listing (calls=' + listCalls2 + ')')
+    // (2) a metric event lands while that compute is still in flight → V → V+1
+    eventHandler2({ id: header2.id, header: header2 }, {
+      type: 'assistant/message', time: base - 20000, seq: 3,
+      data: { usage: { inputTokens: 5, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } }
+    })
+    // (3) let it settle; it observed the version from BEFORE the event
+    release()
+    const r1 = await p1
+    if (r1.status !== 200) throw new Error('F7: first request failed with ' + r1.status + ': ' + r1.body)
+    await flush()
+    // (4) +25 s is chosen so the entry is still inside its 30 s TTL (so only the
+    //     version can decide fast path vs SWR) while the rollup snapshot (5 s)
+    //     and the corpus-list throttle (20 s) have both lapsed, making the
+    //     revalidate observable as a real listSessions() call.
+    const callsBefore = listCalls2
+    Date.now = () => base + 25000
+    const r2 = await raw2(f7Path)
+    if (r2.status !== 200) throw new Error('F7: second request failed with ' + r2.status)
+    await flush()
+    await flush()
+    await flush()
+    if (listCalls2 === callsBefore) {
+      throw new Error('F7: entry was stamped with the post-event version — the fast path skipped revalidation')
+    }
+  } finally {
+    Date.now = realDateNow2
+  }
+}
+
 console.log('host smoke passed')
 console.log('  cache/event regressions     OK')
 console.log('  routes survive no timer     OK')
@@ -349,3 +518,6 @@ console.log('  loopback guard              OK')
 console.log('  cache key namespace         OK')
 console.log('  export one-pass path        OK')
 console.log('  client contract check       OK')
+console.log('  list-param comma encoding   OK')
+console.log('  bad-request 400 contract    OK')
+console.log('  single-flight version stamp OK')

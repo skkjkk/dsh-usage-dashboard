@@ -1781,8 +1781,10 @@ return {
           setState({ loading: false, error: !r || !!r.error, data: !r || r.error ? null : r })
           if (r && !r.error) setRefreshSeq((v) => v + 1)
           settle()
-          // 筛选/范围变化时内容区做一次淡入过渡（同键的周期刷新不重复触发）
-          const key = range + '|' + custom.from + '|' + custom.to + '|' + (modelSel || []).join(',') + '|' + (projectSel || '')
+          // 筛选/范围变化时内容区做一次淡入过渡（同键的周期刷新不重复触发）。
+          // 用 JSON 而非 join(",") 拼键：项目 id 是 cwd，含逗号的路径会让
+          // ['a,b'] 与 ['a','b'] 撞成同一个键，切换筛选时漏掉淡入（审计 F14）。
+          const key = range + '|' + custom.from + '|' + custom.to + '|' + JSON.stringify(modelSel || []) + '|' + JSON.stringify(projectSel || '')
           if (dataKeyRef.current !== key) {
             dataKeyRef.current = key
             setAnim(true)

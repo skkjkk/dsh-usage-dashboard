@@ -328,6 +328,25 @@ const hostOut = `// dsh-usage-dashboard — host half (adapted from the src/host
 
 import { ${coreImports} } from './core/rollup.js'
 
+// 列表参数（models / projects）的线上编码：客户端垫片写 JSON 数组，服务端
+// 先按 JSON 解析，失败再退回逗号拼接。projects 的值是项目 id（即 cwd），Windows 路径
+// 可以含逗号——逗号拼接会把「一个含逗号的项目」静默拆成两个不存在的项目，筛选结果变空
+// 且无任何提示（审计 F14）。逗号分支保留是为了让旧链接/书签继续可用。
+function parseListParam(v) {
+  if (!v) return null
+  // 只有形如 JSON 数组的值才尝试 JSON.parse：逗号列表必然解析失败或不是数组，
+  // 都落回 split。避免为每个普通值付一次异常开销。
+  if (v.charAt(0) === '[') {
+    try {
+      const parsed = JSON.parse(v)
+      if (Array.isArray(parsed)) {
+        return parsed.filter((x) => typeof x === 'string' && x !== '')
+      }
+    } catch (e) { /* 不是 JSON → 按逗号拼接的旧格式处理 */ }
+  }
+  return v.split(',').filter(Boolean)
+}
+
 function parseQueryArgs(url) {
   const u = new URL(url, 'http://dsh.local')
   const args = {}
@@ -335,7 +354,7 @@ function parseQueryArgs(url) {
     // never let a query key shadow prototype members onto the args object
     if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue
     if (k === 'models' || k === 'projects') {
-      args[k] = v ? v.split(',').filter(Boolean) : null
+      args[k] = parseListParam(v)
     } else if (v === '') {
       args[k] = null
     } else if (k === 'range' || k === 'gran') {
@@ -377,8 +396,15 @@ function registerJsonRoute(ctx, pathname, fn, allowNonLoopback) {
         res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
         res.end(JSON.stringify(data))
       } catch (e) {
-        res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
-        res.end(JSON.stringify({ error: 'internal_error' }))
+        // 参数越界是调用方错误，不是服务端故障（审计 F29）：custom 窗口宽到超过
+        // bucketSeries 的桶上限时引擎抛 RangeError，旧实现一律回 500，把可由 URL
+        // 触发的输入问题报成内部错误。RangeError 的 message 由本仓库常量拼成、
+        // 不含任何调用方输入，可以安全回显；其余异常仍是 500 且不回显细节。
+        const badRequest = e instanceof RangeError
+        res.writeHead(badRequest ? 400 : 500, { 'content-type': 'application/json; charset=utf-8' })
+        res.end(JSON.stringify(badRequest
+          ? { error: 'bad_request', message: String((e && e.message) || 'invalid request') }
+          : { error: 'internal_error' }))
       }
     }
   }), 'usage-dashboard: ' + pathname)
@@ -455,7 +481,11 @@ const clientOut = `window.__ModuleLoader__.load({
         const q = new URLSearchParams();
         for (const [k, v] of Object.entries(args || {})) {
           if (v === null || v === undefined || v === "") continue;
-          if (Array.isArray(v)) { if (v.length) q.set(k, v.join(",")); }
+          // 列表参数用 JSON 编码，不能用 join(",")：projects 的值是项目 id（即 cwd），
+          // Windows 路径可以含逗号，逗号拼接会把「一个含逗号的项目」静默拆成两个不存在的
+          // 项目，筛选结果直接变空且没有任何提示（审计 F14）。服务端 parseListParam 先按
+          // JSON 解析、失败再退回逗号，旧链接保持可用。
+          if (Array.isArray(v)) { if (v.length) q.set(k, JSON.stringify(v)); }
           else q.set(k, String(v));
         }
         const qs = q.toString();

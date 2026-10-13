@@ -91,11 +91,14 @@ function buildLowerIndex(table) {
 const PRICES_LC = buildLowerIndex(PRICES)
 const VENDORS_LC = buildLowerIndex(VENDORS)
 
-// 长上下文阶梯价兜底：这些系列超出阈值后换档计价，但 CSV 只给基础档。
-// 事件带不出 prompt 长度分布，按基础档计价会低估大上下文调用——此处不做
-// 换档（会高估小请求），只把系列归一交给 priceFor 的日期后缀剥离，价格仍取
-// 基础档。保留表以便未来接入 usage 级阶梯计价。
-const LONG_CONTEXT_MODELS = /^(qwen3(?:\.5)?-coder|doubao-seed(?:-\d\.\d)?-(?:pro|code)|gemini-\d)/i
+// 长上下文阶梯价：qwen3-coder / doubao-seed-pro / gemini-* 等系列超出阈值后换档计价，
+// 但 CSV 只给基础档，事件也带不出 prompt 长度分布——按基础档计价会低估大上下文调用，
+// 按换档计价会高估小请求。**当前结论：不换档**，价格一律取 CSV 基础档，系列归一交给
+// priceFor 的日期后缀剥离。
+// 阶梯计价尚未实现，且无法在现有事件结构上实现（缺 prompt 长度分布）：要接入必须先在
+// 折叠阶段记录 usage 级长度分档，届时把分档价表加在这里。此前这里有一个从未被引用的
+// LONG_CONTEXT_MODELS 正则（审计 F25 的死代码），已删除——留一个死常量比留一段说明更糟，
+// 它会让人误以为阶梯计价已经生效。
 
 // 表内查找：精确优先，其次大小写不敏感兜底。返回规范名（表里的 key）或 null。
 // id 一律先 String() 归一：mergeModel 的键来自事件字段，可能不是字符串
@@ -276,6 +279,13 @@ export function priceForAt(model, t) {
   return priceFor(id)
 }
 
+// 事件字段 → 非负有限数。契约（bench [0m] 钉住，审计 F29）：
+//   数字且 > 0 → 原值；0 / 负数 / NaN / ±Infinity / 字符串 / null / undefined → 0。
+// 负数归 0 是刻意的：token 计数为负只可能来自损坏日志，累加进去会污染总量与成本；
+// 归 0 后该事件仍按 (id|seq, time, route) 参与去重，因此不会误吞真实用量。
+// 注意 usageSignature 也用 num()：缺失字段与显式 0 折叠为同一签名是有意为之（两者都
+// 表示「无 token」），审计 F11 提出的「签名区分缺失与显式 0」会改变已持久化缓存里的
+// 签名语义、直接损伤重放去重的成本准确性，已明确拒绝。
 export function num(v) {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0
 }
