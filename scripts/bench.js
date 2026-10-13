@@ -1471,9 +1471,12 @@ console.log('\n[0l] provider 作用域 / 市场后缀归一（global: · cn: · 
   assertEq('scopedPos.step5', priceFor('step-5-preview').p[0], 7, 1e-9)
   assertEq('scopedPos.cnHy4', priceFor('cn:hy4-preview').matched, 'hy4-preview')
   assertEq('scopedPos.hy4', priceFor('hy4-preview').p[0], 5.838, 1e-9)
-  // `-free` 剥离后落到免费的基座行（用户口径：按去掉 -free 的模型计价）
+  // `-free` 剥离后落到基座行（口径：按去掉 -free 的模型计价）。
+  // 基座是收费的（space-bunny，上游 opencode-go 0.15/0.6/0.03 USD ×7）还是免费的
+  // （ling-3.1-flash）都走同一条规则，两种情形都要有断言。
   assertEq('scopedPos.spaceBunnyFree', priceFor('space-bunny-free').matched, 'space-bunny')
-  assertEq('scopedPos.spaceBunnyFreeZero', priceFor('space-bunny-free').p[0], 0, 1e-9)
+  assertEq('scopedPos.spaceBunnyFreePaid', priceFor('space-bunny-free').p[0], 1.05, 1e-9)
+  assertEq('scopedPos.lingFreeZero', priceFor('ling-3.1-flash-free').p[0], 0, 1e-9)
   assertEq('scopedPos.agnes3', priceFor('agnes-3.0-flash').p[2], 0.035, 1e-9)
 
   // ---- 反向断言：绝不能过度剥离 ----

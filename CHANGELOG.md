@@ -14,19 +14,25 @@ All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 - **市场后缀走白名单**（`-sg` / `-cn` / `-us` / `-eu` / `-jp` / `-hk` / `-tw` / `-kr` / `-global` / `-intl` / `-oversea`），**不是**通用剥后缀——`-pro` / `-lite` / `-plus` / `-luna` 是模型名本身，通用剥会让 `gpt-5-pro` 被错按 `gpt-5`（¥8.75/¥70）计价。bench `[0l]` 用反向断言锁住这一点。
 - `-free` 的语义保持既有口径：剥掉后按**基座**模型计价（因此免费模型要把基座登记为 0,0,0）。
 
-### 定价表补录（`CACHE_FORMAT_VERSION` 14 → 16，280 → 292 行）
+### 定价表补录（`CACHE_FORMAT_VERSION` 14 → 17，280 → 292 行）
 
-- 新增 4 个收费模型（USD 源按仓库惯例 × 7 写入 ¥/M）：`hy4-preview`（Tencent，0.834/2.501/0.042 USD）、`step-5-preview`（StepFun，1.00/2.70/0.05 USD）、`kimi-k2.8-preview`（Moonshot AI，6.5/27/1.7 CNY）、`agnes-3.0-flash`（Sapiens AI，0.35/1/0.035 CNY）。
-- 新增 8 个免费基座（0,0,0）：`space-bunny`、`nemotron-3.5-lightning`、`ling-3.1-flash`、`sensenova-6.7-flash-lite`、`sensenova-6.8-flash-lite`、`laguna-s-2.1`、`x-preview-f`。
-- 新增 1 个收费模型：`sakana-namazu`（Sakana，¥6.65/28/1.05；上游四源一致 0.95/4/0.15 USD × 7）。
-- **实测效果**：这些模型此前全部计 ¥0，补录后累计新增计入 **¥671.44**（`cn:step-5-preview` ¥268.72、`cn:hy4-preview` ¥189.38、`hy4-preview` ¥103.58、`kimi-k2.8-preview` ¥79.77、`step-5-preview-free` ¥25.36、`agnes-3.0-flash` ¥0.13，其余为归一修复的 ¥4.49）；定价覆盖率 98%。
+- 新增 5 个收费模型（USD 源按仓库惯例 × 7 写入 ¥/M）：
+  - `hy4-preview`（Tencent，0.834/2.501/0.042 USD）
+  - `step-5-preview`（StepFun，1.00/2.70/0.05 USD）
+  - `kimi-k2.8-preview`（Moonshot AI，6.5/27/1.7 CNY）
+  - `agnes-3.0-flash`（Sapiens AI，0.35/1/0.035 CNY）
+  - `sakana-namazu`（Sakana，¥6.65/28/1.05；上游四源一致 0.95/4/0.15 USD × 7）
+- 新增 1 个**收费基座**：`space-bunny` = ¥1.05/4.2/0.21（上游 `opencode-go` 0.15/0.6/0.03 USD × 7）。它是 `-free` 通道的基座，因此本机 3312 次 `space-bunny-free` 调用按此计费——**90 天窗口费用 ¥2092.22 → ¥2186.66（+¥94.44）**。
+- 新增 7 个免费基座（0,0,0）：`nemotron-3.5-lightning`、`ling-3.1-flash`、`sensenova-6.7-flash-lite`、`sensenova-6.8-flash-lite`、`laguna-s-2.1`、`x-preview-f`。
+- **实测效果**：以上模型在补录前全部计 ¥0。逐模型金额（在缓存完整重建后测得的一次快照）：`cn:step-5-preview` ¥268.72、`cn:hy4-preview` ¥189.38、`hy4-preview` ¥103.58、`kimi-k2.8-preview` ¥79.77、`step-5-preview-free` ¥25.36、`agnes-3.0-flash` ¥0.13，归一修复 ¥4.49（合计 ¥671.44）；`space-bunny-free` 追加 ¥94.13。定价覆盖率 98%。
+  > 注：逐模型金额会随会话持续流入而增长，且缓存重建期间读数不稳定；上面这组取自一次完整快照，`space-bunny-free` 的 +¥94.44 取自端点前后差值。
 - `step-5-preview` 的三数顺序由上游目录裁决：models.dev 的 6 个 provider 一致给出 input 1 / output 2.7 / cache_read 0.05，即"输入 / 缓存命中 / 输出"顺序。
 
 ### 已知遗留
 
 - **仍有 7 个模型未定价**（`step-explore`、`kat-coder-pro-v2.5`、`spark-x2.5`、`big-pickle`、`Qwen3.6-35B-A3B`、`Qwen3.8-27B`、`qoder-cn`）。前三个三份上游目录均无；`Qwen3.6-35B-A3B` / `Qwen3.8-27B` 各转售商价差达 5 倍，不宜拍板；`qoder-cn` 疑似 provider 名漏进 model 字段，**不**计价。这些模型确实没有可用价格，保持未匹配（看板显示未匹配徽标、成本记 0）。
 - **45 行空缓存价不等于 45 个错误**：其中一部分模型本来就没有独立的缓存读取价（上游目录里 `cache_read` 缺项或与输入同价），因此**不逐行补**。真正需要补的是那些厂商明确公布了缓存价的行（OpenAI / DeepSeek / Amazon / Mistral 等系），属独立的核价任务。
-- `step-5-preview-free` 按 `-free` 口径计为基座价（本机 206 次 → ¥25.36），但上游目录显示该免费通道为 0，待确认。
+- **`-free` 一律按基座计价**（已确认口径）：基座收费则计费（`space-bunny`、`step-5-preview`），基座免费则记 0（`ling-3.1-flash` 等）。上游目录里 `-free` 通道本身标 0，但本仓库按基座口径计——这是刻意选择，不是漏算。
 - 审计报告（`.audit/`）中仍未处理的项：F23（45 行空缓存价，见上）、F14（项目筛选逗号协议）、F7（single-flight 版本竞态）、F25/F29、F16/F21。
 
 ## [0.3.15] - 2026-10-13
