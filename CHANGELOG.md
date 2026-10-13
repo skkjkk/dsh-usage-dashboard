@@ -4,7 +4,7 @@ All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 
 ## [0.3.16] - 2026-10-13
 
-> 起因：与 [`token-monitor`](https://github.com/Javis603/token-monitor)（计价内核 tokscale）做了一次模型/定价对比（对比报告为本地文件 `docs/token-monitor-定价与模型对比.md`，未纳入 git），并据此核对了本机真实用量。**结论：报告列出的 76 个"补录候选"确实全部不在表里，但它漏掉了一个更直接的问题——本机实际用过的 55 个模型里有 24 个取不到价、成本被记成 ¥0。**
+> 起因：与 [`token-monitor`](https://github.com/Javis603/token-monitor)（计价内核 tokscale）做了一次模型/定价对比（对比报告为本地文件，未纳入仓库），并据此核对了本机真实用量。**结论：报告列出的 76 个"补录候选"确实全部不在表里，但它漏掉了一个更直接的问题——本机实际用过的 55 个模型里有 24 个取不到价、成本被记成 ¥0。**
 
 ### 取价归一（`CACHE_FORMAT_VERSION` 13 → 14）
 
