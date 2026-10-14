@@ -28,6 +28,9 @@
 //     keeps every range/filter switch at millisecond latency after warm-up.
 
 import { foldSession, foldAppend, emptyRollup, queryUsage, queryDetail, queryDetailAll, queryCalendar, sessionTitle, pruneRollup, serializeRollup, deserializeRollup } from './core/rollup.js'
+import { cacheKey, normalizeUsageArgs, normalizeDetailArgs, normalizeCalendarArgs, normalizeExportArgs } from './core/query-params.js'
+import { buildCsv } from './core/csv.js'
+import { pickLogFile } from './core/session-files.js'
 
 export function apply(ctx, config) {
   // ---- named constants (replace scattered magic numbers) ----
@@ -174,13 +177,8 @@ export function apply(ctx, config) {
     } catch (e) { /* no cache dir yet */ }
   }
 
-  function pickLogFile(files) {
-    for (const f of files) if (/^session\.v\d+\.jsonl\.zstd$/.test(f)) return f
-    for (const f of files) if (/^session\.v\d+\.jsonl$/.test(f)) return f
-    if (files.includes('session.jsonl.zstd')) return 'session.jsonl.zstd'
-    if (files.includes('session.jsonl')) return 'session.jsonl'
-    return null
-  }
+  // pickLogFile 的匹配口径已下沉到 src/core/session-files.js（纯函数，可单测；
+  // scripts/debug-total.js 也能复用它，见剩余任务 E1）。
 
   async function walkStore() {
     const mods = await nodeMods()
@@ -1016,20 +1014,9 @@ export function apply(ctx, config) {
   // 缓存 key 必须带路由前缀。三个端点此前都用裸 JSON.stringify(normalized)，
   // 构造同形参数即可让 usage / detail / calendar 互相命中并返回错误结构（审计 F6）。
   harness.handle('usage', (args) => {
-    // Normalize to the exact parameter set queryUsage reads, so the cache key
-    // and the query agree. A spread of every URL parameter let a caller mint an
-    // unbounded number of cache entries with keys that change nothing
-    // (`?junk=1`, `?junk=2`, …), each of which also paid a full corpus walk.
-    const input = args || {}
-    const normalized = {
-      range: input.range || 'today',
-      from: input.from != null ? input.from : null,
-      to: input.to != null ? input.to : null,
-      models: input.models != null ? input.models : null,
-      projects: input.projects != null ? input.projects : null,
-      now: typeof input.now === 'number' ? input.now : null
-    }
-    return cached('usage|' + JSON.stringify(normalized), async () => {
+    // 归一与缓存 key 都由 core/query-params.js 提供（纯函数，可单测）。
+    const normalized = normalizeUsageArgs(args)
+    return cached(cacheKey('usage', normalized), async () => {
       const rollups = await getRollups()
       const out = queryUsage(rollups, normalized, { pathTitle: pathTitles() })
       // 读取失败/永久跳过的会话数暴露给前端（审计 F8）：此前完全静默。
@@ -1039,31 +1026,16 @@ export function apply(ctx, config) {
   })
 
   harness.handle('detail', (args) => {
-    const input = args || {}
-    // Construct normalized args: range defaults to today, safely handle undefined
-    const normalized = {
-      range: input.range || 'today',
-      from: input.from != null ? input.from : null,
-      to: input.to != null ? input.to : null,
-      models: input.models != null ? input.models : null,
-      projects: input.projects != null ? input.projects : null,
-      offset: Math.max(0, Number(input.offset) || 0),
-      limit: Math.min(200, Math.max(1, Number(input.limit) || 100))
-    }
-    return cached('detail|' + JSON.stringify(normalized), async () => {
+    const normalized = normalizeDetailArgs(args)
+    return cached(cacheKey('detail', normalized), async () => {
       const rollups = await getRollups()
       return queryDetail(rollups, normalized)
     })
   })
 
   harness.handle('calendar', (args) => {
-    const input = args || {}
-    const normalized = {
-      models: input.models != null ? input.models : null,
-      projects: input.projects != null ? input.projects : null,
-      now: typeof input.now === 'number' ? input.now : null
-    }
-    return cached('calendar|' + JSON.stringify(normalized), async () => {
+    const normalized = normalizeCalendarArgs(args)
+    return cached(cacheKey('calendar', normalized), async () => {
       const rollups = await getRollups()
       return queryCalendar(rollups, normalized)
     })
@@ -1074,15 +1046,8 @@ export function apply(ctx, config) {
   // 串行闸：exportChain 保证同一时刻只有一个导出在算（跨缓存 key 生效）。
   let exportChain = Promise.resolve()
   harness.handle('export', (args) => {
-    const input = args || {}
-    const normalized = {
-      range: input.range || '30d',
-      from: input.from != null ? input.from : null,
-      to: input.to != null ? input.to : null,
-      models: input.models != null ? input.models : null,
-      projects: input.projects != null ? input.projects : null
-    }
-    return cached('export|' + JSON.stringify(normalized), async () => {
+    const normalized = normalizeExportArgs(args)
+    return cached(cacheKey('export', normalized), async () => {
       // 不同 range/models 组合会生成不同缓存 key，因此单靠 cached 的 single-flight
       // 挡不住并发导出；这里再串行化一层，避免同步全量聚合被并发拉满宿主事件循环（审计 F2）。
       const previous = exportChain
@@ -1105,39 +1070,6 @@ export function apply(ctx, config) {
     })
   })
 
-  function csvCell(v) {
-    const s = String(v == null ? '' : v)
-    // 公式注入防护：先剥掉前导空白/控制字符再判断，否则 " =cmd|..." 这类
-    // 前导空格/制表符开头的值可绕过（审计 F28）。
-    const probe = s.replace(/^[\s\u0000-\u001f]+/, '')
-    // The apostrophe is part of the CELL value, not a prefix outside its CSV
-    // quotes. Prefix first, then quote the entire field; otherwise a hostile
-    // value containing commas can split into additional formula-capable cells.
-    const safe = /^[=+\-@]/.test(probe) ? "'" + s : s
-    if (/[",\r\n]/.test(safe)) return '"' + safe.replace(/"/g, '""') + '"'
-    return safe
-  }
-
-  function buildCsv(rows) {
-    const header = '时间,项目,模型,工具,输入tokens,输出tokens,缓存tokens,费用(元)'
-    const lines = [header]
-    let skipped = 0
-    for (const r of rows) {
-      // 一条坏时间戳不再让整次导出 500：跳过该行并计数（审计 F9）。
-      if (!Number.isFinite(r.t)) { skipped++; continue }
-      let iso
-      try { iso = new Date(r.t).toISOString() } catch (e) { skipped++; continue }
-      lines.push([
-        iso,
-        r.project || '',
-        r.model || '',
-        'dsh',
-        r.input || 0,
-        r.output || 0,
-        r.cache || 0,
-        (r.cost || 0).toFixed(6)
-      ].map(csvCell).join(','))
-    }
-    return { csv: lines.join('\r\n'), rows: lines.length - 1, skipped }
-  }
+  // csvCell / buildCsv 已下沉到 src/core/csv.js（纯函数，可直接断言字段合法性与
+  // 公式注入防护；smoke 的端到端导出用例仍然覆盖同一条路径）。
 }

@@ -1,7 +1,7 @@
 // 生成 dsh-usage-dashboard 正式插件包：从 src/ 适配为 lib/
 // - src/host.js         → lib/index.js      （ESM host bundle）
 // - src/client/*.js     → lib/client.js     （esbuild 打包 + __ModuleLoader__ 外壳）
-// - src/core/rollup.js  → lib/core/rollup.js（纯聚合引擎，host 内部引用）
+// - src/core/*.js       → lib/core/*.js      （纯逻辑模块：引擎 / CSV / 查询参数 / 会话文件名）
 // - pricing CSV         → src/core/pricing.js + lib/core/pricing.js（计费表）
 // 用法：node scripts/regenerate.cjs
 const fs = require('fs')
@@ -107,9 +107,23 @@ pricingSource()
     console.log('rollup.js: inline PRICES → import ./pricing.js')
   }
 }
-const coreSrc = fs.readFileSync(path.join(root, 'src', 'core', 'rollup.js'), 'utf8')
-fs.writeFileSync(path.join(outDir, 'core', 'rollup.js'), coreSrc)
-console.log('core lib/core/rollup.js:', coreSrc.length, 'bytes')
+// 复制 src/core/ 下的**全部**模块（不再只复制 rollup.js）。引擎内部还有 ./errors.js，
+// 宿主直接 import 的 csv / query-params / session-files 也在其中。旧版只写 rollup.js，
+// 于是 `rm -rf lib && npm run build` 会产出 import 悬空的 lib/core/rollup.js——errors.js
+// 仅因为历史上被提交过才存在，CI 的 drift 检查看不见这个缺口。
+const coreDir = path.join(root, 'src', 'core')
+const coreFiles = fs.readdirSync(coreDir).filter((f) => f.endsWith('.js')).sort()
+for (const f of coreFiles) fs.copyFileSync(path.join(coreDir, f), path.join(outDir, 'core', f))
+// 复制后的相对 import 必须都能解析，否则用户机器上 import 就炸。
+for (const f of coreFiles) {
+  const src = fs.readFileSync(path.join(coreDir, f), 'utf8')
+  for (const m of src.matchAll(/\bfrom\s*['"](\.\/[\w.-]+)['"]/g)) {
+    if (!fs.existsSync(path.join(outDir, 'core', m[1]))) {
+      throw new Error('lib/core/' + f + ' imports ' + m[1] + ' but that file was not written to lib/core/')
+    }
+  }
+}
+console.log('core lib/core/:', coreFiles.join(', '))
 
 // ---------- host ----------
 const hostSrc = fs.readFileSync(path.join(root, 'src', 'host.js'), 'utf8')
@@ -328,88 +342,63 @@ let body = hostSrc.slice(bodyStart, closePos)
 // 只清理尾部空白行（v0.2 host 直接以 export function apply 定义，
 // 函数体内嵌套的闭合括号必须原样保留）
 body = body.replace(/\n\s*\n\s*$/, '\n')
-// 从 src/host.js 提取 core 导入，保持宿主包与源码一致（新增导出时无需改模板）。
-// 旧的兜底是一个硬编码名字列表，已经漏过 pruneRollup：正则一旦失配就会静默生成
-// 缺 import 的 lib/index.js（运行时 ReferenceError）。现在改成硬失败 + 交叉校验
-// 导入名确实存在于引擎导出中（审计 F19）。
-const importMatch = hostSrc.match(/^import\s*\{([^}]*)\}\s*from\s*['"]\.\/core\/rollup\.js['"]/m)
-if (!importMatch) {
+// 从 src/host.js 提取**全部** core 导入（不再只认 rollup.js），并合并宿主模板自身
+// 需要的纯函数依赖（parseListParam / parseQueryArgs / isLoopbackAddress 已下沉到
+// core/query-params.js）。每个导入名都必须真的被该模块导出，否则构建失败——旧的
+// 兜底是硬编码名字列表，漏过 pruneRollup 就会静默生成缺 import 的 lib/index.js
+// 并在运行时 ReferenceError（审计 F19）。
+const CORE_IMPORT_RE = /^import\s*\{([^}]*)\}\s*from\s*['"]\.\/core\/([\w.-]+)['"];?/gm
+const coreNeeds = new Map() // 'rollup.js' → Set(names)
+const addCoreNeed = (file, names) => {
+  if (!coreNeeds.has(file)) coreNeeds.set(file, new Set())
+  for (const n of names) if (n) coreNeeds.get(file).add(n)
+}
+for (const m of hostSrc.matchAll(CORE_IMPORT_RE)) {
+  addCoreNeed(m[2], m[1].split(',').map((s) => s.trim()).filter(Boolean))
+}
+if (!coreNeeds.has('rollup.js')) {
   throw new Error('src/host.js: cannot find the `import { ... } from \'./core/rollup.js\'` line — ' +
     'the host bundle would be generated without engine imports')
 }
-const coreImports = importMatch[1].trim()
-const engineExports = new Set()
-for (const m of coreSrc.matchAll(/^export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm)) engineExports.add(m[1])
-for (const m of coreSrc.matchAll(/^export\s*\{([^}]*)\}/gm)) {
-  for (const part of m[1].split(',')) {
-    const name = part.trim().split(/\s+as\s+/).pop().trim()
-    if (/^[A-Za-z_$][\w$]*$/.test(name)) engineExports.add(name)
+addCoreNeed('query-params.js', ['parseListParam', 'parseQueryArgs', 'isLoopbackAddress'])
+
+function coreExportsOf(file) {
+  const code = fs.readFileSync(path.join(coreDir, file), 'utf8')
+  const out = new Set()
+  for (const m of code.matchAll(/^export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm)) out.add(m[1])
+  for (const m of code.matchAll(/^export\s*\{([^}]*)\}/gm)) {
+    for (const part of m[1].split(',')) {
+      const name = part.trim().split(/\s+as\s+/).pop().trim()
+      if (/^[A-Za-z_$][\w$]*$/.test(name)) out.add(name)
+    }
+  }
+  return out
+}
+for (const [file, names] of coreNeeds) {
+  if (!fs.existsSync(path.join(coreDir, file))) {
+    throw new Error('src/host.js imports ./core/' + file + ', which does not exist')
+  }
+  const missing = [...names].filter((n) => !coreExportsOf(file).has(n))
+  if (missing.length) {
+    throw new Error('src/host.js (or the host template) imports names that src/core/' + file + ' does not export: ' + missing.join(', '))
   }
 }
-const missingEngineExports = coreImports.split(',').map((s) => s.trim()).filter(Boolean).filter((n) => !engineExports.has(n))
-if (missingEngineExports.length) {
-  throw new Error('src/host.js imports names that src/core/rollup.js does not export: ' + missingEngineExports.join(', '))
-}
+// 稳定顺序：rollup.js 在最前，其余按模块名排序
+const coreOrder = ['rollup.js', ...[...coreNeeds.keys()].filter((f) => f !== 'rollup.js').sort()]
+const coreImportLines = coreOrder
+  .map((f) => `import { ${[...coreNeeds.get(f)].join(', ')} } from './core/${f}'`)
+  .join('\n')
 
 const hostOut = `// dsh-usage-dashboard — host half (adapted from the src/host.js glue layer).
 // Registers four JSON GET routes under /dash-api/* (usage / detail / calendar /
 // export), loopback-only by default, serving usage aggregation over the local
 // session store. Aggregation itself lives in ./core/rollup.js.
 
-import { ${coreImports} } from './core/rollup.js'
+${coreImportLines}
 
-// 列表参数（models / projects）的线上编码：客户端垫片写 JSON 数组，服务端
-// 先按 JSON 解析，失败再退回逗号拼接。projects 的值是项目 id（即 cwd），Windows 路径
-// 可以含逗号——逗号拼接会把「一个含逗号的项目」静默拆成两个不存在的项目，筛选结果变空
-// 且无任何提示（审计 F14）。逗号分支保留是为了让旧链接/书签继续可用。
-function parseListParam(v) {
-  if (!v) return null
-  // 只有形如 JSON 数组的值才尝试 JSON.parse：逗号列表必然解析失败或不是数组，
-  // 都落回 split。避免为每个普通值付一次异常开销。
-  if (v.charAt(0) === '[') {
-    try {
-      const parsed = JSON.parse(v)
-      if (Array.isArray(parsed)) {
-        return parsed.filter((x) => typeof x === 'string' && x !== '')
-      }
-    } catch (e) { /* 不是 JSON → 按逗号拼接的旧格式处理 */ }
-  }
-  return v.split(',').filter(Boolean)
-}
-
-function parseQueryArgs(url) {
-  const u = new URL(url, 'http://dsh.local')
-  const args = {}
-  for (const [k, v] of u.searchParams) {
-    // never let a query key shadow prototype members onto the args object
-    if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue
-    if (k === 'models' || k === 'projects') {
-      args[k] = parseListParam(v)
-    } else if (v === '') {
-      args[k] = null
-    } else if (k === 'range' || k === 'gran') {
-      args[k] = v
-    } else {
-      const n = Number(v)
-      args[k] = Number.isFinite(n) && String(n) === v ? n : v
-    }
-  }
-  return args
-}
-
-// 只认 loopback 调用方（含 IPv4 / IPv6 / IPv4-mapped-IPv6 与整个 127.0.0.0/8）。
-// 插件把自己的 HTTP 端点注册到宿主 webserver，却无法假设宿主的绑定配置：宿主一旦以
-// 0.0.0.0 启动，同网段任意主机即可无凭据读到全库用量、项目 cwd 与 token（审计 F1）。
-// dsh-mobile 网关会先做设备会话鉴权，但插件不应把安全押在它身上；该网关从
-// 127.0.0.1 反代，因此本机手机访问不受影响。
-function isLoopbackAddress(addr) {
-  if (typeof addr !== 'string' || addr === '') return false
-  let a = addr
-  if (a.startsWith('::ffff:')) a = a.slice(7)
-  if (a === '::1' || a === '0:0:0:0:0:0:0:1') return true
-  const m = /^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$/.exec(a)
-  return m !== null && Number(m[1]) === 127
-}
+// parseListParam / parseQueryArgs / isLoopbackAddress 已下沉到
+// src/core/query-params.js（纯函数、可 node:test 直接断言，见剩余任务 D2），
+// 由上面的 import 引入；模板不再自带实现——否则改一处漏一处。
 
 function registerJsonRoute(ctx, pathname, fn, allowNonLoopback) {
   ctx.effect(() => ctx.get('webServer').register({

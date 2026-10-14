@@ -16,9 +16,31 @@ const ok = (msg) => console.log('  ✔ ' + msg)
 const fail = (msg) => { console.error('  ✘ ' + msg); process.exitCode = 1 }
 
 // 1) 必需文件（pricing CSV 为构建期源文件，运行时只用生成的 lib/core/pricing.js，不随包发布）
-for (const f of ['package.json', 'lib/index.js', 'lib/client.js', 'lib/core/rollup.js', 'lib/core/pricing.js', 'cordis.patch.yml']) {
+for (const f of ['package.json', 'lib/index.js', 'lib/client.js', 'lib/core/rollup.js', 'lib/core/pricing.js', 'lib/core/csv.js', 'lib/core/query-params.js', 'lib/core/session-files.js', 'cordis.patch.yml']) {
   if (existsSync(join(dir, f))) ok('contains ' + f)
   else fail('MISSING ' + f)
+}
+
+// 1b) lib/ 内所有相对 import 必须能解析：宿主的纯逻辑模块与引擎的 ./errors.js 都是靠
+// import 进包的，缺一个文件在用户机器上就是 import 失败（构建脚本现在也会硬失败）。
+try {
+  let checked = 0
+  const walk = (p) => {
+    for (const e of readdirSync(p)) {
+      const fp = join(p, e)
+      if (statSync(fp).isDirectory()) { walk(fp); continue }
+      if (!e.endsWith('.js')) continue
+      const code = readFileSync(fp, 'utf8')
+      for (const m of code.matchAll(/\bfrom\s*['"](\.\.?\/[\w./-]+)['"]/g)) {
+        checked += 1
+        if (!existsSync(join(fp, '..', m[1]))) fail('dangling import in ' + fp.replace(dir, '') + ' → ' + m[1])
+      }
+    }
+  }
+  walk(join(dir, 'lib'))
+  ok('lib/ relative imports resolve (' + checked + ' checked)')
+} catch (e) {
+  fail('lib/ import scan failed: ' + e.message)
 }
 
 // 2) host bundle 可加载
