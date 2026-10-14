@@ -16,11 +16,14 @@ All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 - **重拍 + 复核**：6 张（浅色 30d 与深色）已重新生成；对**图片本身**做 OCR 复核，44 个真实名 **0 命中**。OCR 检测器以 HEAD 旧图做**阳性对照**：同样 44 个名字在旧图里命中 15 处（`calendar-records` 3 / `dashboard-dark` 7 / `distributions` 5），证明检测有效而非静默通过。
 - 顺带修掉脚本头注释里过期的一次性依赖说明（`react` / `react-dom` / `playwright` 已是 devDependencies，剩余任务 E4）。
 
-### 历史里仍未清除的图（B2，待决定）
+### 全历史图片普查与清除（B2，已执行）
 
-- 全历史普查：曾入库的图片 blob 共 **20 个**，逐张 OCR 后 **5 个**含真实项目名——`803268e4` 的 `picture/{calendar-records,dashboard-dark,distributions}.png`（本次被替换的旧图，仍可从 `origin/main` 到达）与 `0c031f8f` 已删除的 `picture/Snipaste_2026-08-19_21-29-29.png`、`..._21-29-53.png`；其余 15 个（`dashboard-overview` / `radar-cache` / `trend-heatmap` 与根目录 `cache-*` / `radar-v2-*` / `radar-v3-final`）OCR 未见项目名。
-- 文本历史是干净的：`selection-translator` / `05-研究生-毕业论文` / `paismart` / `scholarship-2026` / `06-Agentworkspace` / `ideacode` / `evoagent` 全历史 pickaxe 均 0 命中——泄露面就是图片。
-- 彻底清除需 `git filter-repo --path picture/ --invert-paths`（一次覆盖两批图）→ 重新提交新图 → 强推 → GitHub Support 请求清理不可达对象 → 通知已有 clone/fork。属破坏性操作，**未执行**。
+- **普查**：曾入库的图片 blob 共 **20 个**，逐张 OCR 后 **5 个**含真实项目名——`803268e4` 的 `picture/{calendar-records,dashboard-dark,distributions}.png`（旧图，当时仍可从 `origin/main` 到达）与 `0c031f8` 已删除的 `picture/Snipaste_2026-08-19_21-29-29.png`、`..._21-29-53.png`；其余 15 个（`dashboard-overview` / `radar-cache` / `trend-heatmap` 与根目录 `cache-*` / `radar-v2-*` / `radar-v3-final`）OCR 未见项目名。
+- **文本历史是干净的**：`selection-translator` / `05-研究生-毕业论文` / `paismart` / `scholarship-2026` / `06-Agentworkspace` / `ideacode` / `evoagent` 全历史 pickaxe 均 0 命中——泄露面就是图片。
+- **执行**：先 `git bundle create --all` 全量备份（另存 6 张已审阅 PNG），把 `.gitignore` 改动与未跟踪的 `docs/` 暂时移出以保证工作区干净，然后 `git filter-repo --path picture/ --invert-paths`（一次覆盖两批图）→ 重新提交同一批匿名图 → 强推 `main`、`evoagent-webhook-test` 与 `v0.3.8` ~ `v0.3.13`（`v0.3.4` ~ `v0.3.7` 不含图片，SHA 不变）。
+- **验证**：重写后 `git rev-list --all --objects` 里 **0 个 `picture/` 路径**、旧 blob `d582be31…` 已不存在；重新提交后 `HEAD^{tree}` 与重写前的 `bd40d2b4…` **逐字节一致**（证明除旧图外无任何变化）；从 GitHub **全新 clone** 复核：`picture/` 只有 1 个提交、6 个新 blob，泄露 blob 不可得；README 的 raw 链接已返回新图（84,498 B，旧图 74,757 B）。
+- **仍未完成（需要外部动作）**：GitHub 侧不可达对象仍可被 `git fetch origin <旧 SHA>` 取到（本机实测：`ff0dded…`、旧 blob `d582be31…` 仍可下载），且 `refs/pull/1/head` 仍指向重写前的 `4764ca3d…`。已拟好 GitHub Support 请求（含旧 ref/blob SHA 清单），需人工提交；随后通知协作者重新 clone。
+
 
 ## [0.3.19] - 2026-10-14
 
