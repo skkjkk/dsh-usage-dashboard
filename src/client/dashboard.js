@@ -3,7 +3,7 @@
 import { COST_TIP, DUR_TIP, TOTAL_TIP } from './theme.js'
 import { ICON_MODEL, ICON_PROJECT } from './icons.js'
 import { fmtH9, fmtIntl, fmtUsd, fmtCny, fmtDur, fmtZhTokens, defaultCustom } from './format.js'
-import { FilterBar, DurPopup, PricingPopup, UnmatchedBadge, StatCard } from './primitives.js'
+import { FilterBar, DurPopup, PricingPopup, UnmatchedBadge, CacheUnknownBadge, StatCard } from './primitives.js'
 import { TrendChart } from './cards/trend.js'
 import { HeatChart, DistributionCard } from './cards/heat.js'
 import { RadarCard } from './cards/radar.js'
@@ -127,6 +127,7 @@ export function Dashboard() {
         onApply: (next) => { setCustom(next) }
       }),
       h(UnmatchedBadge, { pricing: meta.pricing }),
+      h(CacheUnknownBadge, { pricing: meta.pricing }),
       h('div', { className: 'dd-anim' + (anim ? ' on' : '') },
         h('div', { className: 'dd-rows' }, kpiCards.map(renderCard)),
         h('div', { className: 'dd-charts' },

@@ -39,6 +39,16 @@ All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 - **E3 删除 5 个永久失效的 `dark-*.cjs`**（`dark-audit` / `dark-codemod` / `dark-debug` / `dark-dump` / `dark-js`）：目标文件 `src/client.js` 已在 0.3.19 拆成 `src/client/` 模块树，其中两个 codemod 还会**原地改写源码**且不备份，留着只会诱导误用。`scripts/oneoff/README.md` 改为记录删除原因与考古方法（`git show v0.3.19:scripts/oneoff/dark-codemod.cjs`）。
 - **E4**（随 B1 完成）：`capture-screenshots.mjs` 头部注释里的「一次性依赖」改为 devDependencies。**未改任何插件运行时代码，未 bump `CACHE_FORMAT_VERSION`。**
 
+### 定价准确性（C1 / C2，审计 F23）
+
+- **C1 缓存读取价：47 行空列 → 30 行补齐、17 行有意留空且**不再静默按 ¥0 计**。空列此前被生成成 `0`，而模型仍算「已匹配」，于是缓存读取按 ¥0 计费、覆盖率仍显示 100%（审计 F23 的静默低估）。本次按厂商逐条核官方出处后填了 30 行：Mistral 全系 10 行（官方 pricing 页 "Cached input" 列，= 10% of input）+ 已下架的 magistral/nemo 3 行（官方全局 10% 规则）、Bedrock Nova 4 行（官方脚注「cache read 比按需输入低 75%」，欧站数值比 0.250 证实）、OpenAI `gpt-5.5-pro`（官方明确「不提供缓存输入折扣」⇒ 按标准输入价）、`gemini-1.5-pro`（归档官方页 25% 规则）、`deepseek-coder`（官方公告 cache hit $0.014/M）、`ernie-4.5-turbo`（千帆「命中缓存」¥0.2/M），以及若干**显式 0**（`gpt-4`/`gpt-3.5-turbo`/`gpt-4-turbo` 无 prompt caching 特性、Phi-4 家族无缓存档、Agnes 免费型号）。逐行依据与出处见 `pricing/PRICING_VERIFICATION_REPORT.md` 第四节。
+- **C1「未知」不再等于「¥0」**：生成器新增 `CACHE_PRICE_UNKNOWN`（CSV 第 5 列为空的集合，现将从 47 降到 17），`priceFor`/`priceForAt` 带出 `cacheUnknown`（**计费口径不变，仍是 0**，否则历史费用会跳变），`queryUsage` 只把「本窗口确有缓存 token 且缓存价未知」的模型放进 `meta.pricing.cacheUnknownUsed/cacheUnknownTokens`，客户端新增琥珀徽标「缓存读取价未知，费用可能低估」并在定价弹层里把该列显示成「未知」而不是 ¥0。**开销为 0**（没有缓存 token 就不提示），覆盖率语义不变。
+- **C1 有意留空的 17 行**：Cohere 6（官方只列 input/output，但 v2 Chat 会返回 `cached_tokens` ⇒ 无法确认是免费还是按输入价）、sonar 三行、`ling/ring` 三行（只有转售渠道价，且与行内输入价不同源）、`nemotron-3-super-120b`、`inflection-3-pi`、`gpt-5.4-pro`、`o3-pro`、`ernie-5.0`。这些现在会由上述徽标显式提示，而不是假装已匹配且免费。
+- **C1 顺带修正**：`agnes-2.5-pro` / `agnes-2.5-pro-alpha` 缓存价 `0.03 → 0.315`（官方 wiki：Pro 档 cached input $0.045/M，原值是它的 1/10）。
+- **C2 7 个未定价模型**：补录 3 个第一方可定价的——`spark-x2.5`（讯飞官方 1.6/6/0.24，限时五折）、`Qwen3.6-35B-A3B`（百炼 1.8/10.8/**0**，官方注明不支持上下文缓存）、`Qwen3.8-27B`（百炼 3/12/0.6）；其余 4 个**保持未匹配**并写明原因：`qoder-cn` 是 provider 名（Qoder CN / 通义灵码）漏进 model 字段，**绝不能计价**（已加单测钉死）、`step-explore` 走 Step Plan 额度制无逐 token 价、`kat-coder-pro-v2.5` 只有转售商价、`big-pickle` 是 OpenCode Zen 的匿名免费别名。
+- **`CACHE_FORMAT_VERSION` 18 → 19**（定价表变化，磁盘缓存里的成本必须作废重算）。**守卫**：`test/pricing-cache-unknown.test.js`（8 条：未知 vs 显式 0、只在确有缓存 token 时上报、覆盖率不受影响、C1 抽查值、C2 补录与 `qoder-cn` 必须未匹配）+ 两个新渲染快照（徽标 / 弹层里的「未知」）。未改取数或折叠语义，bench 全绿。
+- **未改（记入 `docs/remaining-tasks.md` 的 C3）**：Bedrock Nova 的**输入价**与官方表不一致（只有 nova-pro 对齐）；`agnes-3.0-flash` 用 list 价而同表 `agnes-2.5-flash` 用当前价（口径不一致）；`ernie-4.5-turbo` / `gemini-1.5-pro` 的输入价已过期。这些改动会改变历史费用，需要单独决策。
+
 ## [0.3.19] - 2026-10-14
 
 > 审计 F16：客户端半边是 **1907 行单文件 + 隐式全局 + 构建期字符串替换**，源码**不是合法 JS**（`node --check src/client.js` 直接报 `Illegal return statement`），因此无法 lint、无法单测，任何改动都只能靠"改完看截图"。本版把它拆成真正的 ESM 模块树，并用 **esbuild** 取代正则改写。**未 bump `CACHE_FORMAT_VERSION`**（没碰取数/折叠语义）。

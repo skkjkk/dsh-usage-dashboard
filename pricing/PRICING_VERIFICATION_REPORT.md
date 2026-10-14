@@ -363,3 +363,77 @@ OpenAI 于 2026年7月30日将 GPT-5.6 Luna 降价 80%，但 CSV 使用了原价
 
 *报告生成时间：2026年9月*
 *数据来源：各厂商官方 API 定价页面*
+
+
+---
+
+## 四、缓存读取价补齐 + 未定价模型复核（2026-10-14，剩余任务 C1 / C2）
+
+> 背景：CSV 有 47 行第 5 列（缓存读取价）为空。生成表把空列折叠成 0，而这些模型仍被算作「已匹配」，
+> 于是缓存读取按 ¥0 计费、覆盖率仍是 100%——费用**静默低估**（审计 F23）。
+>
+> 方法：按厂商分组并行核查官方定价页/文档；**只有拿到官方出处才写数字**，核不到的一律留空
+> （现在会被 UI 显式标成「未知」而不是 0）。Mistral 全表与 Agnes 官方 wiki 由本人二次复核（见下）。
+> 取值约定：官方 USD 价 × 7 → ¥/M；官方只给规则时按「规则 × 该行现有输入价」换算（保持行内自洽）。
+
+### 4.1 已补齐（30 行）
+
+| 模型 | 缓存读取价(¥/M) | 依据 | 出处 |
+|---|---|---|---|
+| codestral-2508 | 0.21 | 官方 "Cached input" $0.03 | https://docs.mistral.ai/inference/pricing |
+| ministral-14b-2512 | 0.14 | $0.02（= 10% of input） | 同上 |
+| ministral-3b-2512 | 0.07 | $0.01 | 同上 |
+| ministral-8b-2512 | 0.105 | $0.015 | 同上 |
+| mistral-large-2512 / mistral-large-3 | 0.35 | $0.05 | 同上 |
+| mistral-medium-3-5 / mistral-medium-3.5 | 1.05 | $0.15 | 同上 |
+| mistral-small-2603 / mistral-small-4 | 0.105 | $0.015 | 同上 |
+| magistral-medium | 1.4 | 已下架；官方全局规则「cached = 10% of input」× 14 | https://docs.mistral.ai/studio/conversations/advanced/prompt-caching |
+| magistral-small | 0.35 | 同上 × 3.5 | 同上 |
+| mistral-nemo | 0.014 | 同上 × 0.14 | 同上 |
+| gpt-3.5-turbo / gpt-4 / gpt-4-turbo | 0 | 官方表缓存列「—」，模型无 prompt caching 特性 → **显式 0**（不是未知） | https://developers.openai.com/api/docs/pricing.md |
+| gpt-5.5-pro | 210 | 官方：该型号「不提供缓存输入折扣」⇒ 缓存读取按标准输入价 $30 × 7 | https://developers.openai.com/api/docs/models/gpt-5.5-pro |
+| gemini-1.5-pro | 6.125 | 归档官方页：cached = 25% of input × 24.5 | https://web.archive.org/web/20250101030729/https://ai.google.dev/pricing |
+| deepseek-coder | 0.098 | 官方公告 cache hit $0.014/M（与该行 era 一致的 miss $0.14 / out $0.28） | https://api-docs.deepseek.com/news/news0802 |
+| ernie-4.5-turbo | 0.2 | 千帆官方「命中缓存」¥0.0002/千 tokens | https://cloud.baidu.com/doc/qianfan-docs/s/Jm8r1826a |
+| agnes-2.0-flash / agnes-2.5-flash | 0 | 当前免费（官方 wiki：Current price $0） | https://wiki.agnes-ai.com/en/docs/pricing |
+| phi-4 / phi-4-mini / phi-4-multimodal / phi-4-reasoning | 0 | Phi 表只有 Input/Output 两列，无缓存档；Azure 缓存仅覆盖 Azure OpenAI 系 | https://azure.microsoft.com/en-us/pricing/details/ai-foundry-models/microsoft/ |
+| amazon-nova-pro | 1.4 | 官方脚注「cache read 比按需输入低 75%」⇒ 25% × 5.6；欧站数值比 0.250 证实 | https://aws.amazon.com/bedrock/pricing/ · https://www.aws.eu/bedrock/pricing/ |
+| amazon-nova-lite / amazon-nova-2-lite | 0.0525 | 同上 25% × 0.21 | 同上 |
+| amazon-nova-micro | 0.02625 | 同上 25% × 0.105 | 同上 |
+
+### 4.2 有意留空（17 行，现由 UI 标为「缓存价未知，费用可能低估」）
+
+| 模型 | 为什么留空 |
+|---|---|
+| ling-2.6-1t / ling-2.6-flash / ring-2.6-1t | 无第一方 API 定价页（MIT 开放权重）；渠道（ZenMux ant-ling）给出的 20% 规则与行内输入价不同源（行内 ¥0.525 是渠道 $0.30 的 25%），故不写 |
+| command-r-plus / command-a / command-r-finetuned / command-r / aya-expanse / command-r7b | Cohere 定价页只有 input/output；但 v2 Chat 会返回 `usage.cached_tokens`（billed_units 里没有缓存项）⇒ 无法确认「免费」还是「按输入价」，写 0 就是审计 F23 的原始 bug |
+| sonar-pro / sonar-reasoning-pro / sonar | 旧 Sonar 表无缓存列，且前两者已于 2026-09-27 EOL；后继 Agent API 才有 cache read（$0.0625），但该 SKU 的 in/out 也不同（行内价格已过期） |
+| nemotron-3-super-120b | NVIDIA 无第一方逐 token 价（catalog 是免费试用、NIM 按 GPU 授权）；转售方 DeepInfra 未列缓存价，OpenRouter 标 `supports_implicit_caching:false` |
+| inflection-3-pi | 厂商已无 API/定价页，模型实质下架 |
+| gpt-5.4-pro / o3-pro | 官方表缓存列「—」、文档未提缓存：无法区分「不提供」与「无折扣」，写 0 会静默低估 |
+| ernie-5.0 | 千帆有上下文缓存能力，但该型号三个分节都没有「命中缓存」价 |
+
+### 4.3 顺带修正
+
+| 行 | 原值 | 新值 | 依据 |
+|---|---|---|---|
+| agnes-2.5-pro | 0.03 | 0.315 | 官方 wiki：Pro 档 cached input $0.045/M（= 输入价的 10%）——原值低 10 倍 |
+| agnes-2.5-pro-alpha | 0.03 | 0.315 | 同上（同一 Pro 档） |
+
+### 4.4 C2：7 个未定价模型
+
+| 模型 | 是什么 | 结论 |
+|---|---|---|
+| spark-x2.5 | 讯飞星火旗舰（293B-A30B MoE） | **已补录** 1.6 / 6 / 0.24（官方限时五折；原价 3.2 / 12 / 0.48）https://xinghuo.xfyun.cn/sparkapi |
+| Qwen3.6-35B-A3B | 阿里百炼开放权重（VL） | **已补录** 1.8 / 10.8 / **0**（官方注明该型号不支持上下文缓存 ⇒ 显式 0） |
+| Qwen3.8-27B | 阿里百炼开放权重（VL） | **已补录** 3 / 12 / 0.6（支持上下文缓存） |
+| qoder-cn | **不是模型 id**：Qoder CN（原通义灵码）是阿里云编码助手产品/provider 名漏进 model 字段 | **必须保持未匹配**（已加单测钉住，禁止将来给它编价） |
+| step-explore | 阶跃 Step Plan 的额度制 Agent 能力，不在公开 API 模型表 | 保持未匹配（无逐 token 价） |
+| kat-coder-pro-v2.5 | Kwaipilot 开放权重，第一方仅企业端点 | 保持未匹配（只有转售商价） |
+| big-pickle | OpenCode Zen 上的匿名 stealth 模型（限时免费） | 保持未匹配（无基座可计价） |
+
+### 4.5 顺带发现、**未改**（需要单独决策，已记入 docs/remaining-tasks.md 的 C3）
+
+1. **Bedrock Nova 输入价与官方表不一致**：行内 lite 0.21（$0.03）vs 官方 $0.06、micro 0.105（$0.015）vs $0.035、2-lite 0.21 vs $0.30；只有 nova-pro 对齐。改输入价会改变所有历史 Nova 费用，故只记录。
+2. **agnes-3.0-flash 用的是 list 价**（0.35/1/0.035），而官方当前价是免费（$0）；同一 CSV 里 agnes-2.5-flash 却用了当前价（0/0/0）——两行口径不一致。
+3. **两行输入价过期**：ernie-4.5-turbo 官方输入 ¥0.8/M（行内 0.56，疑似促销）；gemini-1.5-pro 行内 24.5/73.5 是发布期档位，最终档位为 $1.25/$5.00(≤128k)。

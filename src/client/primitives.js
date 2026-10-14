@@ -2,7 +2,7 @@
 
 import { RANGES } from './theme.js'
 import { ICON_MODEL, ICON_PROJECT, ARROW, CHECK, ICON_INFO } from './icons.js'
-import { fmtPct, fmtPrice, dateToMs, fmtPriceRange } from './format.js'
+import { fmtPct, fmtPrice, fmtPriceRange, fmtIntl, dateToMs } from './format.js'
 import { useTween } from './hooks.js'
 import { React, h } from './react.js'
 
@@ -201,13 +201,22 @@ export function PricingPopup(props) {
   const rows = pricing.rows || []
   const hasDs = rows.some((r) => r.ds)
   const unmatched = rows.filter((r) => !r.matched)
-  const cell = (r, i) => r.ds ? fmtPriceRange(r.off[i], r.peak[i]) : (r.p ? fmtPrice(r.p[i]) : '-')
+  const cacheUnknownUsed = pricing.cacheUnknownUsed || []
+  // 缓存读取价未知的行：PRICES 里是 0，但那是「没核到官方价」而不是「官方价 0」，
+  // 表格里必须显示成「未知」而不是 ¥0（审计 F23）。
+  const cell = (r, i) => {
+    if (i === 2 && r.cacheUnknown) return r.ds ? fmtPriceRange(r.off[i], r.peak[i]) + '?' : '未知'
+    return r.ds ? fmtPriceRange(r.off[i], r.peak[i]) : (r.p ? fmtPrice(r.p[i]) : '-')
+  }
   return h('div', null,
     h('div', { className: 'pop-title' }, '模型定价匹配'),
     h('div', { className: 'pop-body' },
       h('div', null, '当前定价覆盖 ' + pricing.coverage + '% 的 Token 用量，未匹配的模型暂不计费。'),
       unmatched.length ? h('div', { className: 'pop-sec', style: { marginTop: 6 } },
         '未匹配 ' + unmatched.length + ' 个模型：' + unmatched.map((r) => r.model).join('、') + '。可在 GitHub 提交模型定价补充。') : null,
+      cacheUnknownUsed.length ? h('div', { className: 'pop-sec', style: { marginTop: 6 } },
+        '缓存读取价未核到官方价：' + cacheUnknownUsed.length + ' 个模型（' + cacheUnknownUsed.map((r) => r.model).join('、') +
+        '），本窗口约 ' + fmtIntl(pricing.cacheUnknownTokens || 0) + ' 缓存 token 按 ¥0 计——费用可能被低估。') : null,
       hasDs ? h('div', { className: 'pop-sec', style: { marginTop: 6 } }, 'DeepSeek 现行两型号按峰谷计费：高峰 9:00-12:00、14:00-18:00（北京时间），空闲为高峰一半；表中 ¥a~b/M 为空闲~高峰。V4.1 Flash 新价自 2026-09-10 12:00 起生效；V4 Pro 自 2026-09-14 12:00 起路由到 Flash 并按 Flash 单价计费。') : null),
     h('table', null,
       h('thead', null, h('tr', null,
@@ -227,6 +236,19 @@ export function PricingPopup(props) {
 // 未匹配价格提醒：pricing.coverage < 100% 且确有未匹配行时，过滤栏右侧
 // 常驻一枚琥珀色徽标，点击直接打开费用卡片上的定价弹层。¥0 静默漏计
 // 曾经真实发生过（大小写/后缀类），可见化是同类问题的通用解。
+// 两个徽标（未匹配 / 缓存价未知）共用这段「打开定价弹层」的交互。
+function openPricingPopup(e) {
+  // 打开定价弹层本身。旧实现点击费用卡片只会切换 ¥/$（卡片 onClick 的职责），
+  // 与徽标承诺的「点击查看详情」不符（审计 F15）。
+  const root = e.currentTarget.closest('.dd-root')
+  const trigger = root && root.querySelector('[data-dd-popup="pricing"]')
+  if (trigger) trigger.click()
+  else if (root) {
+    const card = root.querySelector('.dd-kpi')
+    if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
+}
+
 export function UnmatchedBadge(props) {
   const pricing = props.pricing || { coverage: 100, rows: [] }
   const rows = pricing.rows || []
@@ -236,18 +258,25 @@ export function UnmatchedBadge(props) {
     type: 'button',
     className: 'dd-unmatched-badge',
     title: '未匹配定价的模型：' + unmatched.map((r) => r.model).join('、') + '（这些模型的费用未计入，点击查看详情）',
-    onClick: (e) => {
-      // 打开定价弹层本身。旧实现点击费用卡片只会切换 ¥/$（卡片 onClick 的职责），
-      // 与徽标承诺的「点击查看详情」不符（审计 F15）。
-      const root = e.currentTarget.closest('.dd-root')
-      const trigger = root && root.querySelector('[data-dd-popup="pricing"]')
-      if (trigger) trigger.click()
-      else if (root) {
-        const card = root.querySelector('.dd-kpi')
-        if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      }
-    }
+    onClick: openPricingPopup
   }, '⚠ ' + unmatched.length + ' 个模型未匹配价格，费用未计入')
+}
+
+// 缓存读取价未知提醒（审计 F23）：模型本身是「已匹配」的（覆盖率不变），但 CSV 第 5 列为空
+// ——没核到官方缓存读取价，而本窗口确实有缓存 token，按 ¥0 计会**静默低估**费用。
+// 与未匹配徽标区分开：未匹配是「整条费用没算」，这里是「缓存那部分没算」。
+export function CacheUnknownBadge(props) {
+  const pricing = props.pricing || {}
+  const used = pricing.cacheUnknownUsed || []
+  if (!used.length) return null
+  const models = used.map((r) => r.model)
+  return h('button', {
+    type: 'button',
+    className: 'dd-unmatched-badge dd-cache-unknown-badge',
+    title: '缓存读取价未核到官方价：' + models.join('、') + '（本窗口约 ' + fmtIntl(pricing.cacheUnknownTokens || 0) +
+      ' 缓存 token 按 ¥0 计，费用可能低估，点击查看详情）',
+    onClick: openPricingPopup
+  }, '⚠ ' + models.length + ' 个模型的缓存读取价未知，费用可能低估')
 }
 
 export function StatCard(props) {

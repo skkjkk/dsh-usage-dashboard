@@ -115,6 +115,25 @@ test('渲染快照：KPI + 筛选器', () => {
   snapshot('unmatched-badge', h(primitives.UnmatchedBadge, {
     pricing: { coverage: 50, rows: [{ model: 'unknown-model', matched: false }] }
   }))
+  // 缓存价未知徽标 + 定价弹层里的「未知」单元格（剩余任务 C1 / 审计 F23）
+  snapshot('cache-unknown-badge', h(primitives.CacheUnknownBadge, {
+    pricing: { cacheUnknownUsed: [{ model: 'command-a', cacheTokens: 123456 }], cacheUnknownTokens: 123456 }
+  }))
+  const popupHtml = snapshot('pricing-popup-cache-unknown', h(primitives.PricingPopup, {
+    pricing: {
+      coverage: 100,
+      rows: [
+        { model: 'gpt-4', matched: 'gpt-4', p: [210, 420, 0], cacheUnknown: false },
+        { model: 'command-a', matched: 'command-a', p: [17.5, 70, 0], cacheUnknown: true }
+      ],
+      cacheUnknownUsed: [{ model: 'command-a', cacheTokens: 123456 }],
+      cacheUnknownTokens: 123456
+    }
+  }))
+  assert.match(popupHtml, /未知/, '缓存价未知的行在表里必须显示「未知」而不是 ¥0')
+  assert.match(popupHtml, /缓存读取价未核到官方价/, '弹层必须解释费用可能低估')
+  assert.equal(renderToStaticMarkup(h(primitives.CacheUnknownBadge, { pricing: { cacheUnknownUsed: [] } })), '',
+    '没有实际低估时徽标不渲染')
 })
 
 test('渲染快照：趋势与热力图', () => {

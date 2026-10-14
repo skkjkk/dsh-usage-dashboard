@@ -79,18 +79,26 @@ function pricingSource() {
     .map((k) => JSON.stringify(k) + ':[' + prices[k].join(',') + ']').join(',\n  ')
   const vbody = Object.keys(vendors).sort()
     .map((k) => JSON.stringify(k) + ':' + JSON.stringify(vendors[k])).join(',\n  ')
+  // 第 5 列为空的模型：缓存读取（命中）价**未知**。生成表里照旧按 0 参与计费（改动会让
+  // 历史费用跳变），但必须与「官方价恰好是 ¥0」（免费模型，CSV 写 0）区分开——UI 据此
+  // 提示「费用可能低估」，而不是把未知当成已知（审计 F23）。
+  const unknownCache = emptyCache.slice().sort()
+  const ubody = unknownCache.map((k) => JSON.stringify(k)).join(',\n  ')
   const src = '// 定价与厂商表：由 scripts/regenerate.cjs 从 pricing/vibe-usage-model-pricing-extended.csv 生成（CNY 直接定价）。\n' +
     '// 请勿手改；更新定价请改 CSV 后运行 npm run build。\n' +
     'export const PRICES = {\n  ' + body + '\n}\n\n' +
     '// 模型 → 厂商（系列分组用）\n' +
-    'export const VENDORS = {\n  ' + vbody + '\n}\n'
+    'export const VENDORS = {\n  ' + vbody + '\n}\n\n' +
+    '// 缓存读取（命中）价**未知**的模型：CSV 第 5 列为空（未核到官方价）。它们在 PRICES 里是 0，\n' +
+    '// 但这里显式记录，让 UI 能把「未知」与「确实为 ¥0（免费模型）」分开提示（审计 F23）。\n' +
+    'export const CACHE_PRICE_UNKNOWN = new Set([' + (ubody ? '\n  ' + ubody + '\n' : '') + '])\n'
   fs.writeFileSync(path.join(root, 'src', 'core', 'pricing.js'), src)
   fs.writeFileSync(path.join(outDir, 'core', 'pricing.js'), src)
   console.log('pricing models:', Object.keys(prices).length, ' vendors:', Object.keys(vendors).length)
   if (emptyCache.length) {
-    // 不是构建失败：空列可能确实没有独立缓存价。但必须可见——这些行会生成 0，
-    // 而该模型仍被标为「已匹配」，缓存读取按 ¥0 计费且覆盖率不下降（审计 F23）。
-    console.log('pricing warning: ' + emptyCache.length + ' row(s) have no cache-read price → generated as 0: ' + emptyCache.join(', '))
+    // 不是构建失败：空列确实可能没有独立缓存价（或该 API 不提供缓存）。但必须可见——
+    // 这些行按 0 计费而模型仍算「已匹配」，覆盖率不下降，费用静默低估（审计 F23）。
+    console.log('pricing warning: ' + emptyCache.length + ' row(s) have no cache-read price → billed as 0, marked CACHE_PRICE_UNKNOWN in the UI: ' + emptyCache.join(', '))
   }
   return src
 }
