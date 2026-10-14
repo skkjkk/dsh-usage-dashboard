@@ -1667,7 +1667,48 @@ console.log('\n[5] fork-seed 切断与 usage 重放去重（token-monitor 对照
     // 相同时间+token 的匿名消息视为重放，只计一次（保守正确：宁可少计不可双计）
     assertEq('dedup.anonInput', u.totals.inputTokens, 1e5)
   }
-  console.log('  fork-seed 切断 + usage 去重 OK (A/A2/B/C/C2/D/E)')
+  // Delayed marker after a full-fold checkpoint, and a fork-of-fork marker
+  // following already streamed messages, must both agree with a fresh refold.
+  // Include a disk JSON round-trip because the host resumes cached rollups.
+  {
+    const header = { type: 'session', time: t0 - 6000, seq: 0, data: { id: 'late-seed', isSeeded: true } }
+    const inherited = mkMsg('inherited', t0 - 5000, 0, 200, 0, 1)
+    const mark = (seq, at) => ({ type: 'session/end-seed', time: at, seq, data: { inherited: true } })
+    const own = mkMsg('own', t0 - 2000, 1, 10, 0, 3)
+    const late = [header, inherited, mark(2, t0 - 3000), own]
+    const full = foldSession(late)
+    const truncated = foldSession(late.slice(0, 2))
+    const continued = deserializeRollup(JSON.parse(JSON.stringify(serializeRollup(truncated))))
+    for (const ev of late.slice(2)) foldAppend(continued, ev)
+    const stream = emptyRollup()
+    for (const ev of late) foldAppend(stream, ev)
+    const win = { range: 'custom', from: t0 - DAY, to: t0 + DAY }
+    const tok = (r) => queryUsage([r], win, {}).totals.inputTokens
+    assertEq('seedLate.fixture', tok(full), 10)
+    assertEq('seedLate.resumed', tok(continued), tok(full))
+    assertEq('seedLate.stream', tok(stream), tok(full))
+    const twice = [header, inherited, mark(2, t0 - 4000), own, mark(4, t0 - 1000), mkMsg('child', t0 + 1000, 2, 7, 0, 5)]
+    const twiceFull = foldSession(twice)
+    const twiceStream = emptyRollup()
+    for (const ev of twice) foldAppend(twiceStream, ev)
+    assertEq('seedTwice.fixture', tok(twiceFull), 7)
+    assertEq('seedTwice.stream', tok(twiceStream), tok(twiceFull))
+    // Every possible disk checkpoint must resume identically, including a
+    // provisional first marker, a second marker and a legacy count header.
+    const legacy = [{ type: 'session', time: t0 - 5000, data: { seedLength: 2 } }, inherited,
+      mkMsg('legacy-parent', t0 - 3000, 0, 13, 0), own]
+    for (const [label, series] of [['late', late], ['twice', twice], ['legacy', legacy]]) {
+      const expected = foldSession(series)
+      for (let split = 0; split <= series.length; split++) {
+        const cached = deserializeRollup(JSON.parse(JSON.stringify(serializeRollup(foldSession(series.slice(0, split))))))
+        for (const ev of series.slice(split)) foldAppend(cached, ev)
+        assertEq('seedCheckpoints.' + label + '.' + split + '.tokens', tok(cached), tok(expected))
+        assertEq('seedCheckpoints.' + label + '.' + split + '.skipped', cached.skippedSeedEvents, expected.skippedSeedEvents)
+        assertEq('seedCheckpoints.' + label + '.' + split + '.marker', cached.seededWithoutMarker, expected.seededWithoutMarker)
+      }
+    }
+  }
+  console.log('  fork-seed 切断 + usage 去重 OK (A/A2/B/C/C2/D/E + all checkpoint splits)')
 }
 
 console.log('\n[6] 日期后缀取价')

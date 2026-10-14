@@ -450,143 +450,64 @@ export function presetBucketCount(range, gran) {
 // _openSteps) so appends bridge generation intervals across event batches.
 // exactly like a full fold.
 
-// Fork-seed handling (foldAppend contract): a forked DSH session replays its
-// parent's events as a byte-identical prefix. Old headers store the inherited
-// length as `seedLength`; current generations keep `isSeeded: true` and project
-// the cut onto the log as the LAST `session/end-seed { inherited: true }`
-// marker (events carry seq). A folded rollup records the cut as `_seedCut`:
-//   - explicit marker: the marker's seq (tagged cut, seq <= cut excluded)
-//   - legacy header seedLength N: N events excluded by position
-//   - `isSeeded` with no readable marker: fold nothing (no safe recovery)
-// The marker event itself is consumed. Skipped events are counted in
-// skippedSeedEvents for diagnostics only — their tokens already belong to the
-// parent session and must not be billed twice.
+// Fork-seed handling: the LAST inherited marker owns the cut, even when a
+// cached prefix is resumed later or a fork-of-fork carries multiple markers.
+// Speculatively fold the suffix while counting its events. A later marker
+// invalidates ALL speculative contributions since the preceding cut, so reset
+// the aggregate and keep the stable diagnostics. No full log or second copy of
+// every event is retained; the result stays equivalent to a fresh full fold.
 function applySeedCut(r, ev) {
+  const marker = ev.type === 'session/end-seed' && ev.data && ev.data.inherited === true
+    && typeof ev.seq === 'number'
   if (r._seedCut === null) {
     const d = ev.data
-    if (ev.type === 'session/end-seed' && d && d.inherited === true) {
-      r._seedCut = typeof ev.seq === 'number' ? { kind: 'seq', seq: ev.seq } : null
-      return true // marker consumed
+    if (marker) {
+      r._seedCut = { kind: 'pending', seq: ev.seq, seen: 0 }
+      return true
     }
     if (ev.type === 'session' && d && typeof d.seedLength === 'number' && d.seedLength > 0) {
       r._seedCut = { kind: 'count', n: d.seedLength }
       return true
     }
     if (ev.type === 'session' && d && d.isSeeded === true) {
-      // seeded: a tagged marker MIGHT follow, and it may arrive AFTER the seed
-      // events it terminates. Park every following event (in order) until a
-      // marker proves or disproves the seed: marker → exact seq cut, replay
-      // the parked events minus the inherited prefix; end of fold with no
-      // marker → the prefix was NOT a seed after all (or ownership is simply
-      // unverifiable), replay everything and leave seededWithoutMarker set so
-      // the host can exclude the session at its discretion.
-      r._seedCut = { kind: 'pending', seeded: true }
-      r._seedPending = []
+      r._seedCut = { kind: 'pending', seen: 0 }
       r.seededWithoutMarker = true
       return true
     }
-    return false
+    return ev.type === 'session/end-seed' && ev.data && ev.data.inherited === true
   }
   const cut = r._seedCut
   if (cut.kind === 'pending') {
-    if (ev.type === 'session/end-seed' && ev.data && ev.data.inherited === true
-      && typeof ev.seq === 'number') {
-      // A marker while pending: provisional cut. It may be an ancestor's
-      // terminator (fork-of-fork) with the real one still ahead — the LAST
-      // marker in log order is the real cut, and later markers only RAISE
-      // the provisional seq. Full folds (foldSession) keep parking until the
-      // end so the final cut is applied exactly.
-      if (!(typeof cut.seq === 'number') || ev.seq > cut.seq) cut.seq = ev.seq
+    if (marker) {
+      if (typeof cut.seq !== 'number' || ev.seq > cut.seq) {
+        const skipped = r.skippedSeedEvents + cut.seen
+        // This marker supersedes the previous cut; reset the speculative
+        // suffix, preserving this rollup object's identity and metadata.
+        const { id, cwd, title, projectTitle } = r
+        Object.assign(r, emptyRollup(), { id, cwd, title, projectTitle })
+        r._seedCut = { kind: 'pending', seq: ev.seq, seen: 0 }
+        r.skippedSeedEvents = skipped
+      }
       return true
     }
-    if (typeof cut.seq === 'number') {
-      // After a provisional marker. Streaming (foldAppend driven by the live
-      // event stream) folds events above the cut immediately — a later-raised
-      // marker cannot retract them, acceptable because a live session has
-      // exactly one marker in practice. Full folds (foldSession) PARK until
-      // the end (see _seedFullFold) so the FINAL cut is applied exactly.
-      if (r._seedFullFold) {
-        r._seedPending.push(ev)
-        return true
-      }
-      if (typeof ev.seq === 'number' && ev.seq <= cut.seq) {
-        r.skippedSeedEvents += 1
-        return true
-      }
-      return false
-    }
-    // No marker yet: PARK (cannot know whether these are inherited).
-    r._seedPending.push(ev)
-    return true
-  }
-  if (cut.kind === 'seq') {
-    if (ev.type === 'session/end-seed' && ev.data && ev.data.inherited === true
-      && typeof ev.seq === 'number' && ev.seq > cut.seq) {
-      cut.seq = ev.seq // only the LAST tagged marker is this session's cut
-      return true
-    }
-    if (typeof ev.seq === 'number' && ev.seq <= cut.seq) {
+    if (ev.type === 'session/end-seed' && ev.data && ev.data.inherited === true) return true
+    if (typeof cut.seq === 'number' && typeof ev.seq === 'number' && ev.seq <= cut.seq) {
       r.skippedSeedEvents += 1
       return true
     }
+    cut.seen += 1
     return false
   }
   if (cut.kind === 'count') {
     if (r._seedSkip < cut.n) { r._seedSkip += 1; r.skippedSeedEvents += 1; return true }
     return false
   }
-  return true // 'all'
-}
-
-// Replay the events parked while the seed cut was unproven. If a provisional
-// marker was seen, apply the seq cut during replay (parked events at/below
-// the cut are inherited); otherwise fold everything (never proven inherited).
-// Parked events were never sig-added (parking happens before the dedup gate),
-// so the dedup gate re-runs cleanly.
-function flushSeedPending(r) {
-  const parked = r._seedPending || []
-  const hadProvisional = r._seedCut && r._seedCut.kind === 'pending' && typeof r._seedCut.seq === 'number'
-  const cut = hadProvisional ? r._seedCut.seq : null
-  if (hadProvisional) r.seededWithoutMarker = false
-  r._seedPending = null
-  r._seedCut = null
-  for (let i = 0; i < parked.length; i++) {
-    const ev = parked[i]
-    if (cut !== null && typeof ev.seq === 'number' && ev.seq <= cut) {
-      r.skippedSeedEvents += 1
-      continue
-    }
-    if (ev.type === 'assistant/message' && ev.data && ev.data.usage) {
-      const sig = usageSig(ev)
-      if (r._seenUsage.has(sig)) continue
-      r._seenUsage.add(sig)
-    }
-    foldAppendBody(r, ev)
-  }
+  return false
 }
 
 export function foldSession(events) {
   const r = emptyRollup()
-  r._seedFullFold = true // park everything between isSeeded and the LAST marker
-  for (let i = 0; i < events.length; i++) {
-    const gate = applySeedCut(r, events[i])
-    if (gate === true) continue
-    if (gate === 'replay') { flushSeedPending(r); continue }
-    // usage 去重与 foldAppend 公共入口同款逻辑
-    const ev = events[i]
-    if (ev.type === 'assistant/message' && ev.data && ev.data.usage) {
-      const sig = usageSig(ev)
-      if (r._seenUsage.has(sig)) continue
-      r._seenUsage.add(sig)
-    }
-    foldAppendBody(r, ev)
-  }
-  r._seedFullFold = false
-  // Full folds stay parked until the end when the log carries a provisional
-  // marker: flushSeedPending applies the FINAL cut exactly (last-marker-wins).
-  // Without any marker, everything parked since the isSeeded header replays
-  // (never proven inherited) and seededWithoutMarker stays true.
-  if (r._seedCut && r._seedCut.kind === 'pending') flushSeedPending(r)
+  for (let i = 0; i < events.length; i++) foldAppend(r, events[i])
   return r
 }
 
@@ -621,13 +542,12 @@ export function emptyRollup() {
     // from step/start instead; a chunk 'finish' parks its span in lastGenDur
     // so the message that follows reports the same exact interval.
     _openSteps: new Map(),
-    // fork-seed 切断状态（见 applySeedCut）：null = 未检测到 seed；
-    // _seedSkip 供 legacy count 形式按位置跳过计数。
+    // fork-seed 状态（见 applySeedCut）：pending{seq?,seen} 会在较晚的
+    // inherited 标记出现时回滚 speculative suffix；legacy count 按位置跳过。
     _seedCut: null,
     _seedSkip: 0,
-    // isSeeded 已声明但整个 fold 中未出现 inherited 标记：无法恢复所有权。
-    // 此时 rollup 仍是全量折叠（种子 token 已随父会话计过、此会话疑似双计），
-    // 宿主可据此把该会话标记为「待核」或依赖 isSubHeader 排除。
+    // isSeeded 已声明但尚未出现 inherited 标记：暂以全量折叠值展示。
+    // 标记若随后到达，撤销此前的种子用量并清除此状态。
     seededWithoutMarker: false,
     // usage 事件去重（v8）：DSH 持久层在写端崩溃/重试时可能把已 flush 的
     // 记录重放回日志；reader 不去重，fold 端按「消息身份 + 时间 + 路由 + 六元 token
@@ -653,9 +573,8 @@ export function serializeRollup(r) {
     for (const [model, arr] of b.per) per.push([model, arr])
     buckets.push([hk, [per, b.msg, b.durGap, b.first, b.last, b.hasMsg ? 1 : 0, b.evts]])
   }
-  // fold 状态随缓存持久化：_seenUsage 保证 foldAppend 续算（disk cache 命中后
-  // drainPending 追加的事件）与全量 refold 去重一致；_seedCut/_seedSkip 同理
-  // （v8 起缓存的是已切断的 rollup，继续 fold 不需要再切）。
+  // fold 状态随缓存持久化：_seenUsage 保证 foldAppend 续算去重一致；
+  // _seedCut / _seedSkip 保留迟到标记与 legacy seedLength 的切断位置。
   // v13 起再带上 generation 折叠状态：此前 _openSteps/_lastClosed/_lastMsgT/_lastUserT
   // 不落盘，于是「日志被崩溃截断在某个 generation 中间 → 跨启动命中磁盘缓存 →
   // 之后才收到闭合事件」这条路径上 closeStep 会因 _openSteps 为空直接 return 0，
@@ -664,6 +583,9 @@ export function serializeRollup(r) {
     first: r.first, last: r.last, buckets, modelMeta: Array.from(r.modelMeta || []),
     seenUsage: Array.from(r._seenUsage || []),
     skippedSeedEvents: r.skippedSeedEvents || 0,
+    seedCut: r._seedCut,
+    seedSkip: r._seedSkip,
+    seededWithoutMarker: r.seededWithoutMarker === true,
     // generation 里的 bucketEvts 是指向桶 evts 数组的活引用，只存 (t, hk, evtIdx)，
     // 反序列化时重新绑定到重建后的桶数组。
     openSteps: Array.from(r._openSteps || [], ([k, s]) => [
@@ -693,10 +615,12 @@ export function deserializeRollup(o) {
   r.modelMeta = new Map(o.modelMeta || [])
   r._seenUsage = new Set(o.seenUsage || [])
   r.skippedSeedEvents = o.skippedSeedEvents || 0
-  // v8 缓存里存的是已切断/已去重的 rollup：seed 状态置「无 seed」，
-  // 让 drainPending 的 foldAppend 把后续事件原样折叠。
-  r._seedCut = null
-  r._seedSkip = 0
+  // Seed cut is resumable: a later inherited marker may invalidate every
+  // event folded after the previous cut. Never default a new-format cache to
+  // "no seed" when its parent-prefix is still incomplete.
+  r._seedCut = o.seedCut && (o.seedCut.kind === 'pending' || o.seedCut.kind === 'count') ? o.seedCut : null
+  r._seedSkip = typeof o.seedSkip === 'number' ? o.seedSkip : 0
+  r.seededWithoutMarker = o.seededWithoutMarker === true
   // v13：恢复 generation 折叠状态，并把 bucketEvts 重新绑回对应桶的 evts 数组。
   r._openSteps = new Map()
   for (const e of o.openSteps || []) {

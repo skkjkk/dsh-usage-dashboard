@@ -91,8 +91,9 @@ export function apply(ctx, config) {
   // v16: 补录 sakana-namazu（¥6.65/28/1.05），此前计 ¥0。
   // v17: space-bunny 基座由 0 改为收费价 ¥1.05/4.2/0.21（上游 opencode-go 0.15/0.6/0.03 USD ×7）；
   //      `space-bunny-free` 按 -free 口径剥成基座，本机 3312 次调用由此开始计费。
-  //      Costs are baked into cached rollups, so a pricing change MUST bump this.
-  const CACHE_FORMAT_VERSION = 17
+  // v18: seed cut 改为可跨启动续算并支持迟到/多个 inherited 标记；旧缓存缺
+  //      seedCut 状态且可能已计入继承前缀，必须失效并从原始日志重折。
+  const CACHE_FORMAT_VERSION = 18
   // Optional diagnostics for the disk rollup cache (set debugCache: true in
   // the plugin config to trace cache writes).
   const debugCache = !!(config && config.debugCache)
