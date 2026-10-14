@@ -1,14 +1,20 @@
 // README screenshot pipeline: render the REAL client bundle (lib/client.js) with
 // REAL captured /dash-api fixtures in headless Chromium, then crop per-section.
 //
-//   node scripts/capture-screenshots.mjs [--range 30d] [--dark] [--refresh]
+//   node scripts/capture-screenshots.mjs [--range 30d] [--dark] [--refresh] [--raw]
 //
 // Fixtures are fetched from the live dashboard endpoints and cached in
 // .tmp-fixtures/ (gitignored). Start DSH with the plugin mounted first, or pass
 // --base http://127.0.0.1:<port>. Use --refresh to re-fetch.
 //
-// One-time deps (not saved to package.json):
-//   npm install --no-save react@18.3.1 react-dom@18.3.1 playwright
+// PRIVACY (audit F21): the PNGs are published in the README, and the fixtures carry
+// real project ids (absolute cwd paths) and titles. Every capture therefore
+// anonymizes them in memory — project-a, project-b, … — and asserts after render
+// that no real identifier reached the page; see "anonymization" below. `--raw`
+// renders the fixtures verbatim (local debugging only) and skips that assertion —
+// never commit the output of a --raw run.
+//
+// Deps: react / react-dom / playwright are devDependencies (npm ci), no --no-save step.
 import fs from 'node:fs'
 import path from 'node:path'
 import { chromium } from 'playwright'
@@ -28,6 +34,7 @@ const argOf = (name, dflt) => {
 const RANGE = argOf('--range', '30d')
 const DARK = argv.includes('--dark')
 const REFRESH = argv.includes('--refresh')
+const RAW = argv.includes('--raw')
 const BASE = argOf('--base', 'http://127.0.0.1:19387')
 const EXE = process.env.CHROME_EXE ||
   path.join(process.env.LOCALAPPDATA, 'ms-playwright', 'chromium-1243', 'chrome-win64', 'chrome.exe')
@@ -62,6 +69,80 @@ for (const ep of ['usage', 'detail', 'calendar']) {
   data[ep] = {}
   for (const r of RANGES) data[ep][r] = fx(`${ep}-${r}.json`)
 }
+
+// ---------- anonymization (privacy, audit F21) ----------
+// The published PNGs must not carry real project names. The three places the
+// dashboard reads them from are usage.meta.projects[].{id,title},
+// usage.meta.dist.projects[].{id,label} and detail.rows[].project (records card);
+// `detail.rows[].project` is a TITLE while the meta entries are id+title, so map
+// both. Ids are ranked by the widest window's distribution so the legend keeps
+// its natural order, and every id/title/label collected here becomes the
+// denylist the leak assertion re-checks against the rendered page.
+const NONE_ID = '__none__'
+const WIDEST = ['90d', '30d', '7d', '24h', 'today']
+const anonLabel = (i) => {
+  let s = ''
+  for (let n = i; n >= 0; n = Math.floor(n / 26) - 1) s = String.fromCharCode(97 + (n % 26)) + s
+  return 'project-' + s
+}
+function anonymize() {
+  const order = []
+  const seen = new Set()
+  const add = (id) => { if (id && id !== NONE_ID && !seen.has(id)) { seen.add(id); order.push(id) } }
+  for (const r of WIDEST) for (const p of ((data.usage[r] || {}).meta && data.usage[r].meta.dist || {}).projects || []) add(p.id)
+  for (const r of WIDEST) for (const p of ((data.usage[r] || {}).meta || {}).projects || []) add(p.id)
+
+  const byId = new Map()
+  const byTitle = new Map()
+  const real = new Set()
+  order.forEach((id, i) => { byId.set(id, anonLabel(i)); real.add(id) })
+  for (const r of WIDEST) for (const p of ((data.usage[r] || {}).meta || {}).projects || []) {
+    if (!byId.has(p.id)) continue
+    if (p.title) byTitle.set(p.title, byId.get(p.id))
+    if (p.title) real.add(p.title)
+  }
+
+  const unmapped = []
+  // `__none__` is the "ungrouped" bucket: its label is a UI string ("未分组"), not
+  // a project, so it stays verbatim and is allowed through the fail-closed check.
+  const noneLabels = new Set()
+  for (const r of RANGES) {
+    const meta = (data.usage[r] || {}).meta || {}
+    for (const p of meta.projects || []) if (p.id === NONE_ID && p.title) noneLabels.add(p.title)
+    for (const p of (meta.dist || {}).projects || []) if (p.id === NONE_ID && p.label) noneLabels.add(p.label)
+  }
+  for (const r of RANGES) {
+    const meta = (data.usage[r] || {}).meta
+    if (meta) {
+      for (const p of meta.projects || []) {
+        const a = byId.get(p.id)
+        if (a) { real.add(p.id); real.add(p.title); p.id = 'anon/' + a; p.title = a }
+        else if (p.id !== NONE_ID) unmapped.push(`meta.projects(${r}) ${p.id}`)
+      }
+      for (const p of (meta.dist || {}).projects || []) {
+        const a = byId.get(p.id)
+        if (a) { real.add(p.id); real.add(p.label); p.id = 'anon/' + a; p.label = a }
+        else if (p.id !== NONE_ID) unmapped.push(`meta.dist.projects(${r}) ${p.id}`)
+      }
+    }
+    for (const row of (data.detail[r] || {}).rows || []) {
+      if (!row.project || noneLabels.has(row.project)) continue
+      const a = byTitle.get(row.project)
+      if (a) { real.add(row.project); row.project = a }
+      else unmapped.push(`detail.rows(${r}) ${row.project}`)
+    }
+  }
+  // Fail closed: a project the mapping does not know about would be painted verbatim.
+  if (unmapped.length) {
+    throw new Error('anonymization incomplete — ' + unmapped.length +
+      ' project entr(y|ies) have no mapping: ' + [...new Set(unmapped)].slice(0, 5).join(' | '))
+  }
+  return [...real].filter((s) => typeof s === 'string' && s.length >= 4)
+}
+
+const realNames = RAW ? [] : anonymize()
+if (RAW) console.log('!! --raw: fixtures rendered verbatim — do NOT commit these PNGs')
+else console.log(`anonymized ${new Set([...realNames]).size} project identifier(s) → project-a …`)
 
 // ---------- page ----------
 const client = fs.readFileSync(path.join(ROOT, 'lib/client.js'), 'utf8')
@@ -149,6 +230,47 @@ if (pageErrors.length) console.log('pageerrors:', pageErrors.slice(0, 3))
 if (state.effectErr) throw new Error('effect error: ' + state.effectErr)
 if (state.loading || state.empty) throw new Error('page did not finish loading (loading/empty state)')
 
+// ---------- leak assertion ----------
+// Every glyph the browser can paint comes from a text node or a title/aria/alt
+// attribute, so those are exactly what this collects (SVG <text> included; the
+// injected <style>/<script> bodies are skipped). Whitespace is stripped because
+// hints/labels may wrap, and the comparison is case-insensitive.
+if (!RAW) {
+  const painted = await page.evaluate(() => {
+    const parts = []
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const tag = n.parentElement && n.parentElement.tagName
+      if (tag === 'STYLE' || tag === 'SCRIPT') continue
+      parts.push(n.nodeValue || '')
+    }
+    const els = document.body.querySelectorAll('*')
+    for (let i = 0; i < els.length; i++) {
+      for (const a of ['title', 'aria-label', 'placeholder', 'alt']) {
+        const v = els[i].getAttribute(a)
+        if (v) parts.push(v)
+      }
+    }
+    return parts.join('\u0001')
+  })
+  const squeeze = (s) => String(s).replace(/\s+/g, '').toLowerCase()
+  const hay = squeeze(painted)
+  const leaked = realNames.filter((n) => hay.includes(squeeze(n)))
+  if (leaked.length) {
+    throw new Error('anonymization leak — real project identifier painted on the page: ' +
+      leaked.slice(0, 5).join(' | '))
+  }
+  // Fixture-independent second net: project ids ARE local paths, so any painted
+  // drive-letter path means some future UI change started rendering one. This
+  // catches a new leak vector even when the denylist above is incomplete.
+  const pathLeak = painted.split('\u0001').filter((t) => /[a-z]:[\\/]/i.test(t))
+  if (pathLeak.length) {
+    throw new Error('anonymization leak — a filesystem path is painted on the page: ' +
+      pathLeak.slice(0, 3).join(' | '))
+  }
+  console.log(`leak check ok: 0 / ${realNames.length} real identifier(s) and 0 painted path(s)`)
+}
+
 // box of a selector, in CSS px
 async function box(sel, nth = 0) {
   return page.evaluate(([s, n]) => {
@@ -218,3 +340,16 @@ if (!DARK) {
 
 await browser.close()
 console.log('\n' + shots.length + ' screenshot(s) written to picture/')
+
+// Only these six crops are referenced by README.md / README.en.md. Everything else
+// this run produced (full-page / extra per-card crops) is pruned so picture/ stays
+// exactly the reviewed, published set — an unreviewed crop must never end up as an
+// untracked file that gets committed by accident. `--keep-all` opts out.
+const PUBLISHED = ['dashboard-overview', 'trend-heatmap', 'distributions', 'calendar-records', 'radar-cache', 'dashboard-dark']
+if (!argv.includes('--keep-all')) {
+  for (const f of fs.readdirSync(OUT)) {
+    if (!f.endsWith('.png') || PUBLISHED.includes(f.slice(0, -4))) continue
+    fs.rmSync(path.join(OUT, f))
+    console.log(`  pruned ${f} (not referenced by the READMEs)`)
+  }
+}

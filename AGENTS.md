@@ -51,6 +51,7 @@ dsh-usage-dashboard — DSH (DeepSeek Harness) usage statistics dashboard plugin
 - **长上下文阶梯计价未实现**（`LONG_CONTEXT_MODELS` 已作为死代码删除）：事件带不出 prompt 长度分布，价格一律取 CSV 基础档。要接入必须先在折叠阶段记录 usage 级长度分档，别只在取价层加正则。
 - **`Date.UTC(year, …)` 把 0–99 年映射成 1900+年**：`bjDayStart` / `mondayOf` / `hourOf` 都用它构造桶键，因此极端早的 `from`（如公元 1 年）会被静默截到 1901 年、桶数远低于上限而不报错。真实数据都在 1970 年后，构造测试窗口时不要用 year<100（用「N 年前」的相对毫秒数）。
 - **客户端是模块树，不是被改写的片段**：`src/client/**` 必须保持合法 ESM（显式 `import`、无隐式全局、无 `ctx.interval(` / `styles.insert(`）。构建只允许用 esbuild 打包，**不得**恢复任何对客户端源码的正则/字符串改写。`plugin.js` 的 `PLUGIN_ID` 必须等于 `package.json` 的 `name`（构建期断言）。→ `scripts/client-check.mjs`（逐模块 `node --check` + 纯模块单测 + 真实 React SSR 渲染 + 产物 loader/slot 契约）。
+- **README 截图必须先匿名化**：`picture/*.png` 是公开发布的，而 fixture 带真实项目名（title）与 cwd 路径（id）。`scripts/capture-screenshots.mjs` 默认在渲染前把 44 个 id/title/label 重写成 `project-a…`（`detail.rows[].project` 存的是 title，按 id↔title 同映射），渲染后断言页面画不出真实标识（全部文本节点含 SVG `<text>` + `title`/`aria-label`/`placeholder`/`alt`，另有"盘符路径"兜底），失败则一张图都不写。`--raw` 仅供本地调试，**其产物不得提交**；`picture/` 只保留 README 引用的 6 张（脚本尾部自动 prune，`--keep-all` 退出）。→ 脚本内 leak 断言（反证：把匿名化改 no-op 即抛 `anonymization leak`）。
 
 ## v0.3.19 变更摘要（2026-10-14）
 
@@ -131,5 +132,6 @@ dsh-usage-dashboard — DSH (DeepSeek Harness) usage statistics dashboard plugin
 - `npm run bench` → "all checks passed ✔"（correctness + performance；`[7]` 含 serialize/deserialize 往返断言，`[0m]` 含 `num()` / `bucketSeries` 输入契约）。
 - `node scripts/smoke-host.mjs` → 十二条断言：cache/event regressions、routes survive no timer、**loopback guard**、**cache key namespace**、**export one-pass path**（含公式字段整体引用与列数校验）、client contract check（含 `lib/client.js` 数组参数必须是 JSON 编码）、**list-param comma encoding**、**bad-request 400 contract**、**single-flight version stamp**、**empty corpus prunes state**、**session retry budget resets**、**usage cache key whitelist**。
 - `node scripts/client-check.mjs` → 客户端半边门禁：`src/client/**` 逐模块 `node --check`、纯模块单测（格式化/图表数学/主题/host 数组编码/CSS 注入器）、用引擎真实 payload 做 React SSR 渲染、以及构建产物的 loader/slot 契约（109 条断言）。
+- `node scripts/capture-screenshots.mjs [--range 30d] [--dark]` → README 截图重拍：**默认匿名化**（`project-a…`）并在渲染后断言页面里 0 个真实标识、0 条盘符路径；`--raw` 才逐字渲染（产物禁止提交）。图片可再用系统 OCR 复核（旧图做阳性对照）。
 - `node scripts/verify-pack.mjs`（无参 = 校验仓库根目录；跳过 `node_modules`/`.git`/`.audit`/`picture`）。
 - The plugin is a **bundle**: `package.json` declares `dsh.bundle.patch: ./cordis.patch.yml` (self-insert row), so `dsh plugin --profile web add @skkjkk/dsh-usage-dashboard` installs it AND auto-appends it to the profile's `dsh.profile.bundles` (reconcilePlugins). The boot process applies each bundle's own patch — no manual cordis.yml/cordis.patch.yml editing. Verify with `scripts/verify-pack.mjs` after packing.

@@ -2,6 +2,26 @@
 
 All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 
+## [Unreleased]
+
+> 审计 F21（剩余任务 B1）：README 内联的 `picture/*.png` 经 OCR 确认含真实项目名，而它们发布在 `raw.githubusercontent.com` 上。本段只动**截图流水线与图片资产**：未改 `src/`、未 bump `CACHE_FORMAT_VERSION`、未 bump 版本号（是否随 0.3.20 发布由 A1/A2 决定）。
+
+### 截图匿名化（隐私）
+
+- **问题**：`scripts/capture-screenshots.mjs` 把从真实 `/dash-api/*` 抓的 fixture 逐字渲染，于是 `meta.projects[].title`（真实目录名）、`meta.projects[].id`（绝对 cwd 路径）、`meta.dist.projects[].label` 与 `detail.rows[].project` 都进了 PNG。OCR 在旧图里直接读出 `05-研究生-毕业论文`、`DeepSeek-harness`、`dsh-usage-dashboard` 等真实名。
+- **修法**：脚本默认**在渲染前匿名化**——按最宽窗口（90d→today）的项目分布排序，把 44 个 id/title/label 映射为 `project-a`、`project-b`…；`detail.rows[].project` 存的是 **title**，因此按各窗口里的 id↔title 配对走同一映射。只有 `--raw` 才逐字渲染，且会打印"不要提交"的警告。
+- **守卫（会真正失败）**：渲染完成、截图之前断言**页面画不出任何真实标识**——收集 body 下全部文本节点（SVG `<text>` 在内，跳过注入的 `<style>`/`<script>`）与 `title`/`aria-label`/`placeholder`/`alt` 属性，去空白小写后与 44 个真实名逐一比对，命中即抛 `anonymization leak …`（截图一张都不会写）。另加一条**与 fixture 无关**的兜底：任何 `X:/`、`X:\` 形式的盘符路径被画到页面上即失败——将来若有人把 cwd 渲染进 UI，即使白名单里没有它也会被拦下。
+- **反证测试**：把脚本里的三处 fixture 重写改成 no-op 后运行，立即以 `anonymization leak — real project identifier painted on the page: DeepSeek-harness | dsh-daily-checkin | …` 退出且不产出图片（本机已验），确认断言不是空转。
+- **只留被审阅的 6 张**：脚本末尾删除 `picture/` 中非 README 引用的产物（`dashboard-full` / `records` / `radar` / `cache-insight`，`--keep-all` 可退出），避免未审阅的裁剪图作为未跟踪文件被顺手提交。
+- **重拍 + 复核**：6 张（浅色 30d 与深色）已重新生成；对**图片本身**做 OCR 复核，44 个真实名 **0 命中**。OCR 检测器以 HEAD 旧图做**阳性对照**：同样 44 个名字在旧图里命中 15 处（`calendar-records` 3 / `dashboard-dark` 7 / `distributions` 5），证明检测有效而非静默通过。
+- 顺带修掉脚本头注释里过期的一次性依赖说明（`react` / `react-dom` / `playwright` 已是 devDependencies，剩余任务 E4）。
+
+### 历史里仍未清除的图（B2，待决定）
+
+- 全历史普查：曾入库的图片 blob 共 **20 个**，逐张 OCR 后 **5 个**含真实项目名——`803268e4` 的 `picture/{calendar-records,dashboard-dark,distributions}.png`（本次被替换的旧图，仍可从 `origin/main` 到达）与 `0c031f8f` 已删除的 `picture/Snipaste_2026-08-19_21-29-29.png`、`..._21-29-53.png`；其余 15 个（`dashboard-overview` / `radar-cache` / `trend-heatmap` 与根目录 `cache-*` / `radar-v2-*` / `radar-v3-final`）OCR 未见项目名。
+- 文本历史是干净的：`selection-translator` / `05-研究生-毕业论文` / `paismart` / `scholarship-2026` / `06-Agentworkspace` / `ideacode` / `evoagent` 全历史 pickaxe 均 0 命中——泄露面就是图片。
+- 彻底清除需 `git filter-repo --path picture/ --invert-paths`（一次覆盖两批图）→ 重新提交新图 → 强推 → GitHub Support 请求清理不可达对象 → 通知已有 clone/fork。属破坏性操作，**未执行**。
+
 ## [0.3.19] - 2026-10-14
 
 > 审计 F16：客户端半边是 **1907 行单文件 + 隐式全局 + 构建期字符串替换**，源码**不是合法 JS**（`node --check src/client.js` 直接报 `Illegal return statement`），因此无法 lint、无法单测，任何改动都只能靠"改完看截图"。本版把它拆成真正的 ESM 模块树，并用 **esbuild** 取代正则改写。**未 bump `CACHE_FORMAT_VERSION`**（没碰取数/折叠语义）。
