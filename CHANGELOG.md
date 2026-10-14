@@ -2,6 +2,81 @@
 
 All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 
+## [0.3.18] - 2026-10-14
+
+> 承接 0.3.17 之后一轮独立复审（对 0.3.17 工作树只读复核 + 合成数据复现）。本版处理其中**已复现的确定缺陷**，并为每条补上会真正失败的回归守卫。`CACHE_FORMAT_VERSION` 17 → 18（seed 折叠状态入缓存，见下）。
+
+### 导出 CSV 字段合法性（复审新发现，高）
+
+- **问题**：`csvCell` 的公式防护把前导单引号放在 CSV 引号**之外**（`'"{值}"'`）。值本身含逗号时，外层引号不在字段首字节，标准 CSV 解析会把一个字段拆成两列——项目名 `=1,=2` 导出后被解析成 **9 列**（应为 8），且第二段以 `=` 起始。这是格式错误（拆列），公式是否被表格软件执行取决于软件，未做验证。
+- **修法**：先给值加前导单引号，再整体加 CSV 引号（`"'=1,=2"`）。
+- **守卫**：smoke 新增合成导出用例——含逗号与引号的 `=...` 模型名必须仍是**一个**合法字段、每个字段解析后恰好 8 列、解析结果以字面单引号开头、行数与 `rows` 一致。
+
+### fork-seed 增量折叠与全量折叠不一致（复审新发现，高）
+
+- **问题**：`isSeeded` 前缀在标记到达前被 `flushSeedPending` 当「无标记」全量折叠，标记随后到达也无法撤销已计入的种子 token；跨启动命中磁盘缓存时 seed 状态不落盘（`deserializeRollup` 无条件置 `_seedCut = null`），续算继续分叉。合成复现：完整折叠 10，截断后续算 210。
+- **修法**：seed cut 改为**可续算**的 `pending{seq,seen}` 状态——标记出现即**重置**上一个 cut 之后的投机折叠（保留 `id`/`cwd`/`title`/`projectTitle` 元数据），`foldSession` 直接就是「逐条 `foldAppend`」，不再有独立的 park/flush 路径；`seedCut`/`seedSkip`/`seededWithoutMarker` 随 `serializeRollup` 往返。
+- **守卫**：bench `[5]` 对 `late`/`twice`/`legacy` 三个夹具**枚举全部截断点**，逐点断言「缓存续算 == 整段折叠」（token 总量、`skippedSeedEvents`、`seededWithoutMarker` 三项）。
+- **缓存**：`CACHE_FORMAT_VERSION` 17 → 18——旧缓存缺 seed 状态且可能已计入继承前缀，必须重折。
+
+### DeepSeek 未知型号被前缀正则计价（复审新发现，高）
+
+- **问题**：`resolveDSModel` 用未锚定前缀正则（`^deepseek-flash`、`^deepseek-v4-?pro`），于是 `deepseek-flash-bogus`、`deepseek-v4-prototype` 被按现行峰谷价计费，而 `priceFor` 对它们返回 null——同一 id 两套结论，未匹配模型被虚报为已定价。
+- **修法**：归一后（剥 provider 作用域 / 市场后缀 / `-free` / `-latest` / 2–8 位日期后缀）**必须精确命中已知别名集合**（flash：`deepseek-flash`、`deepseek-v4-flash`、`deepseek-v4.1-flash`、`deepseek-v4-flash-vision-exp`；pro：`deepseek-v4-pro`、`deepseek-pro`）。
+- **守卫**：bench `[4]` 反向断言 4 个未知 `deepseek-*` 名字在 `resolveDSModel` / `priceForAt` / `priceFor` 三处一致地「未匹配」。
+
+### 窗口下边界的活跃时长（复审新发现，中）
+
+- **问题**：`computeRollupActiveMs` 用 `hk + HOUR <= lo` 跳过桶，而 generation 事件挂在**开始**小时。生成跨过窗口下界时整条区间被跳过（后面的交集裁剪根本没机会执行）：合成 20s 生成跨小时、窗口从跨小时后 10s 开始，应计 5000ms，实测 0。
+- **修法**：多回看一个桶（`hk + 2 * HOUR <= lo`）。记录到的生成区间只有分钟级，一小时回看足够。
+- **守卫**：bench 新增 `[0n]`。
+
+### 边缘窗口的幽灵模型行（复审新发现，低-中）
+
+- **问题**：无 `usage` 的 `assistant/message` 其 evts 用 `fill(0)` 初始化，型号位留 0，而边缘累加只判 `!== null` → 边缘窗口出现 `id=0` 的幽灵模型行（非边缘的聚合路径没有）。
+- **修法**：该分支显式写 `evt[EVT_IDX_MODEL] = null`。
+- **守卫**：bench `[0n]` 断言边缘 usage/detail 里没有 `0`/`''` 型号行。
+
+### 会话全库清空不清理 state（复审新发现，中）
+
+- **问题**：`refreshCorpus` 在会话列表为空时提前 return，跳过删除循环——最后一个会话被删除后，usage/detail/calendar/export 继续返回旧 rollup，直到出现非空列表或重启。合成复现：列表 1 → 空 → 仍报 1。
+- **修法**：区分「**权威地空**」与「**列不出来**」。任一来源真的回答了列表（含空数组）→ 继续走删除循环；来源完全无法运行（无 store、无 query 服务、读取抛错）→ 仍然提前返回，绝不把读取失败当成「全删了」。
+- **守卫**：smoke 新增独立 host 实例：列表清空 + 触发 reconcile + 跨过 2× 宽限期，断言 `sessions === 0`。
+
+### 会话读取失败预算未按「连续」计算（复审新发现，中）
+
+- **问题**：`failCount` 只增不减，成功读取后不重置。三次**相隔很久**的瞬时 I/O 故障（中间都成功恢复）也会耗尽 3 次预算，会话永久不再重试。
+- **修法**：成功读取（缓存命中 / 空日志 / 正常折叠三条路径）重置 `failCount` 与 `lastError`；预算语义变为「连续失败 3 次」。
+- **守卫**：smoke 用真实临时会话库跑 `fail → ok → fail → ok → fail`，断言最后一次失败后 `sessionHealth.retryPending === 1`（未重置时会退化成 0）。反向验证：把重置改回 no-op 后该断言确实失败。
+
+### usage 缓存 key 无界（复审新发现，低-中）
+
+- **问题**：usage 路由把**任意** URL 参数 `...input` 展开进缓存 key，`?junk=1`、`?junk=2`… 可以凭空制造无数缓存条目，每条都付一次全库走查，而查询结果完全相同。
+- **修法**：key 只由 `queryUsage` 真正读取的参数构成（`range`/`from`/`to`/`models`/`projects`/`now`）。
+- **守卫**：smoke 断言 host bundle 里不再出现 `...input`；同时把 smoke 里原本靠未知参数做「换 key」的用例改为变化真实的 `to`（旧写法正是这个无界 key 空间的副产品）。
+
+### 构建：legacy USD CSV 回退漏乘 7（复审新发现，高-条件性）
+
+- **问题**：扩展 CNY CSV 缺失时回退到 `vibe-usage-model-pricing.csv`（USD/M），日志写着「USD × 7」，但解析函数不做换算 → 回退构建会把所有历史价格缩到 **1/7**，且没有任何报错。当前扩展 CSV 存在，正常构建不受影响。
+- **修法**：`parsePricingCsv(text, multiplier)` 显式接收倍率，回退分支传 7；新增构建期自检（`$1.25 → ¥8.75`，CNY 路径不得被缩放），倍率写错即构建失败。
+
+### 构建：空缓存价可见化（审计 F23）
+
+- 47/292 行「缓存读取」列为空 → 生成 0，但该模型仍算「已匹配」，覆盖率不下降、缓存成本静默低估。构建脚本现在**统计并打印**这些行（不失败：部分模型确实没有独立缓存价，需人工核价）。
+
+### 其他
+
+- `export` 在整库聚合**之前**也 `await` 一次让出事件循环（此前只在聚合之后）；聚合与 CSV 字符串构建本身仍是同步的。
+- 旧版创建的缓存目录/临时文件权限在升级后显式收紧（`chmod 0700` 于目录、写入前删除可能残留的 `.tmp`）。
+- 文档：README/README.en 版本号 0.3.16 → **0.3.18**（此前落后于 `package.json`）。
+
+### 未改（说明理由）
+
+- **F11**（`_seenUsage` 无界增长 / 签名合并缺失与显式 0）：继续拒绝其两条子建议，理由同 0.3.17——会直接破坏重放去重与成本准确性。
+- **F14 的「30s 轮询带动三路请求」**：`refreshSeq` 仍会让日历与明细卡随轮询刷新。服务端三端点都有 30s TTL + SWR，本地请求成本极低，而让卡片在长会话中保持新鲜是有意行为，故不改。
+- **F16 / F21 / F23 逐行核价 / F26 / F32**：仍是独立任务（`client.js` 拆模块与打包器、截图匿名化重拍、47 行逐型号核价、一次性脚本、单元测试框架）。
+- **`Date.UTC` 0–99 年映射**：仍按 tripwire 记录，不改分桶数学。
+
 ## [0.3.17] - 2026-10-13
 
 > 承接 0.3.16 的「已知遗留」，处理审计报告中仍未修复的**代码级**发现。F11（`_seenUsage` 淘汰）继续拒绝，F16（client.js 拆模块）与 F21（截图匿名化重拍）属独立任务，未动。

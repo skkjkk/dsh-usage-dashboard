@@ -42,13 +42,29 @@ dsh-usage-dashboard — DSH (DeepSeek Harness) usage statistics dashboard plugin
 - **`durGap`（≤10min 使用口径）是唯一的间隙时长指标**；`presentGap` / `presentMs` 已在 v0.3.13 移除（与 totalMs 高度重复）。
 - **`pruneRollup` 只清 ≥3 的 evts 类型**（工具/step/generation 明细），type 0/1/2 保留；cutoff 之前桶的 activeMs 归零是 documented 近似 → bench `[7]`。
 - **磁盘缓存孤儿清理**依赖 `cacheIndex`/`states` 一致；改动会话删除路径时确认 sweep 仍能匹配（`<id>.json` 命名 + 跳过 `.` 前缀临时文件）。
-- **导出 CSV 公式注入防护**在 `csvCell`：`=+-@` 开头加前导单引号；改动导出格式时不得绕过。
+- **导出 CSV 公式注入防护**在 `csvCell`：`=+-@` 开头先加前导单引号，**再**整体加 CSV 引号（顺序不能反：引号在字段外时，含逗号的值会被解析成多列，后续列可再以 `=` 起始）→ smoke "export formula field"。改动导出格式时不得绕过。
 - **列表查询参数（`models` / `projects`）的线上编码是 JSON 数组**，两端必须同编码：垫片写 `JSON.stringify(v)`，服务端 `parseListParam` 先 JSON 解析、失败再退回逗号（兼容旧书签）。**不能退回 `join(",")`**——`projects` 的值是 cwd，Windows 路径可以含逗号，逗号拼接会把一个项目静默拆成两个不存在的项目、筛选变空且无提示。→ smoke "list-param comma encoding"（同时断言 `lib/client.js` 的数组分支与三条服务端行为，两半必须一致）。
 - **请求缓存条目的版本戳必须是「本次计算启动时」的 `dataVersion`**，且只在 `prev.version <= version` 时落盘：并发结算下先启动的旧计算不得覆盖后启动的新结果，更不得盖成写入时刻的版本（那会让快速路径误判「新鲜」并在整个 TTL 内既不重算也不 SWR）。→ smoke "single-flight version stamp"（第二个独立 host 实例复现冷启动挂起窗口）。
 - **`num()` 契约**：正有限数原样返回；0 / 负数 / NaN / ±Infinity / 字符串 / null / undefined / 对象一律 0。负数归 0 是刻意的（损坏日志不能污染总量与成本），**不要**「修」成放行负值 → bench `[0m]`。`num()` 同时用于 usage 去重签名，缺失字段与显式 0 折叠为同一签名是有意为之（F11 的两条子建议已拒绝）。
 - **`bucketSeries` 超桶上限抛 `RangeError`**，路由据此回 **400 `bad_request`**（不是 500）：超宽 custom 窗口是可由 URL 触发的**输入**错误。改动 `registerJsonRoute` 的 catch 时不要把它并回 500。→ smoke "bad-request 400 contract" + bench `[0m]`。
 - **长上下文阶梯计价未实现**（`LONG_CONTEXT_MODELS` 已作为死代码删除）：事件带不出 prompt 长度分布，价格一律取 CSV 基础档。要接入必须先在折叠阶段记录 usage 级长度分档，别只在取价层加正则。
 - **`Date.UTC(year, …)` 把 0–99 年映射成 1900+年**：`bjDayStart` / `mondayOf` / `hourOf` 都用它构造桶键，因此极端早的 `from`（如公元 1 年）会被静默截到 1901 年、桶数远低于上限而不报错。真实数据都在 1970 年后，构造测试窗口时不要用 year<100（用「N 年前」的相对毫秒数）。
+
+## v0.3.18 变更摘要（2026-10-14）
+
+承接 0.3.17 之后一轮独立复审（对 0.3.17 工作树只读复核 + 合成数据复现），处理其中**已复现的确定缺陷**，每条都补上会真正失败的守卫。**`CACHE_FORMAT_VERSION` 17 → 18**。
+
+1. **导出 CSV 字段合法性**：`csvCell` 把前导单引号放在 CSV 引号之外，含逗号的公式型值被解析成多列（项目名 `=1,=2` → 9 列）。改为「先加引号、再整体加 CSV 引号」；smoke 用合成导出断言每个字段解析后恰好 8 列且以字面单引号开头。
+2. **fork-seed 可续算**（v18）：`pending` cut 在标记到达时**重置**其后的投机折叠，`foldSession` 即「逐条 `foldAppend`」；`seedCut`/`seedSkip`/`seededWithoutMarker` 入缓存往返。bench `[5]` 对三个夹具**枚举全部截断点**。
+3. **DeepSeek 前缀误计价**：`resolveDSModel` 改为「归一 + 剥日期后缀后必须精确命中别名集合」，`deepseek-flash-bogus` / `deepseek-v4-prototype` 不再被计价；bench `[4]` 三处一致性地反向断言。
+4. **窗口下边界活跃时长**：`computeRollupActiveMs` 多回看一个桶，跨窗口下界的生成区间不再整条丢失；bench `[0n]`。
+5. **边缘幽灵模型行**：无 usage 的 `assistant/message` 型号位写 `null`（此前 `fill(0)` + `!== null` 判空 → `id=0` 行）；bench `[0n]`。
+6. **空列表清理 state**：`refreshCorpus` 区分「权威地空」（继续走删除循环）与「列不出来」（仍提前返回）；smoke 独立 host 实例断言清空后 `sessions === 0`。
+7. **读取失败预算按连续计**：成功读取重置 `failCount`/`lastError`；smoke 用真实临时会话库跑 `fail→ok→fail→ok→fail`，断言 `retryPending === 1`（反向验证过：去掉重置即失败）。
+8. **usage 缓存 key 白名单**：只由 `queryUsage` 真正读取的参数构成，未知 URL 参数不再制造无界条目；smoke 断言 bundle 内无 `...input`（原有靠未知参数「换 key」的用例改为变化真实 `to`）。
+9. **构建：legacy USD 回退漏乘 7**：`parsePricingCsv(text, multiplier)` + 构建期自检；**空缓存价行**改为构建期统计打印（审计 F23 的可见化，不失败）。
+10. **其他**：`export` 聚合前也让出一次事件循环；旧缓存目录/临时文件权限显式收紧；README/README.en 版本号对齐到 0.3.18。
+11. **未改**：F11（继续拒绝）、F14 的三路轮询（服务端 SWR 下成本极低，且有意保持卡片新鲜）、F16/F21/F23 逐行核价/F26/F32、`Date.UTC` 0–99 年。
 
 ## v0.3.17 变更摘要（2026-10-13）
 
@@ -102,6 +118,6 @@ dsh-usage-dashboard — DSH (DeepSeek Harness) usage statistics dashboard plugin
 
 - `node --check lib/client.js`, `node --check` (as .mjs) on `lib/index.js` and `lib/core/rollup.js`.
 - `npm run bench` → "all checks passed ✔"（correctness + performance；`[7]` 含 serialize/deserialize 往返断言，`[0m]` 含 `num()` / `bucketSeries` 输入契约）。
-- `node scripts/smoke-host.mjs` → 九条断言：cache/event regressions、routes survive no timer、**loopback guard**、**cache key namespace**、**export one-pass path**、client contract check（含 `lib/client.js` 数组参数必须是 JSON 编码）、**list-param comma encoding**、**bad-request 400 contract**、**single-flight version stamp**。
+- `node scripts/smoke-host.mjs` → 十二条断言：cache/event regressions、routes survive no timer、**loopback guard**、**cache key namespace**、**export one-pass path**（含公式字段整体引用与列数校验）、client contract check（含 `lib/client.js` 数组参数必须是 JSON 编码）、**list-param comma encoding**、**bad-request 400 contract**、**single-flight version stamp**、**empty corpus prunes state**、**session retry budget resets**、**usage cache key whitelist**。
 - `node scripts/verify-pack.mjs`（无参 = 校验仓库根目录；跳过 `node_modules`/`.git`/`.audit`/`picture`）。
 - The plugin is a **bundle**: `package.json` declares `dsh.bundle.patch: ./cordis.patch.yml` (self-insert row), so `dsh plugin --profile web add @skkjkk/dsh-usage-dashboard` installs it AND auto-appends it to the profile's `dsh.profile.bundles` (reconcilePlugins). The boot process applies each bundle's own patch — no manual cordis.yml/cordis.patch.yml editing. Verify with `scripts/verify-pack.mjs` after packing.
