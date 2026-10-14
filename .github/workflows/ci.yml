@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   test:
-    name: build + drift + bench + smoke + pack
+    name: build + drift + unit + bench + smoke + pack
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +34,9 @@ jobs:
             echo "::error::npm run build produced a diff — run 'npm run build' and commit lib/, src/core/pricing.js and package.json."
             exit 1
           fi
+
+      - name: Unit tests (node:test — pure engine + client modules, CSV/query-params)
+        run: npm run test:unit
 
       - name: Bench (engine correctness + performance)
         run: npm run bench

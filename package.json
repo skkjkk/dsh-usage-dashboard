@@ -14,7 +14,8 @@
     "bench": "node scripts/bench.js",
     "smoke": "npm run build && node scripts/smoke-host.mjs",
     "client-check": "node scripts/client-check.mjs",
-    "test": "npm run build && npm run bench && node scripts/smoke-host.mjs && node scripts/client-check.mjs",
+    "test:unit": "node --test",
+    "test": "npm run build && npm run test:unit && npm run bench && node scripts/smoke-host.mjs && node scripts/client-check.mjs",
     "prepublishOnly": "npm run test && node scripts/verify-pack.mjs",
     "verify-pack": "node scripts/verify-pack.mjs"
   },
