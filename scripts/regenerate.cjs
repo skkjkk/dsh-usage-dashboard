@@ -20,17 +20,36 @@ const PACKAGE_ID = existingPkg.name || '@skkjkk/dsh-usage-dashboard'
 // ---------- pricing: CSV → src/core/pricing.js + lib/core/pricing.js ----------
 // 计费标准 = pricing/vibe-usage-model-pricing-extended.csv（CNY 直接定价，无需 × 7）。
 // 列：模型,厂商,输入(¥/M),输出(¥/M),缓存读取(¥/M)。
-function parsePricingCsv(text) {
+// multiplier 只用于旧版 USD CSV 回退：该文件的单价是 $/M，必须 × 7 才是 ¥/M。
+// 少了这一步不会报任何错，只会把历史价格整体缩到 1/7，所以它由下面的自检钉住。
+function parsePricingCsv(text, multiplier) {
+  const scale = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1
   const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim())
   const prices = {}
+  const emptyCache = []
   for (let i = 1; i < lines.length; i++) {
     const parts = lines[i].split(',').map((s) => s.replace(/^"|"$/g, '').trim())
     if (parts.length < 5 || !parts[0]) continue
     const num = (s) => { const n = parseFloat(s); return Number.isFinite(n) && n > 0 ? n : 0 }
     const r6 = (n) => Math.round(n * 1e6) / 1e6
-    prices[parts[0]] = [r6(num(parts[2])), r6(num(parts[3])), r6(num(parts[4]))]
+    // 缓存读取价留空会被静默写成 0，而该行仍算「已匹配」——费用低估且覆盖率仍显示 100%。
+    // 这里只统计并提示：空列未必等于错（部分模型确实没有独立缓存价），需要人工核价。
+    if (!parts[4]) emptyCache.push(parts[0])
+    prices[parts[0]] = [
+      r6(num(parts[2]) * scale), r6(num(parts[3]) * scale), r6(num(parts[4]) * scale)
+    ]
   }
-  return prices
+  return { prices, emptyCache }
+}
+// 自检：回退分支的 ×7 是纯算术，必须在构建期就能失败，而不是等用户看到 1/7 的费用。
+{
+  const sample = '模型,厂商,输入($/M),输出($/M),缓存读取($/M)\ngpt-5,OpenAI,1.25,10,0.125\n'
+  const scaled = parsePricingCsv(sample, 7).prices['gpt-5']
+  if (scaled[0] !== 8.75 || scaled[1] !== 70 || scaled[2] !== 0.875) {
+    throw new Error('legacy USD pricing must be multiplied by 7, got ' + JSON.stringify(scaled))
+  }
+  const direct = parsePricingCsv(sample, 1).prices['gpt-5']
+  if (direct[0] !== 1.25) throw new Error('CNY pricing must not be scaled, got ' + JSON.stringify(direct))
 }
 function pricingSource() {
   // 优先使用 CNY 格式的 extended CSV；若不存在则回退到旧版 USD CSV（× 7）
@@ -38,12 +57,18 @@ function pricingSource() {
   const original = path.join(root, 'pricing', 'vibe-usage-model-pricing.csv')
   let text = null
   let csvFile = null
+  let multiplier = 1
   try { text = fs.readFileSync(extended, 'utf8'); csvFile = extended; console.log('pricing csv:', csvFile, '(CNY direct)') } catch { /* next */ }
   if (!text) {
-    try { text = fs.readFileSync(original, 'utf8'); csvFile = original; console.log('pricing csv:', csvFile, '(USD × 7)') } catch {}
+    try {
+      text = fs.readFileSync(original, 'utf8')
+      csvFile = original
+      multiplier = 7 // legacy CSV 的单价是 USD/M tokens
+      console.log('pricing csv:', csvFile, '(USD × 7)')
+    } catch {}
   }
   if (!text) throw new Error('pricing CSV not found (expected pricing/vibe-usage-model-pricing-extended.csv or pricing/vibe-usage-model-pricing.csv)')
-  const prices = parsePricingCsv(text)
+  const { prices, emptyCache } = parsePricingCsv(text, multiplier)
   const vendors = {}
   const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim())
   for (let i = 1; i < lines.length; i++) {
@@ -62,6 +87,11 @@ function pricingSource() {
   fs.writeFileSync(path.join(root, 'src', 'core', 'pricing.js'), src)
   fs.writeFileSync(path.join(outDir, 'core', 'pricing.js'), src)
   console.log('pricing models:', Object.keys(prices).length, ' vendors:', Object.keys(vendors).length)
+  if (emptyCache.length) {
+    // 不是构建失败：空列可能确实没有独立缓存价。但必须可见——这些行会生成 0，
+    // 而该模型仍被标为「已匹配」，缓存读取按 ¥0 计费且覆盖率不下降（审计 F23）。
+    console.log('pricing warning: ' + emptyCache.length + ' row(s) have no cache-read price → generated as 0: ' + emptyCache.join(', '))
+  }
   return src
 }
 pricingSource()

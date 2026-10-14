@@ -1091,9 +1091,12 @@ export function apply(ctx, config) {
       try {
         await previous
         const rollups = await getRollups()
+        // 让出事件循环两次：一次在整库聚合之前（`previous` 串行闸刚放开，其它请求
+        // 有机会先跑），一次在聚合与 CSV 字符串构建之间。聚合与 buildCsv 本身仍是
+        // 同步的，所以导出大库时宿主线程仍会被占用一段——只是不再和排队请求叠在一起。
+        await new Promise((resolve) => setTimeout(resolve, 0))
         // 一次聚合取全。旧实现「每 200 行重跑一次全库聚合」的代价是 O(页数 × 库大小)。
         const page = queryDetailAll(rollups, normalized)
-        // 让出事件循环：大库导出期间宿主 webserver 仍能响应其它请求。
         await new Promise((resolve) => setTimeout(resolve, 0))
         return buildCsv(page.rows || [])
       } finally {
