@@ -32,6 +32,13 @@ All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 - **D3 渲染快照**：`test/render-snapshot.test.js` + `test/snapshots/`（11 个组件快照、约 71 KB），夹具用固定时间戳（不取 `Date.now()`），`UPDATE_SNAPSHOTS=1` 才刷新；反证：改一个字符即失败。同时把「StatCard 的 `useTween` 在 SSR 下渲染初始值 0」这一事实显式钉住（快照只钉结构，数值由引擎/格式化测试覆盖）。
 - `verify-pack` 增加必需文件（csv/query-params/session-files）与 `lib/` 悬空 import 扫描；AGENTS 增加「纯逻辑必须能被单测」「host 纯逻辑必须住在 core」「`lib/core/` 必须是完整副本」三条 tripwire。**未改 `src/core/rollup.js` 的取价/折叠语义，未 bump `CACHE_FORMAT_VERSION`**。
 
+### 脚本债（E1 / E2 / E3 / E4）
+
+- **E1 `scripts/debug-total.js` 只认旧布局**：日志文件名判定改为复用 `src/core/session-files.js` 的 `pickLogFile`（与宿主同源），并跳过 legacy 裸 uuid 目录、支持未压缩的 `session.v<N>.jsonl`、从会话头读真实 `cwd`（目录名只作回退）。**实测差异**：旧脚本在本机 378 个会话里只找到 **323** 个，且「今天 / 24H / 7D」三个窗口的 KPI 交叉校验全是 **0m / 0 会话**——因为它读的是历史镜像 `session.jsonl.zstd`；修好后 378 个会话，今天 21.2h / 24H 24.0h / 7D 138.3h，与引擎 `queryUsage` 一致。
+- **E2 `scripts/oneoff/diag-step-fields.mjs` 的无边界循环**：`firstFrame` 现在校验 zstd magic、检查块头与载荷越界、并把块头数封顶（旧实现碰到全 0 块头时 `v & 1` 永不成立而 `p` 一直增长 → 真死循环）；同时导出 `firstFrame`、给主流程加「直接运行才执行」判定与损坏文件的跳过日志。`test/oneoff-diag.test.js` 用真实压缩帧做阳性对照，再以全 0 / 截断 / 载荷越界 / 保留块类型四种损坏输入断言**立即抛错**。**A/B 实测**：新旧脚本在真实会话库上前 30 行输出**逐字相同**（改动只把死循环变成明确报错）。
+- **E3 删除 5 个永久失效的 `dark-*.cjs`**（`dark-audit` / `dark-codemod` / `dark-debug` / `dark-dump` / `dark-js`）：目标文件 `src/client.js` 已在 0.3.19 拆成 `src/client/` 模块树，其中两个 codemod 还会**原地改写源码**且不备份，留着只会诱导误用。`scripts/oneoff/README.md` 改为记录删除原因与考古方法（`git show v0.3.19:scripts/oneoff/dark-codemod.cjs`）。
+- **E4**（随 B1 完成）：`capture-screenshots.mjs` 头部注释里的「一次性依赖」改为 devDependencies。**未改任何插件运行时代码，未 bump `CACHE_FORMAT_VERSION`。**
+
 ## [0.3.19] - 2026-10-14
 
 > 审计 F16：客户端半边是 **1907 行单文件 + 隐式全局 + 构建期字符串替换**，源码**不是合法 JS**（`node --check src/client.js` 直接报 `Illegal return statement`），因此无法 lint、无法单测，任何改动都只能靠"改完看截图"。本版把它拆成真正的 ESM 模块树，并用 **esbuild** 取代正则改写。**未 bump `CACHE_FORMAT_VERSION`**（没碰取数/折叠语义）。

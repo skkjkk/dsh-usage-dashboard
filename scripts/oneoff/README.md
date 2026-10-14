@@ -5,19 +5,21 @@ script、不在 CI、不被其它脚本 import）。留在这里只为保留排�
 
 ## 警告
 
-- **`dark-codemod.cjs` / `dark-js.cjs` 会原地改写 `src/client.js`**。
-  在仓库里直接运行它们会污染工作树，且不会自动备份。运行前请先 commit 或复制一份。
-  **注意：`src/client.js` 已于 0.3.19 拆分为 `src/client/` 模块树，这些脚本的目标文件已不存在，不要运行。**
-- `diag-step-fields.mjs` 读取损坏日志时没有边界检查，理论上可能死循环。
 - 这些脚本依赖的是**当时的**日志格式与路径约定，不保证在今天的 DSH 版本上仍可用。
+- `diag-step-fields.mjs` 读取损坏日志时**曾有**无边界循环（`for (;;)`）的风险；
+  0.3.20 起 `firstFrame` 已加 magic 校验、块头与载荷越界检查、块头上限，并且
+  `test/oneoff-diag.test.js` 用「截断帧 / 全 0 帧必须抛错而不是挂住」把它钉住。
+- **`dark-*.cjs`（5 个）已在 0.3.20 删除**：目标文件 `src/client.js` 于 0.3.19 被拆分为
+  `src/client/` 模块树，这些 codemod（其中 `dark-codemod.cjs` / `dark-js.cjs` 会**原地改写
+  源码**、且不备份）已永久失效，留着只会诱导误用。需要考古时从 0.3.19 及更早的 tag 取回
+  （例如 `git show v0.3.19:scripts/oneoff/dark-codemod.cjs`）。
 
 ## 清单
 
 | 脚本 | 用途 |
 | --- | --- |
-| `dark-audit.cjs` / `dark-js.cjs` / `dark-codemod.cjs` / `dark-dump.cjs` / `dark-debug.cjs` | 深色模式 token 化的一次性迁移与审计工具 |
 | `diag-active-ms.mjs` | 逐会话核对 activeMs 口径 |
-| `diag-step-fields.mjs` | step 事件字段探查 |
+| `diag-step-fields.mjs` | step 事件字段探查（`firstFrame` 已导出，供 `test/oneoff-diag.test.js` 断言边界） |
 | `inspect-events.mjs` | 单会话事件转储 |
 
 仍在维护、且在 README/AGENTS/CI 中有据可查的诊断脚本保留在 `scripts/`：

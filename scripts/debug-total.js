@@ -13,6 +13,10 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { zstdDecompressSync } from 'node:zlib'
 import { foldSession, queryUsage, rangeBounds } from '../src/core/rollup.js'
+// 会话日志文件名判定与宿主同源（剩余任务 E1）。旧版硬编码 session.jsonl.zstd：
+//   * 只有新布局（session.v<N>.jsonl.zstd）的目录 → statSync 失败，整个会话被跳过；
+//   * 两种文件并存的目录（本机 180+ 个）→ 读到的是历史镜像，统计静默偏小。
+import { pickLogFile } from '../src/core/session-files.js'
 
 const ROOT = process.argv[2] || ((process.env.USERPROFILE || process.env.HOME || '').replace(/\\/g, '/') + '/.dsh/sessions')
 const HOUR = 3600000
@@ -67,7 +71,18 @@ function scanZstdFrames(buffer) {
   return frames
 }
 
+function readJsonlText(text) {
+  const lines = []
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue
+    try { lines.push(JSON.parse(line)) } catch { /* partial line */ }
+  }
+  return lines
+}
+
 function readSessionFile(file) {
+  // 无压缩的历史布局（session.jsonl / session.v<N>.jsonl）直接按行解析。
+  if (!file.endsWith('.zstd')) return readJsonlText(readFileSync(file, 'utf8'))
   const buf = readFileSync(file)
   const lines = []
   for (const { start, end } of scanZstdFrames(buf)) {
@@ -86,13 +101,23 @@ function readSessionFile(file) {
 // ---------- main ----------
 const projects = readdirSync(ROOT)
 const sessions = []
+const logLayouts = new Map()
 for (const proj of projects) {
   const projDir = join(ROOT, proj)
-  if (!statSync(projDir).isDirectory()) continue
+  let isDir = false
+  try { isDir = statSync(projDir).isDirectory() } catch { /* vanished */ }
+  if (!isDir) continue
   let ids
   try { ids = readdirSync(projDir) } catch { continue }
   for (const id of ids) {
-    const file = join(projDir, id, 'session.jsonl.zstd')
+    // 与宿主同口径：只认现行 session-<id> 布局，legacy 裸 uuid 目录（旧 subagent 日志）不读。
+    if (!/^session-/.test(id)) continue
+    const dir = join(projDir, id)
+    let files
+    try { files = readdirSync(dir) } catch { continue }
+    const logName = pickLogFile(files)
+    if (!logName) continue
+    const file = join(dir, logName)
     try {
       if (!statSync(file).isFile()) continue
     } catch { continue }
@@ -101,21 +126,26 @@ for (const proj of projects) {
     if (!events || events.length === 0) continue
     const rollup = foldSession(events)
     if (rollup.last === null) continue
+    // 首行是会话头（type:'session'），带真实 cwd——比反解目录名可靠；目录名只作回退。
+    const header = events[0] && events[0].type === 'session' ? events[0] : null
     rollup.id = id
-    rollup.cwd = proj.replace(/^--/, '').replace(/--$/, '')
-    rollup.projectTitle = rollup.cwd.split(/[\\/]/).filter(Boolean).pop() || '未分组'
+    rollup.cwd = (header && header.cwd) || proj.replace(/^--/, '').replace(/--$/, '')
+    rollup.projectTitle = String(rollup.cwd).split(/[\\/]/).filter(Boolean).pop() || '未分组'
+    rollup.logFile = logName
     rollup.nEvents = events.length
     rollup.nMsg = events.filter((e) => e.type !== 'step/start').length
     sessions.push(rollup)
+    logLayouts.set(logName, (logLayouts.get(logName) || 0) + 1)
   }
 }
 console.log('sessions found: ' + sessions.length + '  (root: ' + ROOT + ')')
 if (sessions.length === 0) process.exit(1)
+console.log('log layout used: ' + [...logLayouts.entries()].sort().map(([n, c]) => n + ' ×' + c).join(', '))
 console.log('\nper-session detail (msg = non step/start events):')
 for (const r of sessions.sort((a, b) => b.last - a.last)) {
   const f = r.first ? new Date(r.first).toLocaleString('zh-CN', { hour12: false }) : '—'
   const l = r.last ? new Date(r.last).toLocaleString('zh-CN', { hour12: false }) : '—'
-  console.log('  ' + r.id.padEnd(40) + ' evts=' + String(r.nEvents).padStart(6) + ' msg=' + String(r.nMsg).padStart(6) + '  ' + f + ' → ' + l)
+  console.log('  ' + r.id.padEnd(40) + ' evts=' + String(r.nEvents).padStart(6) + ' msg=' + String(r.nMsg).padStart(6) + '  ' + f + ' → ' + l + '  ' + r.logFile)
 }
 
 function fmtDur(ms) {
