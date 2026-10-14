@@ -1,8 +1,8 @@
 // 生成 dsh-usage-dashboard 正式插件包：从 src/ 适配为 lib/
-// - src/host.js        → lib/index.js      （ESM host bundle）
-// - src/client.js      → lib/client.js     （UMD client bundle）
-// - src/core/rollup.js → lib/core/rollup.js（纯聚合引擎，host 内部引用）
-// - pricing CSV        → src/core/pricing.js + lib/core/pricing.js（计费表）
+// - src/host.js         → lib/index.js      （ESM host bundle）
+// - src/client/*.js     → lib/client.js     （esbuild 打包 + __ModuleLoader__ 外壳）
+// - src/core/rollup.js  → lib/core/rollup.js（纯聚合引擎，host 内部引用）
+// - pricing CSV         → src/core/pricing.js + lib/core/pricing.js（计费表）
 // 用法：node scripts/regenerate.cjs
 const fs = require('fs')
 const os = require('os')
@@ -456,46 +456,42 @@ assertNoUndeclaredConstants(hostOut, 'lib/index.js')
 console.log('host lib/index.js:', hostOut.length, 'bytes')
 
 // ---------- client ----------
-const clientSrc = fs.readFileSync(path.join(root, 'src', 'client.js'), 'utf8')
-let c = clientSrc
-  // ctx.interval → 标准 setInterval（bundle client 无 interval；正则匹配任意延迟与
-  // 任意 load 调用形态，此前写死 60000 导致 30000 轮询时代换静默失效）
-  .replace(/ctx\.interval\(\(\) => load\([^)]*\), (\d+)\)/g, (m, delay) => 'setInterval(() => load(true), ' + delay + ')')
-  .replace('return () => { off() }', 'return () => { clearInterval(off) }')
-  // styles.insert(CSS) 是原型遗留：dsh 没有 styles 服务，改为向 document.head 注入 <style> 标签
-  .replace(
-    "ctx.effect(() => styles.insert(CSS))",
-    `ctx.effect(() => {
-        const tagId = ${JSON.stringify(PACKAGE_ID + '/dashboard.module.css')};
-        if (typeof document !== 'undefined') {
-          const old = document.querySelectorAll('style[data-plugin-css=' + JSON.stringify(tagId) + ']');
-          for (var _i = 0; _i < old.length; _i++) old[_i].remove();
-          const tag = document.createElement('style');
-          tag.dataset.plugin = ${JSON.stringify(PACKAGE_ID)};
-          tag.dataset.pluginCss = tagId;
-          tag.textContent = CSS;
-          document.head.appendChild(tag);
-          return () => { tag.remove() };
-        }
-      })`
-  )
-// 顶层 `return {`（列 0）→ module.exports 赋值（嵌入 UMD factory）。
-// 用行首锚点，而不是裸 `return {` 子串替换：后者会命中任意嵌套函数里的第一个
-// `return {`，源码形态一变（例如在 inject 前加一行注释）就会静默改错位置——而且
-// 原实现的「守卫」条件是替换结果里含 module.exports，恒真，等于没有守卫（审计 F19）。
-const topReturnRe = /^return \{\s*$/m
-if (!topReturnRe.test(c)) {
-  throw new Error('client transform: could not find the top-level `return {` block in src/client.js')
+// src/client/ 是**真正的 ESM 模块树**（合法 JS、显式 import、可 node --check、可单测），
+// 这里用 esbuild 打包成一个自包含文件，再套上 DSH client runtime 要求的
+// window.__ModuleLoader__.load({ id, factory }) 外壳。
+// 旧实现把 src/client.js（一个「函数体片段」）用正则改写成 lib/client.js：
+// 源码不是合法 JS、隐式依赖 React/host/styles 全局、替换位置一旦漂移就静默改错
+// （审计 F16/F19）。现在构建只做打包，不再改写任何源码。
+const esbuild = require('esbuild')
+const clientDir = path.join(root, 'src', 'client')
+const clientEntry = path.join(clientDir, 'index.js')
+
+// plugin.js 的 PLUGIN_ID 必须与 package.json 的 name 一致：它决定 CSS <style> 标签的
+// data-plugin-css 与 loader id。漂移会让样式清理失配，且此前完全不可见。
+{
+  const pluginSrc = fs.readFileSync(path.join(clientDir, 'plugin.js'), 'utf8')
+  const m = /export const PLUGIN_ID = '([^']+)'/.exec(pluginSrc)
+  if (!m) throw new Error('client plugin.js: PLUGIN_ID not found')
+  if (m[1] !== PACKAGE_ID) {
+    throw new Error('client plugin.js PLUGIN_ID (' + m[1] + ') != package.json name (' + PACKAGE_ID + ')')
+  }
 }
-c = c.replace(topReturnRe, 'module.exports = {')
-if (c.includes('ctx.interval(') || c.includes('styles.insert(')) {
-  throw new Error('client transform left host-only API references in lib/client.js')
-}
-if (!c.includes('clearInterval(off)')) {
-  throw new Error('client transform did not produce interval cleanup')
-}
-if (!c.includes('module.exports = {')) {
-  throw new Error('client transform did not produce module.exports')
+
+const bundle = esbuild.buildSync({
+  entryPoints: [clientEntry],
+  bundle: true,
+  write: false,
+  format: 'cjs',
+  platform: 'browser',
+  target: 'es2020',
+  // react 由宿主 client runtime 提供：打包器保留 require('react')，由 loader 解析。
+  external: ['react'],
+  legalComments: 'inline',
+  logLevel: 'silent'
+})
+const bundled = bundle.outputFiles[0].text
+if (!bundled.includes("require(\"react\")") && !bundled.includes("require('react')")) {
+  throw new Error('client bundle does not require("react") — the host runtime must provide it')
 }
 
 const clientOut = `window.__ModuleLoader__.load({
@@ -503,33 +499,17 @@ const clientOut = `window.__ModuleLoader__.load({
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;
-    Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-    const React = require("react");
-    // host 桥垫片：host.call(method, args) → GET /dash-api/<method>?<query>
-    const host = {
-      call: (method, args) => {
-        const q = new URLSearchParams();
-        for (const [k, v] of Object.entries(args || {})) {
-          if (v === null || v === undefined || v === "") continue;
-          // 列表参数用 JSON 编码，不能用 join(",")：projects 的值是项目 id（即 cwd），
-          // Windows 路径可以含逗号，逗号拼接会把「一个含逗号的项目」静默拆成两个不存在的
-          // 项目，筛选结果直接变空且没有任何提示（审计 F14）。服务端 parseListParam 先按
-          // JSON 解析、失败再退回逗号，旧链接保持可用。
-          if (Array.isArray(v)) { if (v.length) q.set(k, JSON.stringify(v)); }
-          else q.set(k, String(v));
-        }
-        const qs = q.toString();
-        return fetch("/dash-api/" + method + (qs ? "?" + qs : "")).then((r) => r.json());
-      }
-    };
-${c}
+${bundled}
+    if (!Object.prototype.hasOwnProperty.call(module.exports, Symbol.toStringTag)) {
+      Object.defineProperty(module.exports, Symbol.toStringTag, { value: "Module" });
+    }
     return module.exports;
   }
 });
 `
 
 fs.writeFileSync(path.join(outDir, 'client.js'), clientOut)
-console.log('client lib/client.js:', clientOut.length, 'bytes')
+console.log('client lib/client.js:', clientOut.length, 'bytes (esbuild bundle of src/client/)')
 
 const existingPkgPath = path.join(root, 'package.json')
 

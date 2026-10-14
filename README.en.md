@@ -281,7 +281,7 @@ The verifier checks that host / core / client bundles load, the bundle patch and
 
 ## Version
 
-Current release: `0.3.18` (see [CHANGELOG.md](CHANGELOG.md))
+Current release: `0.3.19` (see [CHANGELOG.md](CHANGELOG.md))
 
 ## Extending & customizing
 
@@ -289,12 +289,12 @@ This project encourages you to use AI-assisted development to add or remove feat
 
 Common directions:
 
-- **Remove cards**: delete the corresponding entry from the `cards2` array in `src/client.js`
-- **Add charts**: append a section in `src/client.js` that consumes the existing `/dash-api/usage` data
+- **Remove cards**: delete the corresponding entry from the `cards2` array in `src/client/dashboard.js`
+- **Add charts**: add a module under `src/client/cards/` (see `trend.js`) and mount it in `src/client/dashboard.js`
 - **Custom pricing**: edit `pricing/vibe-usage-model-pricing-extended.csv` then run `npm run build`
 - **Other data sources**: the host half `src/core/rollup.js` is a pure aggregation engine — fork it and swap the event source
 
-The source layout is clean (`src/core/rollup.js` aggregation, `src/host.js` routes, `src/client.js` UI), and `npm test` covers the core logic, making it easy for AI to jump in and modify. PRs sharing your customizations are welcome.
+The source layout is clean (`src/core/rollup.js` aggregation, `src/host.js` routes, `src/client/` UI modules), and `npm test` covers the core logic, making it easy for AI to jump in and modify. PRs sharing your customizations are welcome.
 
 ## License
 

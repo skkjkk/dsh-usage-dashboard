@@ -7,6 +7,7 @@ script、不在 CI、不被其它脚本 import）。留在这里只为保留排�
 
 - **`dark-codemod.cjs` / `dark-js.cjs` 会原地改写 `src/client.js`**。
   在仓库里直接运行它们会污染工作树，且不会自动备份。运行前请先 commit 或复制一份。
+  **注意：`src/client.js` 已于 0.3.19 拆分为 `src/client/` 模块树，这些脚本的目标文件已不存在，不要运行。**
 - `diag-step-fields.mjs` 读取损坏日志时没有边界检查，理论上可能死循环。
 - 这些脚本依赖的是**当时的**日志格式与路径约定，不保证在今天的 DSH 版本上仍可用。
 

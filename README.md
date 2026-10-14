@@ -281,7 +281,7 @@ node scripts/verify-pack.mjs <package-dir>
 
 ## 版本
 
-当前发布版本：`0.3.18`（变更记录见 [CHANGELOG.md](CHANGELOG.md)）
+当前发布版本：`0.3.19`（变更记录见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 扩展与定制
 
@@ -289,12 +289,12 @@ node scripts/verify-pack.mjs <package-dir>
 
 几个常见方向：
 
-- **删减卡片**：不用的指标卡直接在 `src/client.js` 的 `cards2` 数组中移除对应项即可
-- **新增图表**：在 `src/client.js` 中追加一个 section，调用已有的 `/dash-api/usage` 数据
+- **删减卡片**：不用的指标卡直接在 `src/client/dashboard.js` 的 `cards2` 数组中移除对应项即可
+- **新增图表**：在 `src/client/cards/` 下加一个模块（参考 `trend.js`），再在 `src/client/dashboard.js` 里挂上去
 - **自定义定价**：编辑 `pricing/vibe-usage-model-pricing-extended.csv` 后 `npm run build` 即可生效
 - **接入其他数据源**：host 半边的 `src/core/rollup.js` 是纯聚合引擎，可以 fork 后替换事件源
 
-源码结构清晰（`src/core/rollup.js` 聚合、`src/host.js` 路由、`src/client.js` 界面），`npm test` 覆盖核心逻辑，适合 AI 直接上手改。欢迎提交 PR 分享你的定制版本。
+源码结构清晰（`src/core/rollup.js` 聚合、`src/host.js` 路由、`src/client/` 界面模块），`npm test` 覆盖核心逻辑，适合 AI 直接上手改。欢迎提交 PR 分享你的定制版本。
 
 ## License
 

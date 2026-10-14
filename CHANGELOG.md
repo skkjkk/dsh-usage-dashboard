@@ -2,6 +2,36 @@
 
 All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 
+## [0.3.19] - 2026-10-14
+
+> 审计 F16：客户端半边是 **1907 行单文件 + 隐式全局 + 构建期字符串替换**，源码**不是合法 JS**（`node --check src/client.js` 直接报 `Illegal return statement`），因此无法 lint、无法单测，任何改动都只能靠"改完看截图"。本版把它拆成真正的 ESM 模块树，并用 **esbuild** 取代正则改写。**未 bump `CACHE_FORMAT_VERSION`**（没碰取数/折叠语义）。
+
+### 源码：`src/client.js` → `src/client/` 模块树
+
+- `index.js` 入口（`inject: ['slots']` + `apply(ctx)`）、`react.js`（React/h 的唯一来源）、`host.js`（`/dash-api/*` 桥，含 JSON 数组编码）、`plugin.js`（包名 + CSS 标签 id）、`css.js`（样式表 + 幂等注入器）、`theme.js`（常量与文案）、`icons.js`、`format.js`（纯格式化）、`chart-math.js`（热力分档/雷达归一，纯函数）、`hooks.js`、`primitives.js`（Segmented/Dropdown/ModelSelect/FilterBar/Popup/StatCard…）、`prefs.js`、`nav-icon.js`，以及 `cards/` 下的 `trend.js` / `heat.js` / `radar.js` / `cache.js` / `calendar.js` / `records.js` 与 `dashboard.js`。
+- **不再有隐式全局**：`React` / `host` 改为显式 `import`；`styles.insert(CSS)` 与 `ctx.interval(...)` 不再是"构建期垫片补出来的东西"，而是 `css.js` 的 `injectStyles()` 与 `dashboard.js` 里的 `setInterval` 真实代码。
+- **源码即最终形态**：每个模块都能 `node --check` 通过；纯逻辑模块（format / chart-math / host / css / plugin）与组件都能被直接 import 测试。
+
+### 构建：正则改写 → esbuild
+
+- `scripts/regenerate.cjs` 的客户端段改为 `esbuild.buildSync({ bundle: true, format: 'cjs', external: ['react'] })`，产物套在 DSH 要求的 `window.__ModuleLoader__.load({ id, factory })` 外壳里；`require('react')` 仍由宿主 client runtime 解析。
+- 删除的脆弱逻辑：`ctx.interval(...)` 正则替换、`styles.insert(CSS)` 字符串替换、顶层 `return {` → `module.exports = {` 的替换（及其恒真"守卫"，审计 F19）。
+- 新增构建期断言：`src/client/plugin.js` 的 `PLUGIN_ID` 必须等于 `package.json` 的 `name`（它决定 CSS 标签 id，漂移会让样式清理失配）。
+
+### 测试：新增 `scripts/client-check.mjs`（109 条断言，接入 `npm test` 与 CI）
+
+1. `src/client/**/*.js` 每个模块 `node --check` 通过；并断言 `src/client.js` 已不存在、模块里不再出现 `ctx.interval(` / `styles.insert(`（注释除外）。
+2. 纯模块单测：格式化（`fmtH9` / `fmtCny` / `fmtPct` 符号语义 / `fmtPriceRange` / `dateToMs` 往返）、图表数学（`calLevel` 分档、`heatColor` 边界、`RADAR_BAND` 夹取与 null）、主题常量、`PLUGIN_ID` 与包名一致、CSS 注入器的幂等插入与清理。
+3. **host 桥的数组编码单测**（F14 的客户端半边）：`models` / `projects` 必须以 JSON 数组编码，含逗号的项目 id 保持单元素，null 参数被丢弃。
+4. **真实 React 渲染**：用 `react-dom/server` 渲染 Dashboard 与全部卡片/原子组件，夹具是引擎产出的真实 `queryUsage` payload（`buckets` / `heat` / `meta.models` / `meta.pricing`）。
+5. **构建产物契约**：在模拟 `__ModuleLoader__` + DOM 桩下加载 `lib/client.js`，断言 `inject`/`apply` 导出、`settings.section` slot 注册（id/order）、`apply()` 注入样式，以及缺少 `slots` 服务时不抛错。
+
+### 其他
+
+- 顺带修掉 `RadarCard` / `CacheTrendCard` 里 8 处 `'text-anchor'` / `'dominant-baseline'` 引号属性 → React 官方 camelCase（渲染出的 SVG 属性逐字不变，但不再刷 React 警告）。
+- 新增 devDependencies：`esbuild`（构建）、`react-dom`（仅用于组件渲染测试；`react` 本就作为 peer 自动安装）。发布包仍只含 `lib/` 与 bundle patch。
+- README/README.en 的"扩展与定制"改为指向 `src/client/dashboard.js` 与 `src/client/cards/`；`scripts/oneoff/README.md` 标注 `dark-*` codemod 的目标文件已不存在。
+
 ## [0.3.18] - 2026-10-14
 
 > 承接 0.3.17 之后一轮独立复审（对 0.3.17 工作树只读复核 + 合成数据复现）。本版处理其中**已复现的确定缺陷**，并为每条补上会真正失败的回归守卫。`CACHE_FORMAT_VERSION` 17 → 18（seed 折叠状态入缓存，见下）。

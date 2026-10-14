@@ -1,7 +1,7 @@
 {
   "name": "@skkjkk/dsh-usage-dashboard",
   "description": "DSH usage statistics dashboard: token / cost / duration / session aggregation with trend, heatmap and calendar views (settings.section \"数据看板\").",
-  "version": "0.3.18",
+  "version": "0.3.19",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -13,7 +13,8 @@
     "build": "node scripts/regenerate.cjs",
     "bench": "node scripts/bench.js",
     "smoke": "npm run build && node scripts/smoke-host.mjs",
-    "test": "npm run build && npm run bench && node scripts/smoke-host.mjs",
+    "client-check": "node scripts/client-check.mjs",
+    "test": "npm run build && npm run bench && node scripts/smoke-host.mjs && node scripts/client-check.mjs",
     "prepublishOnly": "npm run test && node scripts/verify-pack.mjs",
     "verify-pack": "node scripts/verify-pack.mjs"
   },
@@ -67,6 +68,8 @@
     "node": ">=18"
   },
   "devDependencies": {
-    "playwright": "^1.63.0"
+    "esbuild": "^0.28.2",
+    "playwright": "^1.63.0",
+    "react-dom": "^18.3.1"
   }
 }

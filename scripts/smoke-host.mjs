@@ -318,13 +318,16 @@ try {
   // generated text, because the suite never executes the browser bundle: a
   // regression back to join(",") is exactly the bug this guards, and the server
   // side alone cannot detect it (the two halves must agree on the encoding).
-  const arrayLine = clientCode.split('\n').find((line) => line.indexOf('Array.isArray(v)') !== -1)
-  if (!arrayLine) throw new Error('client bundle: array query-param branch not found')
-  if (arrayLine.indexOf('JSON.stringify(v)') === -1) {
-    throw new Error('client bundle: array params are not JSON-encoded → ' + arrayLine.trim())
+  // The bundle is produced by a bundler now, so the branch may span lines:
+  // inspect a window after the guard instead of a single line.
+  const arrayAt = clientCode.indexOf('Array.isArray(v)')
+  if (arrayAt === -1) throw new Error('client bundle: array query-param branch not found')
+  const arrayWindow = clientCode.slice(arrayAt, arrayAt + 240)
+  if (arrayWindow.indexOf('JSON.stringify(v)') === -1) {
+    throw new Error('client bundle: array params are not JSON-encoded → ' + arrayWindow.split('\n')[0].trim())
   }
-  if (/\.join\(\s*["'],["']\s*\)/.test(arrayLine)) {
-    throw new Error('client bundle: array params are still comma-joined → ' + arrayLine.trim())
+  if (/\.join\(\s*["'],["']\s*\)/.test(arrayWindow)) {
+    throw new Error('client bundle: array params are still comma-joined → ' + arrayWindow.split('\n')[0].trim())
   }
 }
 

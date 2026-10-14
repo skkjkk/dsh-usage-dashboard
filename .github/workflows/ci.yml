@@ -41,6 +41,9 @@ jobs:
       - name: Host smoke (routing / cache / SWR invariants)
         run: node scripts/smoke-host.mjs
 
+      - name: Client check (module syntax + unit assertions + real React render + bundle contract)
+        run: node scripts/client-check.mjs
+
       - name: Package verification (bundle patch, files whitelist, client contract)
         run: node scripts/verify-pack.mjs
 
