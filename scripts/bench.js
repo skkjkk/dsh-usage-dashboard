@@ -1144,6 +1144,47 @@ console.log('\n[0m] num() 与 bucketSeries 的输入契约（审计 F29）')
   console.log('  num()/bucketSeries contract OK (' + numCases.length + ' num cases + over-cap RangeError + within-cap return)')
 }
 
+console.log('\n[0n] 窗口下边界与 message-only 明细（审计遗留）')
+{
+  const H = 3600000
+  const hour = bucketKey(Date.now(), 'hour')
+  // A generation that starts in the PREVIOUS hour and ends inside the window:
+  // the interval event lives in its start bucket, so a `hk + HOUR <= lo` skip
+  // used to drop the whole overlap and report activeMs = 0.
+  {
+    const events = [
+      { type: 'user/message', time: hour - 10000, data: { source: { kind: 'user' } } },
+      { type: 'step/start', time: hour - 5000, data: { turn: 0, step: 0 } },
+      { type: 'assistant/message', time: hour + 15000, data: { turn: 0, step: 0, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'gpt-5' } } } }
+    ]
+    const lo = hour + 10000
+    const hi = hour + 20000
+    const q = queryUsage([foldSession(events)], { range: 'custom', from: lo, to: hi }, {})
+    assertEq('lowerEdge.activeMs', q.totals.activeMs, 5000)
+    // The window also starts mid-bucket for the model aggregate: still counted.
+    assertEq('lowerEdge.inputTokens', q.totals.inputTokens, 1)
+  }
+  // A message-only assistant/message (no usage) must not appear as a phantom
+  // model row with id 0 in an edge window.
+  {
+    const lo = hour + 1000
+    const hi = hour + 2000
+    const r = foldSession([
+      { type: 'user/message', time: hour, data: { source: { kind: 'user' } } },
+      { type: 'assistant/message', time: hour + 1500, data: { turn: 0, step: 0 } }
+    ])
+    const q = queryUsage([r], { range: 'custom', from: lo, to: hi }, {})
+    assertEq('phantomMsg.assistantMessages', q.totals.assistantMessages, 1)
+    const phantom = (q.meta.models || []).filter((m) => m.id === 0 || m.id === '0' || m.id === '')
+    if (phantom.length) throw new Error('edge window produced a phantom model row: ' + JSON.stringify(phantom))
+    const detail = queryDetail([r], { range: 'custom', from: lo, to: hi, limit: 50 })
+    if (detail.rows.some((row) => row.model === 0 || row.model === '' || row.model === '0')) {
+      throw new Error('edge detail produced a phantom model row: ' + JSON.stringify(detail.rows))
+    }
+  }
+  console.log('  window lower edge + message-only detail OK (cross-hour activeMs, no phantom model 0)')
+}
+
 console.log('\n[0] totalMs union semantics (parallel sessions counted once)')
 {
   const H = 3600000
@@ -1382,6 +1423,13 @@ console.log('\n[4] DeepSeek 峰谷定价（现行两型号：deepseek-flash / de
   for (const [id, want] of canon) {
     const got = resolveDSModel(id)
     if (got !== want) throw new Error('resolveDSModel(' + id + ') = ' + got + ', want ' + want)
+  }
+  // 反向断言：未知的 deepseek-* 名字绝不能被前缀正则误判为现行型号。
+  // 这些名字 priceFor 返回 null（未匹配），resolveDSModel / priceForAt 必须一致。
+  for (const bogus of ['deepseek-flash-bogus', 'deepseek-v4-prototype', 'deepseek-v4-pro-max', 'deepseek-flash-x']) {
+    if (resolveDSModel(bogus) !== null) throw new Error('resolveDSModel(' + bogus + ') should be null, got ' + resolveDSModel(bogus))
+    if (priceForAt(bogus, bj9(14, 10)) !== null) throw new Error('priceForAt(' + bogus + ') should be unmatched, got ' + JSON.stringify(priceForAt(bogus, bj9(14, 10))))
+    if (priceFor(bogus) !== null) throw new Error('priceFor(' + bogus + ') should be unmatched')
   }
   // 折叠计费与手工验算一致：V4.1 Flash 高峰 1M 输入 + 1M 输出 + 1M 缓存读取 = 2 + 8 + 0.04
   const evts = [
