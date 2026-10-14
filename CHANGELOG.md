@@ -25,6 +25,13 @@ All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 - **仍未完成（需要外部动作）**：GitHub 侧不可达对象仍可被 `git fetch origin <旧 SHA>` 取到（本机实测：`ff0dded…`、旧 blob `d582be31…` 仍可下载），且 `refs/pull/1/head` 仍指向重写前的 `4764ca3d…`。已拟好 GitHub Support 请求（含旧 ref/blob SHA 清单），需人工提交；随后通知协作者重新 clone。
 
 
+### 测试基建（D1 / D2 / D3）
+
+- **D1 `node:test`**：新增 `npm run test:unit`（`node --test`，36 条）并接进 `npm test` 与 CI。`test/engine-contracts.test.js` 钉引擎契约（`num()` 的 12 种输入、`bucketSeries` 桶数与超限 RangeError、`priceFor` 精确命中（`gpt-5-pro` ≠ `gpt-5`、`-free` 按基座计价）、`priceForAt` 峰谷价与生效前 CSV 回退、`foldAppend` 逐条 == `foldSession` 一次性、serialize/deserialize 往返含 `generation.bucketEvts` 活引用重绑与旧缓存宽容、`totals.pct` 只可能是 null 或有限值）；`test/client-pure.test.js` 钉客户端纯模块（PLUGIN_ID == 包名、主题枚举、格式化、图表数学、host 桥的 JSON 数组编码、CSS 注入器幂等与无 document 退化）。
+- **D2 host 纯逻辑下沉到 `src/core/`**：新增 `src/core/csv.js`（`csvCell`/`buildCsv`）、`src/core/query-params.js`（`parseListParam`/`parseQueryArgs`/`isLoopbackAddress` 从构建模板移出，外加四个端点的 `normalize*Args` 与 `cacheKey`）、`src/core/session-files.js`（`pickLogFile`，E1 可直接复用）；`src/host.js` 改为 import。**顺带修掉一个潜伏的构建缺陷**：构建此前只复制 `src/core/rollup.js`，因此 `rm -rf lib && npm run build` 会产出 import 悬空的 `lib/core/rollup.js`（`./errors.js` 仅因历史上被提交才存在），`node --check` 与 CI 的 drift 检查都发现不了——现在复制**全部** `src/core/*.js` 并校验每个相对 import 都落地（反证：把复制改回单文件立即抛 `lib/core/rollup.js imports ./errors.js but that file was not written to lib/core/`）。宿主导入改为按 `./core/<module>.js` 通用提取 + 逐名交叉校验导出。新增 4 个测试文件（CSV 字段/公式防护、查询参数与缓存键、文件名判定、`lib`↔`src` 产物一致性与相对 import）。
+- **D3 渲染快照**：`test/render-snapshot.test.js` + `test/snapshots/`（11 个组件快照、约 71 KB），夹具用固定时间戳（不取 `Date.now()`），`UPDATE_SNAPSHOTS=1` 才刷新；反证：改一个字符即失败。同时把「StatCard 的 `useTween` 在 SSR 下渲染初始值 0」这一事实显式钉住（快照只钉结构，数值由引擎/格式化测试覆盖）。
+- `verify-pack` 增加必需文件（csv/query-params/session-files）与 `lib/` 悬空 import 扫描；AGENTS 增加「纯逻辑必须能被单测」「host 纯逻辑必须住在 core」「`lib/core/` 必须是完整副本」三条 tripwire。**未改 `src/core/rollup.js` 的取价/折叠语义，未 bump `CACHE_FORMAT_VERSION`**。
+
 ## [0.3.19] - 2026-10-14
 
 > 审计 F16：客户端半边是 **1907 行单文件 + 隐式全局 + 构建期字符串替换**，源码**不是合法 JS**（`node --check src/client.js` 直接报 `Illegal return statement`），因此无法 lint、无法单测，任何改动都只能靠"改完看截图"。本版把它拆成真正的 ESM 模块树，并用 **esbuild** 取代正则改写。**未 bump `CACHE_FORMAT_VERSION`**（没碰取数/折叠语义）。
