@@ -181,7 +181,7 @@ if (cached.totals.assistantMessages !== 3) throw new Error('cached metric result
     data: { usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } }
   })
   await flush()
-  const afterPoison = await request(queryPath + '&poison=1')
+  const afterPoison = await request(queryPath + '&to=' + (now + 1))
   if (afterPoison.totals.assistantMessages !== 5) {
     throw new Error('poison event or listener death: expected assistantMessages 5 (3 + dropped-but-counted + folded), got ' + afterPoison.totals.assistantMessages)
   }
@@ -230,7 +230,7 @@ await new Promise((resolve) => setTimeout(resolve, 0))
   const realDateNow = Date.now
   Date.now = () => now + 60 * 1000
   try {
-    const withEventSession = await request(queryPath + '&freshkey=1')
+    const withEventSession = await request(queryPath + '&to=' + (now + 2))
     if (withEventSession.totals.sessions !== 2) {
       throw new Error('event-created session was dropped by a lagging list, got ' + withEventSession.totals.sessions)
     }
@@ -248,11 +248,11 @@ await new Promise((resolve) => setTimeout(resolve, 0))
 const realDateNow = Date.now
 Date.now = () => now + 3 * 60000
 try {
-  await request(queryPath + '&cleanup=1')
+  await request(queryPath + '&to=' + (now + 3))
   await flush()
   await flush()
   Date.now = () => now + 4 * 60000
-  const afterMissingSession = await request(queryPath + '&cleanup=1&settled=1')
+  const afterMissingSession = await request(queryPath + '&to=' + (now + 4))
   if (afterMissingSession.totals.sessions !== 1) {
     throw new Error('deleted session state was retained forever, got ' + afterMissingSession.totals.sessions)
   }
@@ -447,7 +447,7 @@ if (!(exported.rows >= 1)) throw new Error('export returned no rows')
   }
   // Reverse assertion: an ordinary custom window must stay 200 — the guard must
   // not degrade into "any custom range fails".
-  const normal = await rawRequest('/dash-api/usage?range=custom&from=' + from + '&to=' + now + '&f29=1', '127.0.0.1')
+  const normal = await rawRequest('/dash-api/usage?range=custom&from=' + from + '&to=' + (now + 5), '127.0.0.1')
   if (normal.status !== 200) throw new Error('F29: normal custom range returned ' + normal.status)
 }
 
@@ -550,6 +550,181 @@ if (!(exported.rows >= 1)) throw new Error('export returned no rows')
   }
 }
 
+// --- empty corpus must prune state (audit: refreshCorpus early-returned) ---
+// When the session list legitimately becomes EMPTY, the previously loaded
+// rollups must disappear. The old early return on an empty list skipped the
+// removal loop, so usage/detail/calendar/export kept serving deleted sessions
+// until a later non-empty listing or a restart. A listing that could not run at
+// all must still NOT be treated as "everything was deleted".
+{
+  const routes3 = new Map()
+  let timerCb3 = null
+  const base3 = Date.now()
+  const live = { header: { id: 'gone-1', cwd: 'D:/gone' }, live: false, persisted: true }
+  const events3 = [
+    { type: 'user/message', time: base3 - 30000, seq: 1, data: { source: { kind: 'user' } } },
+    { type: 'assistant/message', time: base3 - 29000, seq: 2, data: { usage: { inputTokens: 7, outputTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'gpt-5' } } } }
+  ]
+  let list3 = [live]
+  const services3 = {
+    webServer: { register(definition) { routes3.set(definition.path, definition.handler) } },
+    sessionQuery: { async listSessions() { return list3 }, async readSession() { return { session: live.header, events: events3 } } },
+    sessionPersistence: { async requireStoredLog() { return { meta: live.header, events: events3, inheritedEventCount: 0, status: 'current' } } },
+    workspaceRegistry: { list() { return [{ path: 'D:/gone', title: 'Gone', sessionIds: ['gone-1'] }] } },
+    sessions: { get() { return null } },
+    timer: { setInterval(cb) { timerCb3 = cb; return () => {} }, timeout() { return () => {} } }
+  }
+  const ctx3 = {
+    get(name) { return services3[name] },
+    on() {},
+    effect(fn) { return fn() || (() => {}) }
+  }
+  apply(ctx3, {})
+  const raw3 = async (path) => {
+    const handler = routes3.get(path.split('?')[0])
+    if (!handler) throw new Error('missing route ' + path)
+    let status = 0
+    let body = ''
+    await handler({ url: path, socket: { remoteAddress: '127.0.0.1' } }, {
+      writeHead(code) { status = code },
+      end(value) { body = String(value || '') }
+    })
+    return { status, body }
+  }
+  const realNow3 = Date.now
+  Date.now = () => base3
+  try {
+    const first = JSON.parse((await raw3('/dash-api/usage?range=custom&from=' + (base3 - 60000) + '&to=' + base3)).body)
+    if (first.totals.sessions !== 1) throw new Error('empty-corpus setup: sessions=' + first.totals.sessions)
+    // The corpus is now genuinely empty; drive the reconcile tick and step past
+    // the 2× reconcile grace so removal is allowed.
+    list3 = []
+    Date.now = () => base3 + 3 * 60000
+    if (typeof timerCb3 !== 'function') throw new Error('reconcile timer callback was not registered')
+    timerCb3()
+    await flush()
+    await flush()
+    // Distinct `to` => a fresh cache key (no stale-while-revalidate value).
+    const after = JSON.parse((await raw3('/dash-api/usage?range=custom&from=' + (base3 - 60000) + '&to=' + (base3 + 1))).body)
+    if (after.totals.sessions !== 0) {
+      throw new Error('empty corpus did not prune state: sessions=' + after.totals.sessions)
+    }
+  } finally {
+    Date.now = realNow3
+  }
+}
+
+// --- session retry budget is CONSECUTIVE failures (audit: failCount never reset) ---
+// Three transient I/O errors spread over time, each followed by a successful
+// read, must not exhaust the 3-strike budget: the session is still retryable.
+{
+  const fsp = await import('node:fs')
+  const os = await import('node:os')
+  const pathMod = await import('node:path')
+  const root = fsp.mkdtempSync(pathMod.join(os.tmpdir(), 'dash-smoke-'))
+  try {
+    const dir = pathMod.join(root, 'proj', 'session-flaky')
+    fsp.mkdirSync(dir, { recursive: true })
+    const logFile = pathMod.join(dir, 'session.v1.jsonl')
+    let generation = 0
+    // Vary the SIZE as well as the mtime: two writes inside the same millisecond
+    // would otherwise share mtimeMs and be adopted from the disk rollup cache
+    // instead of triggering the read we want to exercise.
+    const writeLog = () => { generation += 1; fsp.writeFileSync(logFile, JSON.stringify({ generation, pad: 'x'.repeat(generation) }) + '\n') }
+    writeLog()
+
+    const routes4 = new Map()
+    let timerCb4 = null
+    let readCalls = 0
+    // fail, ok, fail, ok, fail → with a resetting budget the last failure leaves
+    // failCount = 1 (still retryable); without it failCount = 3 (given up).
+    const plan = ['fail', 'ok', 'fail', 'ok', 'fail']
+    const base4 = Date.now()
+    const events4 = [
+      { type: 'user/message', time: base4 - 30000, seq: 1, data: { source: { kind: 'user' } } },
+      { type: 'assistant/message', time: base4 - 29000, seq: 2, data: { usage: { inputTokens: 7, outputTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 0 }, message: { source: { model: 'gpt-5' } } } }
+    ]
+    const services4 = {
+      webServer: { register(definition) { routes4.set(definition.path, definition.handler) } },
+      sessionPersistence: {
+        root,
+        async requireStoredLog() {
+          const outcome = plan[readCalls] || 'ok'
+          readCalls += 1
+          if (outcome === 'fail') throw new Error('transient I/O error')
+          return { meta: { id: 'session-flaky', cwd: 'D:/flaky' }, events: events4, inheritedEventCount: 0, status: 'current' }
+        }
+      },
+      workspaceRegistry: { list() { return [] } },
+      sessions: { get() { return null } },
+      timer: { setInterval(cb) { timerCb4 = cb; return () => {} }, timeout() { return () => {} } }
+    }
+    const ctx4 = { get(name) { return services4[name] }, on() {}, effect(fn) { return fn() || (() => {}) } }
+    apply(ctx4, {})
+    const raw4 = async (path) => {
+      const handler = routes4.get(path.split('?')[0])
+      if (!handler) throw new Error('missing route ' + path)
+      let status = 0
+      let body = ''
+      await handler({ url: path, socket: { remoteAddress: '127.0.0.1' } }, {
+        writeHead(code) { status = code },
+        end(value) { body = String(value || '') }
+      })
+      return { status, body }
+    }
+    const realNow4 = Date.now
+    let clock = base4
+    Date.now = () => clock
+    try {
+      // Poll rather than assuming a fixed number of microtask turns: the reload
+      // goes through a background pass that also writes the disk cache.
+      const waitReads = async (n) => {
+        for (let i = 0; i < 500 && readCalls < n; i++) await flush()
+        if (readCalls < n) throw new Error('retry-budget fixture stalled at ' + readCalls + ' reads (wanted ' + n + ')')
+      }
+      const tick = async (n, expectReads) => {
+        clock = base4 + n * 60000
+        if (typeof timerCb4 === 'function') timerCb4()
+        await waitReads(expectReads)
+      }
+      // 1) first read fails → dead with one strike
+      await raw4('/dash-api/usage?range=custom&from=' + (base4 - 60000) + '&to=' + base4)
+      await waitReads(1)
+      // 2) revive + successful read (budget resets)
+      await tick(2, 2)
+      // 3) file changed + read fails again
+      writeLog(); await tick(4, 3)
+      // 4) revive + successful read (budget resets again)
+      await tick(6, 4)
+      // 5) file changed + third (non-consecutive) failure
+      writeLog(); await tick(8, 5)
+      const health = JSON.parse((await raw4('/dash-api/usage?range=custom&from=' + (base4 - 60000) + '&to=' + (base4 + 1))).body).meta.sessionHealth
+      if (health.dead !== 1) throw new Error('retry-budget fixture: expected 1 dead session, got ' + JSON.stringify(health) + ' (reads=' + readCalls + ')')
+      if (health.retryPending !== 1) {
+        throw new Error('failure budget was not reset by a successful read: ' + JSON.stringify(health))
+      }
+      // The full fail/ok/fail/ok/fail sequence must have run: with only 3 reads
+      // the fixture would pass even without the reset (fail, ok, fail → 2).
+      if (readCalls !== 5) throw new Error('retry-budget fixture performed ' + readCalls + ' reads, expected 5')
+    } finally {
+      Date.now = realNow4
+    }
+  } finally {
+    fsp.rmSync(root, { recursive: true, force: true })
+  }
+}
+
+// --- usage cache key whitelist (unbounded key minting) ---
+// The usage normalizer must build an explicit parameter object. Spreading every
+// URL parameter let `?junk=1`, `?junk=2`, … mint unlimited cache entries that
+// each cost a full corpus pass while changing nothing.
+{
+  const hostCode = readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8')
+  if (/\.\.\.\s*input/.test(hostCode)) {
+    throw new Error('host bundle spreads raw query params into a cache key (unbounded key space)')
+  }
+}
+
 console.log('host smoke passed')
 console.log('  cache/event regressions     OK')
 console.log('  routes survive no timer     OK')
@@ -560,3 +735,6 @@ console.log('  client contract check       OK')
 console.log('  list-param comma encoding   OK')
 console.log('  bad-request 400 contract    OK')
 console.log('  single-flight version stamp OK')
+console.log('  empty corpus prunes state   OK')
+console.log('  session retry budget resets OK')
+console.log('  usage cache key whitelist   OK')
