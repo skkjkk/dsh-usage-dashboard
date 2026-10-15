@@ -335,9 +335,23 @@ function pad2(n) { return n < 10 ? '0' + n : String(n) }
 // All dashboard buckets use the fixed UTC+8 business timezone. Bucket keys are
 // still absolute timestamps: a Beijing midnight is represented by its UTC time.
 function bjDate(t) { return new Date(t + BJ_OFFSET) }
+
+// Date.UTC(year, …) 把 0–99 年**映射成 1900+年**（ECMA-262 的遗留行为，Date 构造器同理）：
+// 一个 `from` 落在公元 1–99 年的 custom 窗口会被静默截到 1901 年，桶键全错却不报错
+// （审计遗留项 F1 / AGENTS tripwire）。年份 ≥ 100 走 Date.UTC 快路径——hourOf 在折叠
+// 每个事件时都会被调用，热路径不能为每次取桶多付一次对象分配；更早（含负数）年份才用
+// setUTCFullYear 显式构造（Date 支持 -271821..275760 年，构造出来的键是正确的）。
+function utcKey(y, m, d, h) {
+  if (y >= 100) return Date.UTC(y, m, d, h || 0)
+  const dt = new Date(0)
+  dt.setUTCFullYear(y, m, d)
+  dt.setUTCHours(h || 0, 0, 0, 0)
+  return dt.getTime()
+}
+
 function bjDayStart(t) {
   const d = bjDate(t)
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - BJ_OFFSET
+  return utcKey(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - BJ_OFFSET
 }
 function bjSundayStart(t) {
   const d = bjDate(t)
@@ -346,7 +360,7 @@ function bjSundayStart(t) {
 export function mondayOf(t) {
   const d = bjDate(t)
   const day = (d.getUTCDay() + 6) % 7
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day) - BJ_OFFSET
+  return utcKey(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day) - BJ_OFFSET
 }
 export function cellOf(t) {
   const d = bjDate(t)
@@ -359,7 +373,7 @@ function weekLabel(monday) {
 }
 export function hourOf(t) {
   const d = bjDate(t)
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours()) - BJ_OFFSET
+  return utcKey(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours()) - BJ_OFFSET
 }
 export function rangeBounds(req) {
   const input = req || {}
@@ -1715,18 +1729,25 @@ export function patchModelMeta(modelAgg, rollups) {
 // ---------- query: detail records ----------
 // 聚合主体：产出过滤后的「全部」明细行（未分页）。queryDetail 与 queryDetailAll 共用，
 // 保证「交互分页查询」与「全量导出」逐字段一致。
-function buildDetailRows(rollups, req) {
+//
+// 形态是「可分批」的两阶段聚合器（审计 F2）：宿主导出时按批 addRange 并在批间
+// `await` 让出事件循环，长导出不再把宿主线程一口气占满；分页查询与 bench 仍可
+// 用一次性的 queryDetailAll（= 一批加到底），两条路径共用同一份聚合代码，
+// 不会漂移（bench/单测断言「任意分批 == 一次取全」）。
+export function createDetailAggregator(req) {
+  if (!req || !req.range) {
+    return { addRange() {}, finish: () => ({ gran: 'hour', rows: [] }) }
+  }
   const [lo, hi] = rangeBounds(req)
   let gran = req.range === 'today' || req.range === '24h' ? 'hour' : 'day'
   if (req.range === 'custom') gran = (hi - lo) <= 48 * HOUR ? 'hour' : 'day'
   const modelSet = Array.isArray(req.models) && req.models.length ? new Set(req.models) : null
   const projectSet = Array.isArray(req.projects) && req.projects.length ? new Set(req.projects) : null
-
   const bucketMap = new Map() // key: gk \u0000 model \u0000 cwd
-  for (let i = 0; i < rollups.length; i++) {
-    const r = rollups[i]
-    if (projectSet !== null && !projectSet.has(r.cwd || '__none__')) continue
-    if (r.first === null || r.last === null || r.last < lo || r.first > hi) continue
+
+  function foldRollup(r) {
+    if (projectSet !== null && !projectSet.has(r.cwd || '__none__')) return
+    if (r.first === null || r.last === null || r.last < lo || r.first > hi) return
     const project = r.projectTitle || '未分组'
     const cwdKey = r.cwd || '__none__'
     for (const [hk, b] of r.buckets) {
@@ -1782,9 +1803,27 @@ function buildDetailRows(rollups, req) {
       }
     }
   }
-  const rows = Array.from(bucketMap.values())
-  rows.sort((a, b) => b.t - a.t || a.project.localeCompare(b.project, 'zh') || a.model.localeCompare(b.model))
-  return { gran, rows }
+
+  return {
+    // 折叠 rollups[from, to) 这一段；跨批的状态只有 bucketMap（无顺序依赖），
+    // 因此任意分批都等价于一次性遍历。
+    addRange(rollups, from, to) {
+      const start = Math.max(0, Number(from) || 0)
+      const end = Math.min(rollups.length, to == null ? rollups.length : Math.max(start, Number(to) || 0))
+      for (let i = start; i < end; i++) foldRollup(rollups[i])
+    },
+    finish() {
+      const rows = Array.from(bucketMap.values())
+      rows.sort((a, b) => b.t - a.t || a.project.localeCompare(b.project, 'zh') || a.model.localeCompare(b.model))
+      return { gran, rows }
+    }
+  }
+}
+
+function buildDetailRows(rollups, req) {
+  const agg = createDetailAggregator(req)
+  agg.addRange(rollups, 0, rollups.length)
+  return agg.finish()
 }
 
 export function queryDetail(rollups, req) {
@@ -1797,11 +1836,26 @@ export function queryDetail(rollups, req) {
 
 // 全量导出专用：一次聚合产出全部行，不设 200 行上限。
 // 旧实现靠「每页 200 行、循环 offset 直到取尽」反复调用 queryDetail，每次都要
-// 全库聚合再 slice，代价 O(页数 × 库大小) 且循环内无 await（审计 F2）。
+// 全库聚合再 slice，代价 O(页数 × 库大小）且循环内无 await（审计 F2）。
+// 宿主现在用 createDetailAggregator 分批 + 批间让出事件循环；本函数保留为
+// 「一批加到底」的等价入口（bench/单测据此断言任意分批结果一致）。
 export function queryDetailAll(rollups, req) {
   if (!req || !req.range) return { gran: 'hour', total: 0, rows: [] }
   const { gran, rows } = buildDetailRows(rollups, req)
   return { gran, total: rows.length, rows }
+}
+
+// 全量导出的行数上限（安全阀，不是分页）：CSV 是一次性拼成字符串整块返回的，
+// 行数失控会同时吃掉宿主内存与响应体。真实用途（记账/报销）是几千行量级，
+// 上限远高于此；超过时按「可由 URL 触发的输入错误」抛 RangeError → 路由回
+// 400 bad_request，让调用方收窄窗口，而不是静默截断——导出丢行比报错更糟。
+export const EXPORT_MAX_ROWS = 100000
+export function assertExportRows(rows) {
+  const n = Array.isArray(rows) ? rows.length : 0
+  if (n > EXPORT_MAX_ROWS) {
+    throw new RangeError('export exceeds ' + EXPORT_MAX_ROWS + ' rows; narrow the range or filters')
+  }
+  return n
 }
 
 // ---------- query: calendar (53-week daily activity) ----------

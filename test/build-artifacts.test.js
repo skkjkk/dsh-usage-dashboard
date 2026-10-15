@@ -60,10 +60,12 @@ test('宿主模板不再自带已下沉的纯函数实现（避免模板与 core
     )
     assert.match(libIndex, new RegExp("from\\s*'\\./core/query-params\\.js'"), '宿主必须 import query-params.js')
   }
-  // 宿主主体里的 CSV/文件名逻辑同样只能来自 core
+  // 宿主主体里的 CSV/文件名/缓存权限逻辑同样只能来自 core
   assert.ok(!/function\s+csvCell\b/.test(libIndex))
   assert.ok(!/function\s+buildCsv\b/.test(libIndex))
   assert.ok(!/function\s+pickLogFile\b/.test(libIndex))
+  assert.ok(!/function\s+tightenJsonFileModes\b/.test(libIndex))
   assert.match(libIndex, /from\s*'\.\/core\/csv\.js'/)
   assert.match(libIndex, /from\s*'\.\/core\/session-files\.js'/)
+  assert.match(libIndex, /from\s*'\.\/core\/cache-perms\.js'/)
 })

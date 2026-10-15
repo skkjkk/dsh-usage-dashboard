@@ -13,6 +13,7 @@ import * as format from '../src/client/format.js'
 import * as math from '../src/client/chart-math.js'
 import { host } from '../src/client/host.js'
 import * as css from '../src/client/css.js'
+import * as hooks from '../src/client/hooks.js'
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
@@ -163,4 +164,21 @@ test('client/css.js：无 document（SSR / 非浏览器）时退化为 no-op', (
   } finally {
     globalThis.document = originalDocument
   }
+})
+
+test('client/hooks.js：isPollingPaused 只在文档隐藏时为 true（F14 次项）', () => {
+  // 三条 30s 轮询在隐藏标签页里没有任何用处：隐藏时暂停、可见时继续。
+  // 缺失 document / 未知状态一律「不暂停」——宁可多发一次请求，也不要让看板
+  // 在 SSR 或状态字符串变化时静默停止刷新。
+  assert.equal(hooks.isPollingPaused({ visibilityState: 'hidden' }), true)
+  assert.equal(hooks.isPollingPaused({ visibilityState: 'visible' }), false)
+  assert.equal(hooks.isPollingPaused({ visibilityState: 'prerender' }), false)
+  assert.equal(hooks.isPollingPaused(null), false)
+  assert.equal(hooks.isPollingPaused(undefined), false)
+  assert.equal(hooks.isPollingPaused({}), false, '没有 visibilityState 的宿主不暂停')
+
+  // dashboard.js 必须真的用这个判定（构建产物里的调用点），否则纯函数测试会
+  // 在「实现漏接线」时假绿。
+  const bundle = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
+  assert.ok(bundle.includes('visibilitychange'), 'live 客户端 bundle 应监听 visibilitychange')
 })

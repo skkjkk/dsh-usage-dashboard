@@ -2,6 +2,15 @@
 
 import { React } from './react.js'
 
+// 轮询暂停判定（纯函数，可单测）。看板每 30s 打三条请求（usage / calendar /
+// records），服务端有 SWR 所以单次成本极低；但**标签页隐藏时**这些请求没有任何
+// 用处（没人看），纯浪费。隐藏时暂停轮询、重新可见时立刻补一次刷新，
+// 既保住「在看的时候卡片是新鲜的」，也不在后台空转（审计 F14 的次项）。
+// 入参是 document 之类的对象，缺失时返回 false（不暂停），便于 SSR/测试。
+export function isPollingPaused(doc) {
+  return !!(doc && doc.visibilityState === 'hidden')
+}
+
 export function useTween(target, dur) {
   const [v, setV] = React.useState(0)
   const cur = React.useRef(0)

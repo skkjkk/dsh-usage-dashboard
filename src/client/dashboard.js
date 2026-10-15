@@ -11,6 +11,7 @@ import { CacheTrendCard } from './cards/cache.js'
 import { CalendarChart } from './cards/calendar.js'
 import { RecordsCard } from './cards/records.js'
 import { loadPrefs, savePrefs } from './prefs.js'
+import { isPollingPaused } from './hooks.js'
 import { React, h } from './react.js'
 import { host } from './host.js'
 
@@ -71,8 +72,20 @@ export function Dashboard() {
   }, [range, custom, modelSel, projectSel, costMode, tokenMode])
   React.useEffect(() => {
     load(true)
-    const off = setInterval(() => load(true), POLL_INTERVAL_MS)
-    return () => { clearInterval(off) }
+    // 轮询：标签页隐藏时跳过（没人看，请求纯浪费），重新可见时立即补一次，
+    // 所以回到页面不会看到 30s 前的旧数据（审计 F14 的次项）。判定是纯函数
+    // isPollingPaused（可单测）。
+    const doc = typeof document === 'undefined' ? null : document
+    const off = setInterval(() => {
+      if (isPollingPaused(doc)) return
+      load(true)
+    }, POLL_INTERVAL_MS)
+    const onVisibility = () => { if (!isPollingPaused(doc)) load(true) }
+    if (doc && typeof doc.addEventListener === 'function') doc.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      clearInterval(off)
+      if (doc && typeof doc.removeEventListener === 'function') doc.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [load])
   // 卸载时清掉淡入定时器，避免对已卸载组件 setState（审计 F30）。
   React.useEffect(() => () => { clearTimeout(animTimer.current) }, [])

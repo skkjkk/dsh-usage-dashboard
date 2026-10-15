@@ -16,7 +16,7 @@ const ok = (msg) => console.log('  ✔ ' + msg)
 const fail = (msg) => { console.error('  ✘ ' + msg); process.exitCode = 1 }
 
 // 1) 必需文件（pricing CSV 为构建期源文件，运行时只用生成的 lib/core/pricing.js，不随包发布）
-for (const f of ['package.json', 'lib/index.js', 'lib/client.js', 'lib/core/rollup.js', 'lib/core/pricing.js', 'lib/core/csv.js', 'lib/core/query-params.js', 'lib/core/session-files.js', 'cordis.patch.yml']) {
+for (const f of ['package.json', 'lib/index.js', 'lib/client.js', 'lib/core/rollup.js', 'lib/core/pricing.js', 'lib/core/csv.js', 'lib/core/query-params.js', 'lib/core/session-files.js', 'lib/core/cache-perms.js', 'cordis.patch.yml']) {
   if (existsSync(join(dir, f))) ok('contains ' + f)
   else fail('MISSING ' + f)
 }

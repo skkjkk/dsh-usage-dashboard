@@ -433,12 +433,10 @@ if (!(exported.rows >= 1)) throw new Error('export returned no rows')
   }
 }
 
-// --- bad-request contract (audit F29) ---
+// --- bad-request contract (audit F29 + F1) ---
 // An out-of-range custom window is a caller error, not a server fault: a 1200-year
 // span exceeds the engine's trend-bucket cap (bucketSeries throws RangeError), so
 // it must surface as 400 with a clean body rather than 500 internal_error.
-// The span is expressed in years rather than as year 1 because Date.UTC maps
-// years 0-99 to 1900+y, which would silently shrink the series below the cap.
 {
   const overWide = await rawRequest('/dash-api/usage?range=custom&from=' +
     (now - 1200 * 365 * 86400000) + '&to=' + now, '127.0.0.1')
@@ -447,6 +445,19 @@ if (!(exported.rows >= 1)) throw new Error('export returned no rows')
   }
   if (JSON.parse(overWide.body).error !== 'bad_request') {
     throw new Error('F29: over-wide custom range body was ' + overWide.body)
+  }
+  // F1: a `from` inside years 001–099 used to be silently MAPPED to 1900+y by
+  // Date.UTC, so the series came out SHORT (wrong bucket keys, no error) instead
+  // of hitting the cap. The engine now builds those keys with setUTCFullYear,
+  // which is what makes this window recognizable as over-wide → 400.
+  const yearOne = (() => { const d = new Date(0); d.setUTCFullYear(1, 0, 1); d.setUTCHours(0, 0, 0, 0); return d.getTime() })()
+  const yearOneWide = await rawRequest('/dash-api/usage?range=custom&from=' + yearOne + '&to=' + now, '127.0.0.1')
+  if (yearOneWide.status !== 400) {
+    throw new Error('F1: year-1 custom window returned ' + yearOneWide.status +
+      ' (expected 400 — before the fix it was silently truncated to 1901 and answered 200)')
+  }
+  if (JSON.parse(yearOneWide.body).error !== 'bad_request') {
+    throw new Error('F1: year-1 custom window body was ' + yearOneWide.body)
   }
   // Reverse assertion: an ordinary custom window must stay 200 — the guard must
   // not degrade into "any custom range fails".
@@ -717,6 +728,69 @@ if (!(exported.rows >= 1)) throw new Error('export returned no rows')
   }
 }
 
+// --- legacy cache-file permissions (audit F3) ---
+// mkdir/writeFile modes only apply to NEW objects, so cache files written by an
+// older version under the default umask (0644) keep those wider permissions
+// forever while only the directory gets tightened. Reading such a file must
+// tighten it in place. The assertion is POSIX-only: Node's chmod on Windows can
+// only toggle the read-only bit, so there is nothing to observe there.
+{
+  const fsp = await import('node:fs')
+  const os = await import('node:os')
+  const pathMod = await import('node:path')
+  const base5 = fsp.mkdtempSync(pathMod.join(os.tmpdir(), 'dash-mode-'))
+  try {
+    const storeRoot = pathMod.join(base5, 'sessions')
+    fsp.mkdirSync(pathMod.join(storeRoot, 'proj', 'session-legacy'), { recursive: true })
+    fsp.writeFileSync(pathMod.join(storeRoot, 'proj', 'session-legacy', 'session.v1.jsonl'), '{}\n')
+    const cacheDir = pathMod.join(base5, 'usage-dashboard-cache')
+    fsp.mkdirSync(cacheDir, { recursive: true, mode: 0o755 })
+    // An entry from a previous cache format (v: 1) whose id matches NO session in
+    // the store: nothing will ever rewrite it, so the only thing that can change
+    // its mode is initStore's chmod. (A file named after a loaded session would be
+    // rewritten by flushCache with mode 0600 and the assertion would pass even
+    // without the fix — this fixture is deliberately an orphan.)
+    const legacyCacheFile = pathMod.join(cacheDir, 'legacy-stale.json')
+    fsp.writeFileSync(legacyCacheFile, JSON.stringify({ v: 1, id: 'legacy-stale' }))
+    fsp.chmodSync(legacyCacheFile, 0o644) // deterministic regardless of umask
+
+    const routes5 = new Map()
+    const services5 = {
+      webServer: { register(definition) { routes5.set(definition.path, definition.handler) } },
+      sessionPersistence: {
+        root: storeRoot,
+        async requireStoredLog() { return { meta: { id: 'session-legacy', cwd: 'D:/legacy' }, events: [], inheritedEventCount: 0, status: 'current' } }
+      },
+      workspaceRegistry: { list() { return [] } },
+      sessions: { get() { return null } },
+      timer: { setInterval() { return () => {} }, timeout() { return () => {} } }
+    }
+    const ctx5 = { get(name) { return services5[name] }, on() {}, effect(fn) { return fn() || (() => {}) } }
+    apply(ctx5, {})
+    const handler = routes5.get('/dash-api/usage')
+    if (!handler) throw new Error('F3 fixture: usage route missing')
+    await handler({ url: '/dash-api/usage?range=today', socket: { remoteAddress: '127.0.0.1' } }, { writeHead() {}, end() {} })
+
+    const mode = fsp.statSync(legacyCacheFile).mode & 0o777
+    if (process.platform !== 'win32' && mode !== 0o600) {
+      throw new Error('F3: legacy cache file mode is ' + mode.toString(8) + ', expected 600 after initStore')
+    }
+    if (process.platform !== 'win32') {
+      const dirMode = fsp.statSync(cacheDir).mode & 0o777
+      if (dirMode !== 0o700) throw new Error('F3: cache dir mode is ' + dirMode.toString(8) + ', expected 700')
+    }
+    // 上面两条在 Windows 上会被跳过（chmod 只切只读位），所以再加一条与平台无关的
+    // 接线断言：宿主 bundle 必须真的调用 core 里的收紧函数。否则「删掉那行调用」
+    // 在 Windows 开发机上不会让任何用例失败（core 单测只覆盖函数本身）。
+    const hostCode = readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8')
+    if (!/tightenJsonFileModes\s*\(/.test(hostCode)) {
+      throw new Error('F3: host bundle no longer calls tightenJsonFileModes() during initStore')
+    }
+  } finally {
+    fsp.rmSync(base5, { recursive: true, force: true })
+  }
+}
+
 // --- usage cache key whitelist (unbounded key minting) ---
 // The usage normalizer must build an explicit parameter object. Spreading every
 // URL parameter let `?junk=1`, `?junk=2`, … mint unlimited cache entries that
@@ -737,6 +811,8 @@ console.log('  export one-pass path        OK')
 console.log('  client contract check       OK')
 console.log('  list-param comma encoding   OK')
 console.log('  bad-request 400 contract    OK')
+console.log('  year<100 custom window      OK')
+console.log('  legacy cache mode 0600      OK')
 console.log('  single-flight version stamp OK')
 console.log('  empty corpus prunes state   OK')
 console.log('  session retry budget resets OK')
