@@ -1568,7 +1568,10 @@ console.log('\n[0l] provider 作用域 / 市场后缀归一（global: · cn: · 
   assertEq('scopedPos.spaceBunnyFree', priceFor('space-bunny-free').matched, 'space-bunny')
   assertEq('scopedPos.spaceBunnyFreePaid', priceFor('space-bunny-free').p[0], 1.05, 1e-9)
   assertEq('scopedPos.lingFreeZero', priceFor('ling-3.1-flash-free').p[0], 0, 1e-9)
-  assertEq('scopedPos.agnes3', priceFor('agnes-3.0-flash').p[2], 0.035, 1e-9)
+  // C3：agnes-3.0-flash 改为官方**当前价**（免费）——显式 0 表示「已知为 ¥0」，
+  // 与同一 CSV 里 agnes-2.0/2.5-flash 的口径一致（`-free` 基座那条规则另算）。
+  assertEq('scopedPos.agnes3', priceFor('agnes-3.0-flash').p[2], 0, 1e-9)
+  assertEq('scopedPos.agnes3in', priceFor('agnes-3.0-flash').p[0], 0, 1e-9)
 
   // ---- 反向断言：绝不能过度剥离 ----
   // `-pro` / `-lite` / `-plus` 是模型名本身，不在市场后缀白名单里。

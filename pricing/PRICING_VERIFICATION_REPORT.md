@@ -154,6 +154,10 @@ OpenAI 于 2026年7月30日将 GPT-5.6 Luna 降价 80%，但 CSV 使用了原价
 | amazon-nova-lite | 0.42/1.68/0 | $0.03/$0.24 | **¥0.21/¥1.68** | ⚠️ 输入偏高 |
 | amazon-nova-pro | 5.6/22.4/0 | $0.80/$3.20 | **¥5.6/¥22.4** | ✅ 正确 |
 
+> **注意（2026-10-15 复核）**：本表 nova-lite / nova-micro / nova-2-lite 三行的「官方(USD)」列**不可信**——
+> 它与 C3 复核时的读法（$0.06 / $0.035 / $0.30）矛盾，原因是 AWS 官方页把 Nova 分成 Global 跨区与
+> in-region 两张价表。未拿到可核对的档位前 CSV **保持原值**，详见 §4.5 第 1 条。
+
 ### 2.9 Cursor Composer 系列
 
 | 模型 | CSV | 官方(USD) | 换算(¥) | 问题 |
@@ -432,8 +436,27 @@ OpenAI 于 2026年7月30日将 GPT-5.6 Luna 降价 80%，但 CSV 使用了原价
 | kat-coder-pro-v2.5 | Kwaipilot 开放权重，第一方仅企业端点 | 保持未匹配（只有转售商价） |
 | big-pickle | OpenCode Zen 上的匿名 stealth 模型（限时免费） | 保持未匹配（无基座可计价） |
 
-### 4.5 顺带发现、**未改**（需要单独决策，已记入 docs/remaining-tasks.md 的 C3）
+### 4.5 顺带发现（剩余任务 C3：**2026-10-15 已处置**，`CACHE_FORMAT_VERSION` 19 → 20）
 
-1. **Bedrock Nova 输入价与官方表不一致**：行内 lite 0.21（$0.03）vs 官方 $0.06、micro 0.105（$0.015）vs $0.035、2-lite 0.21 vs $0.30；只有 nova-pro 对齐。改输入价会改变所有历史 Nova 费用，故只记录。
-2. **agnes-3.0-flash 用的是 list 价**（0.35/1/0.035），而官方当前价是免费（$0）；同一 CSV 里 agnes-2.5-flash 却用了当前价（0/0/0）——两行口径不一致。
-3. **两行输入价过期**：ernie-4.5-turbo 官方输入 ¥0.8/M（行内 0.56，疑似促销）；gemini-1.5-pro 行内 24.5/73.5 是发布期档位，最终档位为 $1.25/$5.00(≤128k)。
+**已改（官方出处逐条核到，历史成本随之变化 → 磁盘缓存作废重算）：**
+
+| 行 | 原值（输入/输出/缓存） | 现值 | 官方出处 |
+| --- | --- | --- | --- |
+| `ernie-4.5-turbo` | 0.56 / 2.24 / 0.2 | **0.8 / 3.2 / 0.2** | 千帆官方价格页（更新于 2026-07-09）：ERNIE-4.5-Turbo-128K/32K/20260402「输入 0.0008 元/千tokens、输出 0.0032、命中缓存 0.0002」→ ¥0.8 / ¥3.2 / ¥0.2。原值是整行的 **7 折**（0.8×0.7、3.2×0.7），即已过期的促销档；缓存价 0.2 本来就等于官方输入价的 25%，反证输入价应为 0.8。https://cloud.baidu.com/doc/qianfan-docs/s/Jm8r1826a |
+| `gemini-1.5-pro` | 24.5 / 73.5 / 6.125 | **8.75 / 35 / 2.1875** | Google 官方归档价格页（2025-01-01 快照）Pay-as-you-go：prompts ≤128k 为 input $1.25 / output $5.00 / context caching $0.3125（×7 → ¥8.75 / ¥35 / ¥2.1875）。原值 24.5/73.5 是**发布期档位**（$3.50/$10.50），已在 GA 时下调。https://web.archive.org/web/20250101030729/https://ai.google.dev/pricing |
+| `agnes-3.0-flash` | 0.35 / 1 / 0.035 | **0 / 0 / 0** | Sapiens 官方 wiki：`agnes-3.0-flash` 的 **Current price** 三列全为 `$0 / M`（list price `$0.005/$0.05/$0.15` 已划掉），并明确写「Cached input, input tokens, and output tokens are currently free for `agnes-2.5-flash` and `agnes-3.0-flash`」。改为当前价后与同表 `agnes-2.0-flash` / `agnes-2.5-flash`（0/0/0）口径一致；这是**显式 0（已知免费）**，不进 `CACHE_PRICE_UNKNOWN`，不会误报「费用可能低估」。https://wiki.agnes-ai.com/en/docs/pricing |
+
+> **口径决定**：CSV 统一采用「官方**当前**价」（与 C1 的 agnes-2.5-pro 处理一致）。`gemini-1.5-pro` 的
+> **>128k 档**（$2.50/$10.00）没有落进表里——本插件拿不到 prompt 长度分布，阶梯计价未实现（见 AGENTS
+> tripwire），所以取基础档并在本报告记明；这与 `gemini-1.5-pro` 已下架、>128k 使用极少的现实相符。
+
+**未改（证据不足以动手）：**
+
+1. **Bedrock Nova 输入价**：本报告 §2.8 的「官方(USD)」列（lite $0.03/$0.24、micro $0.015/$0.06、2-lite $0.03/$0.24）与 C3 复核时的读法（lite $0.06、micro $0.035、2-lite $0.30）**互相矛盾**，两者都与 AWS 官方页的**跨区推理档位**（页面把 Nova 分成 "Global Cross-region Inference" 与 "Geo Cross-region inference and in-region" 两张表）有关。2026-10-15 复核时：
+   - `aws.amazon.com/bedrock/pricing/` 的 Nova 表格由 JS 懒加载标签页渲染，Firecrawl 抽取只拿到标题、表体为空；
+   - 官方价格清单 JSON（`b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/bedrock/USD/current/bedrock.json`）的 key 是哈希、`sets` 为空，无法映射到具体型号。
+   因此**在拿到可核对的官方档位之前不改**：现有五行 Nova 内部自洽（缓存 = 输入 × 25%），只有 nova-pro / nova-premier 在两种读法下都一致。要改必须先确定「本表对齐的是 Global 还是 in-region 档」，否则等于用一个未核实的档位替换另一个。
+
+**方法论备注**：本轮三个"已改"项都是**官方页原文**（千帆价格页正文、Google 归档页表格、Sapiens wiki 的 List/Current 双列），
+不是第三方目录；`ernie-4.5-turbo` 的「整行 7 折」与 `agnes-3.0-flash` 的「list vs current 混用」是两条可复用的判定线索。
+

@@ -116,18 +116,22 @@ test('C1：已核到官方价的缓存读取价', () => {
   assert.deepEqual(priceFor('codestral-2508').p, [2.1, 6.3, 0.21])
   // 规则推导（官方全局规则：cached input = 10% of input），用于已下架型号
   assert.equal(priceFor('mistral-nemo').p[2], 0.014)
-  // Google 归档官方页：cached = 25% of input
-  assert.equal(priceFor('gemini-1.5-pro').p[2], 6.125)
+  // Google 归档官方页：cached = 25% of input（C3 起改用最终档位 ≤128k：$1.25/$5.00）
+  assert.deepEqual(priceFor('gemini-1.5-pro').p, [8.75, 35, 2.1875])
   // DeepSeek 官方公告：cache hit $0.014/M（与该行 era 一致的 miss $0.14/out $0.28）
   assert.equal(priceFor('deepseek-coder').p[2], 0.098)
-  // 百度千帆官方「命中缓存」价
-  assert.equal(priceFor('ernie-4.5-turbo').p[2], 0.2)
+  // 百度千帆官方「命中缓存」价（C3 起输入/输出改回官方在线推理价 ¥0.8/¥3.2）
+  assert.deepEqual(priceFor('ernie-4.5-turbo').p, [0.8, 3.2, 0.2])
   // Bedrock：cache read = 25% of on-demand input（官方脚注 + 欧站数值证实 0.250）
   assert.deepEqual(priceFor('amazon-nova-pro').p, [5.6, 22.4, 1.4])
   assert.equal(priceFor('amazon-nova-lite').p[2], 0.0525)
   // Sapiens 官方 wiki：cached = 10% of input（Pro 档 $0.045/M → ¥0.315）
   assert.equal(priceFor('agnes-2.5-pro').p[2], 0.315, '原值 0.03 比官方低 10 倍')
   assert.equal(priceFor('agnes-2.5-pro-alpha').p[2], 0.315)
+  // C3：agnes-3.0-flash 由 list 价改为官方**当前价**（免费）——显式 0 表示「已知为 ¥0」，
+  // 不是「未知」（因此它不进 CACHE_PRICE_UNKNOWN，也不会弹低估徽标）
+  assert.deepEqual(priceFor('agnes-3.0-flash').p, [0, 0, 0])
+  assert.equal(CACHE_PRICE_UNKNOWN.has('agnes-3.0-flash'), false, '免费是已知的 0，不能算未知')
 })
 
 test('C2：新补录的三个模型 + 必须保持未匹配的 qoder-cn', () => {

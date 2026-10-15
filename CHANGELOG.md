@@ -2,6 +2,35 @@
 
 All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 
+## [0.3.21] - 2026-10-15
+
+### 定价修正（剩余任务 C3）· `CACHE_FORMAT_VERSION` 19 → 20
+
+> 三处都以**官方页原文**核实后修改（不是第三方目录）。历史成本随之变化，因此磁盘缓存里的
+> rollup 必须作废重算——这就是 bump 版本号的原因。逐行出处见
+> [pricing/PRICING_VERIFICATION_REPORT.md](pricing/PRICING_VERIFICATION_REPORT.md) §4.5。
+
+- **`ernie-4.5-turbo` 输入/输出：0.56 / 2.24 → 0.8 / 3.2**（缓存读取 0.2 不变）。千帆官方价格页
+  （2026-07-09 更新）的在线推理价是输入 `0.0008 元/千tokens`、输出 `0.0032`、命中缓存 `0.0002`
+  → ¥0.8 / ¥3.2 / ¥0.2。原值是整行的**7 折**（0.8×0.7、3.2×0.7），即已过期的促销档；原缓存价
+  0.2 恰好等于官方输入价的 25%，本身就在反证输入价应为 0.8。
+- **`gemini-1.5-pro`：24.5 / 73.5 / 6.125 → 8.75 / 35 / 2.1875**。Google 官方归档价格页的
+  Pay-as-you-go「prompts up to 128k」档是 input $1.25 / output $5.00 / context caching $0.3125
+  （×7）。原值 24.5/73.5 是**发布期档位**（$3.50/$10.50）。>128k 档（$2.50/$10.00）不落表：
+  插件拿不到 prompt 长度分布、阶梯计价未实现（见 AGENTS tripwire），取基础档并在报告记明。
+- **`agnes-3.0-flash`：0.35 / 1 / 0.035 → 0 / 0 / 0**。Sapiens 官方 wiki 的 `agnes-3.0-flash`
+  三列 **Current price** 全为 `$0 / M`（list price 已划掉），并写明「cached input / input / output
+  are currently free for agnes-2.5-flash and agnes-3.0-flash」——与同表 `agnes-2.0-flash` /
+  `agnes-2.5-flash`（0/0/0）口径一致。**这是显式 0（已知免费）**，不进 `CACHE_PRICE_UNKNOWN`，
+  不会误报「费用可能低估」。
+- **未改：Bedrock Nova 的输入价**（理由与探针记录见报告 §4.5）。AWS 官方页把 Nova 分成 Global
+  跨区与 in-region 两张价表，而本仓库 §2.8 的「官方」读法与 C3 复核的读法互相矛盾；官方价格清单
+  JSON 的 key 是哈希、`sets` 为空，无法映射型号。在拿到可核对的档位前不动——现有五行 Nova 内部
+  自洽（缓存 = 输入 × 25%），只有 nova-pro / nova-premier 在两种读法下都一致。
+- **守卫**：`test/pricing-cache-unknown.test.js` 的三条断言改为新值（含「免费是已知的 0、不算未知」），
+  bench `[0l]` 的 `scopedPos.agnes3` 同步改为 0 并加了一条输入价断言。`npm test` 全绿
+  （58 条单测 / bench 全对拍 / smoke 14 条 / client-check 110 条），`verify-pack` 通过。
+
 ## [0.3.20] - 2026-10-15
 
 > 本版 = 0.3.19 之后累积的全部未发布内容（B1/B2 隐私与截图、C1/C2 定价、D1–D3 测试基建、

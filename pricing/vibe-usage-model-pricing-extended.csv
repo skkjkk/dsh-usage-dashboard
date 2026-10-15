@@ -99,7 +99,7 @@ o3-mini,OpenAI,7.7,30.8,3.85
 o3-pro,OpenAI,140,560,
 o4-mini,OpenAI,7.7,30.8,1.925
 gemini-1.5-flash,Google,0.525,2.1,0.0525
-gemini-1.5-pro,Google,24.5,73.5,6.125
+gemini-1.5-pro,Google,8.75,35,2.1875
 gemini-2.0-flash,Google,0.7,2.8,0.07
 gemini-2.0-flash-lite,Google,0.525,2.1,0.0525
 gemini-2.0-flash-thinking,Google,0.7,2.8,0.07
@@ -258,7 +258,7 @@ command-r,Cohere,1.05,4.2,
 aya-expanse,Cohere,3.5,10.5,
 command-r7b,Cohere,0.2625,1.05,
 ernie-5.0,Baidu,6,24,
-ernie-4.5-turbo,Baidu,0.56,2.24,0.2
+ernie-4.5-turbo,Baidu,0.8,3.2,0.2
 ernie-4.5,Baidu,4,16,0.8
 yi-lightning,01.ai,5.6,5.6,0.35
 yi-vision-v2,01.ai,5.6,5.6,0.35
@@ -279,7 +279,7 @@ amazon-nova-micro,AWS,0.105,0.42,0.02625
 amazon-nova-lite,AWS,0.21,1.68,0.0525
 amazon-nova-pro,AWS,5.6,22.4,1.4
 amazon-nova-premier,AWS,17.5,87.5,4.375
-agnes-3.0-flash,Sapiens AI,0.35,1,0.035
+agnes-3.0-flash,Sapiens AI,0,0,0
 hy4-preview,Tencent,5.838,17.507,0.294
 kimi-k2.8-preview,Moonshot AI,6.5,27,1.7
 step-5-preview,StepFun,7,18.9,0.35

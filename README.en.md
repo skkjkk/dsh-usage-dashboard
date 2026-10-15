@@ -281,7 +281,7 @@ The verifier checks that host / core / client bundles load, the bundle patch and
 
 ## Version
 
-Current release: `0.3.20` (see [CHANGELOG.md](CHANGELOG.md))
+Current release: `0.3.21` (see [CHANGELOG.md](CHANGELOG.md))
 
 ## Extending & customizing
 
