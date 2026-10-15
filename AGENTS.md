@@ -60,10 +60,20 @@ dsh-usage-dashboard — DSH (DeepSeek Harness) usage statistics dashboard plugin
 - **`Date.UTC(year, …)` 把 0–99 年映射成 1900+年**：`bjDayStart` / `mondayOf` / `hourOf` 一律经 `utcKey(y,m,d,h)`（`src/core/rollup.js`）构造桶键——年份 ≥ 100 走 `Date.UTC` 快路径（`hourOf` 是折叠热路径，不能每次多付一次对象分配），更早/负数年份用 `setUTCFullYear` 显式构造。**不要在引擎里改回裸 `Date.UTC`**：极端早的 `from`（如公元 1 年）会被静默截到 1901 年、桶键全错却不报错；现在这种窗口会真的超出 `MAX_SERIES_BUCKETS` 而抛 `RangeError` → 路由 400。`src/client/format.js` 的 `bjMidnight` 仍用 `Date.UTC`，但它的年份都取自当前日期（≥1970），不要在那里引入 year<100 的输入；构造测试窗口时同样避开 year<100（用「N 年前」的相对毫秒数，或用 `setUTCFullYear`）。→ `test/engine-contracts.test.js` 的 F1 用例 + smoke `year<100 custom window`。
 - **导出必须分片让出事件循环，且有行数上限**：`createDetailAggregator` 的两阶段聚合（`addRange`/`finish`）是「交互分页」与「全量导出」共用的唯一实现，宿主每 25 个会话 `await` 让出一次；任何分批都必须与一次取全逐字段一致。`EXPORT_MAX_ROWS`（100000）+ `assertExportRows` 超限抛 `RangeError` → 400，**不要改成静默截断**（导出丢行比报错更糟）。→ 单测「1/2/3/7/整批切分 == 一次取全」+「恰好在上限不抛、超一行抛」。
 - **旧缓存文件权限必须读到即收紧**：`mkdir`/`writeFile` 的 mode 只作用于新建对象，旧版本写下的 `<id>.json` 会一直保持 0644。`initStore` 经 `src/core/cache-perms.js` 的 `tightenJsonFileModes(fsp, …)` 按 0600 统一收紧（失败忽略，绝不因此丢缓存）。Windows 的 chmod 只切只读位，**所以不能只靠 smoke 的 mode 断言**（Windows 上会跳过）：必须有 core 单测 + 宿主 bundle 接线断言。→ `test/core-cache-perms.test.js` + smoke `legacy cache mode 0600`。
-- **peerDependencies 的预发布语义**：现行范围 `>=0.1.3-alpha.2 <0.3.0 || ^0.1.7-rc.1 || ^0.2.0-rc.1`。semver 只在「同 `[major,minor,patch]` 元组且带 prerelease 的比较符」存在时才匹配预发布版本——**写回 `>=0.1.0-rc.6 <0.3.0` 之类只有稳定带的范围，就会连 npm latest 与桌面端正在跑的 0.2.x-rc 都不匹配**。新的 DSH 预发布线出现时加一条 `^<版本>-rc.x` 即可。→ `test/peer-range.test.js`（含「未来补丁号预发布对任何范围都为 false」的反证）。
+- **peerDependencies 的预发布语义**：现行范围 `>=0.1.0-rc.6 <0.3.0 || ^0.1.7-rc.1 || ^0.2.0-rc.1`。semver 只在「同 `[major,minor,patch]` 元组且带 prerelease 的比较符」存在时才匹配预发布版本——**只写稳定带（如 `>=0.1.0-rc.6 <0.3.0` 单独用）就会连 npm latest 与桌面端正在跑的 0.2.x-rc 都不匹配**；新的 DSH 预发布线出现时加一条 `^<版本>-rc.x`。**下限不要抬到「验证过的最老版本」`0.1.3-alpha.2`**：lockfile 里解析到的是 `@deepseek-ai/dsh-client-*@0.1.0-rc.8`，抬下限会让 CI 第一步 `npm ci` 直接 ERESOLVE（0.3.20 真实踩过，本地 `npm install` 因 node_modules 已存在而不复现）→ `test/peer-range.test.js` 的**读 lockfile 断言**（锁文件版本必须满足 peer 范围）+「未来补丁号预发布不可表达」反证。
 - **客户端轮询在标签页隐藏时暂停**：`src/client/dashboard.js` 的 30s 轮询 + 三个卡片请求（`usage`/`calendar`/`records`）用 `hooks.js` 的纯函数 `isPollingPaused(document)` 判定，隐藏时跳过、重新可见时立即补一次刷新；**不要**退回「`refreshSeq` 只在筛选变化时自增」——那会让看着看板时数据不再自动更新。→ `test/client-pure.test.js`（含产物里必须有 `visibilitychange` listener 的接线断言）。
 - **客户端是模块树，不是被改写的片段**：`src/client/**` 必须保持合法 ESM（显式 `import`、无隐式全局、无 `ctx.interval(` / `styles.insert(`）。构建只允许用 esbuild 打包，**不得**恢复任何对客户端源码的正则/字符串改写。`plugin.js` 的 `PLUGIN_ID` 必须等于 `package.json` 的 `name`（构建期断言）。→ `scripts/client-check.mjs`（逐模块 `node --check` + 纯模块单测 + 真实 React SSR 渲染 + 产物 loader/slot 契约）。
 - **README 截图必须先匿名化**：`picture/*.png` 是公开发布的，而 fixture 带真实项目名（title）与 cwd 路径（id）。`scripts/capture-screenshots.mjs` 默认在渲染前把 44 个 id/title/label 重写成 `project-a…`（`detail.rows[].project` 存的是 title，按 id↔title 同映射），渲染后断言页面画不出真实标识（全部文本节点含 SVG `<text>` + `title`/`aria-label`/`placeholder`/`alt`，另有"盘符路径"兜底），失败则一张图都不写。`--raw` 仅供本地调试，**其产物不得提交**；`picture/` 只保留 README 引用的 6 张（脚本尾部自动 prune，`--keep-all` 退出）。→ 脚本内 leak 断言（反证：把匿名化改 no-op 即抛 `anonymization leak`）。
+
+## v0.3.22 变更摘要（2026-10-15）
+
+**CI 修复**：0.3.20 把 peer 下限抬到 `>=0.1.3-alpha.2` 之后，CI 第一步 `npm ci` 连续两次 ERESOLVE
+（lockfile 里解析到的是 `@deepseek-ai/dsh-client-*@0.1.0-rc.8`，被新下限排除；本地 `npm install` 因
+node_modules 已存在而不复现）。本版把下限恢复为 `>=0.1.0-rc.6`，范围 = `>=0.1.0-rc.6 <0.3.0 ||
+^0.1.7-rc.1 || ^0.2.0-rc.1`，并补两条护栏：`test/peer-range.test.js` 新增**读 package-lock.json 的断言**
+（锁文件里的 DSH 包版本必须满足 peer 范围，抬下限前先失败）；`test/render-snapshot.test.js` 读快照时把
+CRLF 归一成 LF（Windows 的 `core.autocrlf=true` 会让干净 worktree 里的快照比较恒假，CI 的 Ubuntu 不受影响）。
+**未改任何取价/折叠语义**（`CACHE_FORMAT_VERSION` 仍为 20）。
 
 ## v0.3.21 变更摘要（2026-10-15）
 

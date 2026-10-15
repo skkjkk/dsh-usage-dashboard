@@ -100,23 +100,30 @@ client runtime 确实按该形状校验），截图证据来自同源代理 harn
    同版发布，各代桌面 bundle 均在）承担。`dsh.client.inject` 引用不存在的包会被
    `arriveGraphRow` 静默跳过（`graphRows.get(name) === undefined` → continue），因此
    inject 数组**同时保留** runtime（旧 DSH）与 modules（新 DSH）两个名字，全版本兼容。
-2. **peerDependencies 范围修正（0.3.20 / 剩余任务 G1 复核后重写）**：旧声明 `^0.1.0-rc.6`
+2. **peerDependencies 范围修正（0.3.20 复核、0.3.22 修正下限）**：旧声明 `^0.1.0-rc.6`
    按 semver 预发布规则不匹配 0.1.6/0.1.7/0.2.x；0.3.12 改成 `>=0.1.0-rc.6 <0.3.0` 后
    **仍然只匹配稳定版**——实测（`semver@7.8.5`，见 `test/peer-range.test.js`）它只匹配
    0.2.0 / 0.2.5 这类稳定版，连当时的 `latest`（0.1.7-rc.2）与桌面端 0.2.0-rc.1 都不匹配。
-   现在改为：
+   现行声明：
    ```
-   >=0.1.3-alpha.2 <0.3.0 || ^0.1.7-rc.1 || ^0.2.0-rc.1
+   >=0.1.0-rc.6 <0.3.0 || ^0.1.7-rc.1 || ^0.2.0-rc.1
    ```
    （三个 DSH client 包同一范围；`dsh-client-runtime` 保持从 peer 中移除——它已停更在
    0.1.1-rc.2。）
+   > **下限为什么必须是 `>=0.1.0-rc.6` 而不是「验证过的最老版本」`0.1.3-alpha.2`**：
+   > 0.3.20 曾把下限抬到 `>=0.1.3-alpha.2`（想与 COMPAT 的实测支持面严格对齐），结果
+   > **CI 第一步 `npm ci` 直接 ERESOLVE**——`package-lock.json` 里实际解析到的是
+   > `@deepseek-ai/dsh-client-*@0.1.0-rc.8`，新下限把这一档预发布排除了；本地 `npm install`
+   > 因为 node_modules 已存在而不复现，属于「本地绿、CI 红」的经典陷阱（0.3.22 修正）。
+   > 现在的护栏：`test/peer-range.test.js` 里有一条**读 lockfile** 的断言——锁文件里每个
+   > `node_modules/@deepseek-ai/dsh-client-*` 的版本都必须满足 peer 范围，抬下限前它会先失败。
    > **semver 预发布规则（实测矩阵）**：带 prerelease 的版本只有在范围内存在**同
    > `[major,minor,patch]` 元组且自身带 prerelease** 的比较符时才可能满足
    > （`semver` 的 `Range.test` → `testSet` 的 `includePrerelease` 分支）。因此：0.1.x/0.2.x
-   > 的**稳定版**全在范围内；`0.1.7-rc.1/rc.2`（npm `latest` 线）与 `0.2.0-rc.1/rc.2`
-   > （桌面端线）显式列出后也在范围内；而 `0.1.5-rc.x` / `0.1.6-alpha.x` / `0.1.7-alpha.x`
-   > 这些历史预发布**不在**范围内（已停止分发，实测可跑但声明不覆盖），
-   > `>=0.1.3-alpha.2` 这个下限则是 COMPAT 验证过的最老版本。
+   > 的**稳定版**全在范围内；`0.1.0-rc.6/rc.8`（下限那一档）与 `0.1.7-rc.1/rc.2`（npm `latest`
+   > 线）、`0.2.0-rc.1/rc.2`（桌面端线）也在范围内（后者靠显式列出）；而
+   > `0.1.3-alpha.2` / `0.1.5-rc.x` / `0.1.6-alpha.x` / `0.1.7-alpha.x` 这些历史预发布
+   > **不在**范围内（已停止分发，实测可跑但声明不覆盖）。
    > **「任意 0.2.x 预发布」在严格 semver 下不可表达**（不是写法问题）：要匹配
    > `0.2.1-rc.1` 就必须有 `0.2.1-x` 的比较符，而未来补丁号无法预先枚举；
    > `test/peer-range.test.js` 用 8 种候选写法（含 `*`、`>=0.0.0-0`、`0.1.x || 0.2.x`）

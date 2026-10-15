@@ -38,7 +38,10 @@ function snapshot(name, element) {
     return html
   }
   assert.ok(existsSync(file), '缺少快照 ' + name + '.txt —— 确认渲染结果后跑 UPDATE_SNAPSHOTS=1 npm run test:unit')
-  assert.equal(html + '\n', readFileSync(file, 'utf8'),
+  // 读快照时把 CRLF 归一成 LF：仓库里存的是 LF，但 Windows 上的 `core.autocrlf=true`
+  // 会把检出后的快照变成 CRLF，于是比较永远失败（2026-10-15 在干净 worktree 里真实踩到，
+  // 而 CI 跑 Ubuntu、不受影响）。渲染产物恒为 LF，所以只需归一读取侧。
+  assert.equal(html + '\n', readFileSync(file, 'utf8').replace(/\r\n/g, '\n'),
     '渲染快照与 ' + name + '.txt 不一致（确认改动后用 UPDATE_SNAPSHOTS=1 刷新，并在提交里一起 review）')
   return html
 }

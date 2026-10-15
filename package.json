@@ -1,7 +1,7 @@
 {
   "name": "@skkjkk/dsh-usage-dashboard",
   "description": "DSH usage statistics dashboard: token / cost / duration / session aggregation with trend, heatmap and calendar views (settings.section \"数据看板\").",
-  "version": "0.3.21",
+  "version": "0.3.22",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -34,9 +34,9 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-client-connection": ">=0.1.3-alpha.2 <0.3.0 || ^0.1.7-rc.1 || ^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-modules": ">=0.1.3-alpha.2 <0.3.0 || ^0.1.7-rc.1 || ^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.3-alpha.2 <0.3.0 || ^0.1.7-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-connection": ">=0.1.0-rc.6 <0.3.0 || ^0.1.7-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-modules": ">=0.1.0-rc.6 <0.3.0 || ^0.1.7-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.0-rc.6 <0.3.0 || ^0.1.7-rc.1 || ^0.2.0-rc.1",
     "react": "^18.2.0"
   },
   "files": [

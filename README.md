@@ -281,7 +281,7 @@ node scripts/verify-pack.mjs <package-dir>
 
 ## 版本
 
-当前发布版本：`0.3.21`（变更记录见 [CHANGELOG.md](CHANGELOG.md)）
+当前发布版本：`0.3.22`（变更记录见 [CHANGELOG.md](CHANGELOG.md)）
 
 ## 扩展与定制
 

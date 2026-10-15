@@ -2,6 +2,27 @@
 
 All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 
+## [0.3.22] - 2026-10-15
+
+### CI 修复：peer 下限抬得过高导致 `npm ci` ERESOLVE
+
+> 0.3.20 把 peer 下限从 `>=0.1.0-rc.6` 抬到 `>=0.1.3-alpha.2`（想与 COMPAT 的实测支持面严格对齐）。
+> 代价是 **CI 的第一步 `npm ci` 直接 ERESOLVE，连续两次失败**：`package-lock.json` 里实际解析到的
+> `@deepseek-ai/dsh-client-*` 是 **`0.1.0-rc.8`**，而新下限把这一档预发布排除了。本地 `npm install`
+> 因 node_modules 已存在而不复现 → 典型的「本地绿、CI 红」。
+
+- **范围修正**：`>=0.1.0-rc.6 <0.3.0 || ^0.1.7-rc.1 || ^0.2.0-rc.1`。下限回到原值；两条在用预发布线保留——
+  它们才是 G1 真正要解决的问题（旧范围连 npm `latest` 与桌面端 `0.2.0-rc.1` 都不匹配）。
+- **护栏 1**：`test/peer-range.test.js` 新增一条**读 `package-lock.json` 的断言**——锁文件里每个
+  `node_modules/@deepseek-ai/dsh-client-*` 的版本都必须满足 peer 范围。抬下限时它会先失败，而不是等 CI。
+  semver 矩阵同步更新（`0.1.0-rc.6/rc.8` 必须匹配、`0.1.2` 回到匹配集、`0.1.3-alpha.2` 明确记为不匹配）。
+- **护栏 2**：`test/render-snapshot.test.js` 读快照时把 CRLF 归一成 LF。干净 worktree 里
+  `core.autocrlf=true` 会把检出的快照变成 CRLF，而渲染产物恒为 LF → 快照比较恒假（CI 跑 Ubuntu、不受影响，
+  但在 Windows 上排查会误判成真实漂移）。
+- **未改任何取价/折叠语义**：`CACHE_FORMAT_VERSION` 仍为 20。
+- **验证**：在干净 `git worktree` 里逐条复现 CI（`npm ci` → build → 漂移检查 → 单测 → bench → smoke →
+  client-check → verify-pack）全部通过；`package-lock.json` 根版本同步。
+
 ## [0.3.21] - 2026-10-15
 
 ### 定价修正（剩余任务 C3）· `CACHE_FORMAT_VERSION` 19 → 20

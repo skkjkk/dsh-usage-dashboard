@@ -43,27 +43,58 @@ test('G1: 三个 DSH peer 包声明同一范围，且 §COMPAT 的矩阵与 semv
   for (const range of ranges) assert.equal(range, ranges[0], '三个 peer 包必须声明同一范围（否则支持面说法无法只写一次）')
   const range = ranges[0]
 
-  // ① 稳定带：0.1.3 起的所有稳定版（含未来 0.2.x 补丁）都匹配——这是安装面最重要的一半
-  for (const v of ['0.1.3', '0.1.4', '0.1.5', '0.1.6', '0.1.7', '0.2.0', '0.2.1', '0.2.5', '0.2.99']) {
+  // ① 稳定带：0.1.x 的所有稳定版（含未来 0.2.x 补丁）都匹配——这是安装面最重要的一半
+  for (const v of ['0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.1.6', '0.1.7', '0.2.0', '0.2.1', '0.2.5', '0.2.99']) {
     assert.equal(semver.satisfies(v, range), true, v + ' 必须匹配 ' + range)
   }
-  // ② 已核验的最老版本（COMPAT 的覆盖下限）必须在范围内，否则声明比实测支持面还窄
-  assert.equal(semver.satisfies('0.1.3-alpha.2', range), true)
+  // ② 下限那一档的预发布也必须匹配：**lockfile 里钉着的 DSH 包是 0.1.0-rc.8**
+  //    （见 package-lock.json 的 @deepseek-ai/* 解析结果）。把下限抬到 0.1.3-alpha.2
+  //    会让 `npm ci` 直接 ERESOLVE —— CI 首次就死在这一步（2026-10-15 真实踩过）。
+  for (const v of ['0.1.0-rc.6', '0.1.0-rc.8']) {
+    assert.equal(semver.satisfies(v, range), true, v + ' 必须匹配：它是 lockfile 里实际解析到的版本')
+  }
   // ③ 仍然分发的两条预发布线：npm latest 0.1.7-rc.x 与桌面端 0.2.0-rc.x
   for (const v of ['0.1.7-rc.1', '0.1.7-rc.2', '0.2.0-rc.1', '0.2.0-rc.2']) {
     assert.equal(semver.satisfies(v, range), true, v + ' 必须匹配（否则 npm latest / 当前桌面端会报 peer 不满足）')
   }
   // ④ 明确排除：范围外的稳定版 / 下一个 minor / 更老的版本
-  for (const v of ['0.0.9', '0.1.2', '0.3.0', '0.3.0-rc.1', '0.4.0', '1.0.0']) {
+  for (const v of ['0.0.9', '0.3.0', '0.3.0-rc.1', '0.4.0', '1.0.0']) {
     assert.equal(semver.satisfies(v, range), false, v + ' 不应匹配 ' + range)
   }
   // ⑤ 已知不匹配的历史预发布（严格 semver 无法表达，见文件头注释）：显式钉住，
   //    这样「谁把范围改宽了」或「COMPAT 措辞漂移」都会在这里失败。
-  for (const v of ['0.1.5-rc.1', '0.1.5-rc.2', '0.1.5-rc.3', '0.1.6-alpha.1', '0.1.7-alpha.1']) {
+  //    `0.1.3-alpha.2` 也在其中：COMPAT 把它记为「实测过的最老版本」，但下限取的是
+  //    更早的 `>=0.1.0-rc.6`（因为 lockfile 钉的是 0.1.0-rc.8），所以它的 0.1.3 元组
+  //    没有带 prerelease 的比较符——这是**有意的**，不是漏写。
+  for (const v of ['0.1.3-alpha.2', '0.1.5-rc.1', '0.1.5-rc.2', '0.1.5-rc.3', '0.1.6-alpha.1', '0.1.7-alpha.1']) {
     assert.equal(semver.satisfies(v, range), false, v + ' 在严格 semver 下不在范围内（历史预发布，已停止分发）')
   }
-  // ⑥ 三个包的声明里都不应再出现旧范围（回归护栏）
-  for (const r of ranges) assert.ok(r.indexOf('>=0.1.0-rc.6') === -1, '旧范围 >=0.1.0-rc.6 已被取代')
+  // ⑥ 回归护栏：范围不能退回「只有稳定带」的旧写法（那样连 npm latest / 桌面端 rc 都不匹配）
+  for (const r of ranges) {
+    assert.notEqual(r, '>=0.1.0-rc.6 <0.3.0', '不能退回只有稳定带的旧范围')
+    assert.ok(r.includes('^0.1.7-rc.1') && r.includes('^0.2.0-rc.1'), '两条在用预发布线必须显式列出')
+  }
+})
+
+test('G1: lockfile 里解析到的 DSH 包版本必须满足 peer 范围（npm ci 护栏）', () => {
+  // 2026-10-15 的真实事故：把下限从 `>=0.1.0-rc.6` 抬到 `>=0.1.3-alpha.2` 之后，
+  // CI 的第一步 `npm ci` 直接 ERESOLVE —— 因为 package-lock.json 里解析到的是
+  // `@deepseek-ai/dsh-client-*@0.1.0-rc.8`，而新下限把这一档预发布排除了。
+  // 单测钉住矩阵仍然全绿（它只看 semver，不看锁文件），所以必须在**这里**把
+  // 「锁文件里的版本 vs peer 范围」也钉住：改范围时它会先失败，而不是等 CI。
+  const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'))
+  const range = pkg.peerDependencies['@deepseek-ai/dsh-client-modules']
+  const checked = []
+  for (const [p, entry] of Object.entries(lock.packages || {})) {
+    const m = /^node_modules\/(@deepseek-ai\/dsh-client-[^/]+)$/.exec(p)
+    if (!m || !entry || typeof entry.version !== 'string') continue
+    checked.push(m[1] + '@' + entry.version)
+    assert.equal(
+      semver.satisfies(entry.version, range), true,
+      m[1] + '@' + entry.version + ' 不满足 peer 范围 ' + range + ' → `npm ci` 会 ERESOLVE（抬下限前先看这条）'
+    )
+  }
+  assert.ok(checked.length > 0, 'package-lock.json 里应能查到 @deepseek-ai/dsh-client-* 的解析版本')
 })
 
 test('G1: 「任意 0.2.x 预发布」在严格 semver 下不可表达（只能靠 includePrerelease）', () => {
