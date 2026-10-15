@@ -21,6 +21,8 @@ script、不在 CI、不被其它脚本 import）。留在这里只为保留排�
 | `diag-active-ms.mjs` | 逐会话核对 activeMs 口径 |
 | `diag-step-fields.mjs` | step 事件字段探查（`firstFrame` 已导出，供 `test/oneoff-diag.test.js` 断言边界） |
 | `inspect-events.mjs` | 单会话事件转储 |
+| `measure-seen-usage.mjs` | 量磁盘缓存里 `_seenUsage` 去重签名的真实体量（条目数/字节数 vs `evts`），是剩余任务 F5「拒绝定长哈希」的决策依据 |
+| `verify-client-live.mjs` | G2：把真实 `lib/client.js` 按运行实例的加载契约装进 Chromium、同源代理到活宿主，断言槽注册/样式注入/渲染/导出 CSV（截图落系统临时目录，含真实项目名**不得提交**；见 COMPAT.md 的例行程序第 4b 步） |
 
 仍在维护、且在 README/AGENTS/CI 中有据可查的诊断脚本保留在 `scripts/`：
 `bench.js`、`smoke-host.mjs`、`regenerate.cjs`、`verify-pack.mjs`、`e2e-check.mjs`、

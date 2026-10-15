@@ -2,9 +2,67 @@
 
 All notable changes to `@skkjkk/dsh-usage-dashboard` are documented here.
 
-## [Unreleased]
+## [0.3.20] - 2026-10-15
 
-> 审计 F21（剩余任务 B1）：README 内联的 `picture/*.png` 经 OCR 确认含真实项目名，而它们发布在 `raw.githubusercontent.com` 上。本段只动**截图流水线与图片资产**：未改 `src/`、未 bump `CACHE_FORMAT_VERSION`、未 bump 版本号（是否随 0.3.20 发布由 A1/A2 决定）。
+> 本版 = 0.3.19 之后累积的全部未发布内容（B1/B2 隐私与截图、C1/C2 定价、D1–D3 测试基建、
+> E1–E4 脚本债、F1–F5 低优先项、G1/G2 兼容性核验）。同步补打 `v0.3.14` ~ `v0.3.20` 的 tag，
+> 并把 0.3.14 之后的版本首次发布到 npm（此前 npm `latest` 停在 0.3.13）。
+
+### 遗留低优先项（剩余任务 F1–F5）与兼容性核验（G1 / G2）
+
+> 2026-10-15，随 **0.3.20** 发布。**未 bump `CACHE_FORMAT_VERSION`**（v19 不变：这轮改动没有触碰取价/折叠语义，
+> 磁盘缓存里的 rollup 与成本数值不受影响）。
+> `npm test` 全绿（58 条单测 / bench 全对拍 / smoke 14 条 / client-check 110 条），`verify-pack` 通过。
+
+- **F1 `Date.UTC` 的 0–99 年映射**（`src/core/rollup.js`）：`Date.UTC(year, …)` 把 0–99 年映射成
+  1900+年，于是 `?range=custom&from=<公元 1 年>` 会被**静默截到 1901 年**——桶键全错、桶数远低于
+  上限，回 200 空结果而不是报错。新增 `utcKey()`：年份 ≥ 100 走 `Date.UTC` 快路径（`hourOf` 在折叠
+  每个事件时都会被调用，热路径不能多付一次对象分配），更早/负数年份改用 `setUTCFullYear` 显式构造。
+  桶键恢复正确后，「公元 1 年 → 现在」这种窗口会**真的**超出 `MAX_SERIES_BUCKETS` 而抛 `RangeError`
+  → 路由回 **400 `bad_request`**（语义更清楚，也不再有静默错误数据）。守卫：`test/engine-contracts.test.js`
+  的 F1 用例 + smoke 新增 `year<100 custom window`；**反证已验**（换回 `Date.UTC` 立即 smoke/单测双红）。
+  活实例实测：`from=0001-01-01` → `400 {"error":"bad_request","message":"trend range exceeds 50000 buckets"}`。
+- **F2 导出阻塞宿主线程**（`src/core/rollup.js` + `src/host.js`）：聚合主体下沉为引擎的
+  `createDetailAggregator(req)`（两阶段 `addRange(rollups, from, to)` / `finish()`；`queryDetail` 与
+  `queryDetailAll` 改成调用同一个聚合器，一批加到底），宿主导出时**每 25 个会话让出一次事件循环**，
+  于是长导出只是「慢」而不再在整个聚合期间占满宿主线程。另加行数安全阀 `EXPORT_MAX_ROWS = 100000`
+  + `assertExportRows()`：超限抛 `RangeError` → 400 而不是静默截断（导出丢行比报错更糟）。守卫：
+  单测「1/2/3/7/整批切分 == 一次取全」「恰好在上限不抛、超一行抛」。**未做**流式响应（该路由模板是
+  一次性 `JSON.stringify` 返回，改造面远大于收益）。
+- **F3 旧缓存文件权限不会随升级收紧**（`src/core/cache-perms.js` + `src/host.js`）：`mkdir`/`writeFile`
+  的 mode 只作用于**新建**对象，旧版本以默认 umask 写下的 `<id>.json` 会一直保持 0644。`initStore`
+  读到缓存目录清单后先按 0600 统一收紧再读取（单个失败不影响其余；权限收紧失败绝不导致丢缓存）。
+  守卫：`test/core-cache-perms.test.js`（**任何平台**都断言按 0600 调用了每个 `.json`，因为 Windows 的
+  chmod 只切只读位、smoke 的 mode 断言在 Windows 上会被跳过）+ smoke 在 POSIX 上用 `stat` 断言真实
+  mode + smoke 断言宿主 bundle 真的调用了该函数。**反证已验**（去掉 `fsp.chmod` 那行 → 单测 4 红）。
+- **F4 三路轮询**：`refreshSeq` 只在筛选变化时自增的方案会让「看着看板时数据不再自动更新」，与 SWR 的
+  设计意图相反，**不采纳**；改为按 `document.visibilityState === 'hidden'` 暂停 30s 轮询、重新可见时
+  立即补一次刷新（`src/client/hooks.js` 的纯函数 `isPollingPaused`）。守卫：`test/client-pure.test.js`
+  （含「实现漏接线」检查：产物里必须有 `visibilitychange` listener）。
+- **F5 `_seenUsage` 无界增长**：维持**拒绝**「按时间窗淘汰」「区分缺失与显式 0」两条子建议，但先把
+  内存量出来了——新增 `scripts/oneoff/measure-seen-usage.mjs`，本机 385 会话实测 **38,103 条签名 /
+  3.6 MB（97 B/条、9.4 KB/会话、最大 778 条/77 KB）**，同批 rollup 的 `evts` 明细是 174,931 条 /
+  10.2 MB：签名占 evts 的 **34.8%**、占缓存 JSON（14.5 MB）的 25%，与代码注释「与事件数同阶且远小于
+  evts」一致；按均值外推 10k 会话 ≈ 92 MB 签名，而同一量级的 rollup 本体 ~377 MB。定长哈希能压到
+  约 1/3，但要 bump 缓存格式、全量重算，并把「零碰撞」换成「极低概率碰撞 → 静默少计成本」，故不改。
+- **G1 peer 范围的预发布语义**（`package.json` + `test/peer-range.test.js` + COMPAT.md）：实测
+  （新增 devDep `semver`）确认旧范围 `>=0.1.0-rc.6 <0.3.0` **只匹配稳定版**——连当时的 npm `latest`
+  （`0.1.7-rc.2`）与桌面端 `0.2.0-rc.1` 都不匹配。改为
+  `>=0.1.3-alpha.2 <0.3.0 || ^0.1.7-rc.1 || ^0.2.0-rc.1`（三个 DSH client 包统一）：稳定带全覆盖 +
+  两条在用预发布线；下限取 COMPAT 验证过的最老版本。测试同时钉住**不可表达**的部分：
+  `0.2.1-rc.1` 这类「未来补丁号的预发布」对任何范围都为 false（8 种候选写法反证，只有
+  `includePrerelease: true` 才行，而 `peerDependencies` 表达不了；npm 的 peer 校验传的是 loose）。
+- **G2 在 DSH 0.2.x 上真实回归**（比要求的基线更新：本机运行实例是 **0.2.0-rc.2**，六个相关子包版本
+  从运行实例 `app.asar` 读出，`dsh-client-runtime` 确认不存在）。宿主半边：`dev_reload_package` 把新
+  构建装进活实例后，四条 `/dash-api/*` 全部通过（7d：49 会话 / 12.4 亿 token / 覆盖率 99% / 未匹配 0，
+  冷 428 ms、热 6–24 ms；导出 30d/90d 8 列）。客户端半边：新增
+  `scripts/oneoff/verify-client-live.mjs`，把 `lib/client.js` 按运行实例的加载契约装进真实 Chromium、
+  页面同源代理到活宿主，**23 条断言全绿**（槽注册 name/order/label、样式注入、10 KPI / 21 SVG /
+  280 日历格 / 20 记录行、无 pageerror / console error / 4xx、点真实按钮导出 CSV 58 行 8 列）。
+  未做到的一步如实记在 COMPAT.md：桌面端自己的窗口 URL 带 token，取不到，因此「设置壳把 section
+  画进侧栏」这一下没有自动断言。
+- 工程侧：新增 core 模块 `src/core/cache-perms.js`（`verify-pack` 必需文件清单、构建产物守卫同步更新）；
+  smoke 由 12 条增至 14 条（`year<100 custom window`、`legacy cache mode 0600`）；单测 47 → 58 条。
 
 ### 截图匿名化（隐私）
 
